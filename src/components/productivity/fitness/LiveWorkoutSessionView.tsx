@@ -233,6 +233,18 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
           </div>
         </div>
 
+        {/* Scientific RP Hypertrophy Guidance Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-cyan-950/20 to-transparent border border-cyan-500/20 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="font-bold text-white">Nguyên Lý Quá Tải RP:</span>
+            <span className="text-cyan-300 font-mono font-bold">Dải MAV · Mục tiêu RIR 1-2 (RPE 8-9)</span>
+          </div>
+          <div className="text-[11px] text-white/60">
+            Dừng mỗi hiệp khi còn 1-2 rep dự trữ để tối ưu hóa phì đại cơ mTOR và hạn chế mệt mỏi thần kinh
+          </div>
+        </div>
+
         {/* Sticky Rest Timer Countdown */}
         <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
           restSecondsLeft !== null
