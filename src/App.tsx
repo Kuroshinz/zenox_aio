@@ -34,7 +34,7 @@ import { Scene } from './Scene';
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   CalendarEvent,
   CalendarCategory,
@@ -467,6 +467,7 @@ export default function App() {
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(() => {
     return localStorage.getItem('gcal_active_user') ? 'Vừa xong' : null;
   });
+  const liveSyncDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 8. Event saving / updating handler
   const handleSaveEvent = useCallback((savedEvent: CalendarEvent) => {
@@ -1003,12 +1004,16 @@ export default function App() {
     });
   };
 
-  const runLiveSyncCheck = useCallback(async (isInitialLoad = false) => {
+  const runLiveSyncCheck = useCallback(async (options?: { userInitiated?: boolean } | boolean) => {
+    const isUserInitiated = typeof options === 'boolean' ? options : Boolean(options?.userInitiated);
     if (!isLiveSyncEnabled) return;
     setIsSyncing(true);
     setSyncState('syncing');
 
     try {
+      // Natural 1.2s processing delay to make state transitions graceful and avoid jitter
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+
       // 1. Verify and ensure local vault storage integrity
       const currentEvents = accountStorage.getItem('gcal_events', user?.uid);
       if (currentEvents) {
@@ -1021,11 +1026,9 @@ export default function App() {
 
       // 2. If Google Calendar access token exists, fetch & merge events
       const token = await getAccessToken();
-      let syncedCount = 0;
       if (token) {
         const gEvents = await fetchGoogleCalendarEvents(token);
         if (gEvents && gEvents.length > 0) {
-          syncedCount = gEvents.length;
           setEvents((prev) => {
             const merged = mergeSyncedGoogleEvents(gEvents, prev);
             try {
@@ -1044,20 +1047,12 @@ export default function App() {
       });
       setLastSyncedTime(timeStr);
       setSyncState('synced');
-      playLiveSyncChime();
 
-      if (isInitialLoad) {
-        notifySuccess(
-          lang === 'vi' ? 'Live Sync: Đồng bộ thành công!' : 'Live Sync: Synchronized!',
-          token
-            ? (lang === 'vi'
-                ? `Đã đồng bộ ${syncedCount} sự kiện từ Google Calendar. Local Vault an toàn.`
-                : `Synced ${syncedCount} events from Google Calendar. Local Vault secured.`)
-            : (lang === 'vi'
-                ? 'Local Vault đã được kiểm tra: Dữ liệu đã lưu an toàn 100%.'
-                : 'Local Vault verified: All data saved securely 100%.')
-        );
+      // Only play subtle chime sound when explicitly initiated by user interaction
+      if (isUserInitiated) {
+        playLiveSyncChime();
       }
+      // Note: Automatic background sync is kept 100% quiet without spamming toast popups.
     } catch (err) {
       console.warn('Live Sync verification notice:', err);
       setSyncState('offline');
@@ -1071,26 +1066,31 @@ export default function App() {
     try {
       localStorage.setItem('zenox_live_sync_enabled', String(enabled));
     } catch {}
-    if (enabled) {
-      notifySuccess(
-        lang === 'vi' ? 'Live Sync đã kích hoạt!' : 'Live Sync Enabled!',
-        lang === 'vi'
-          ? 'Tự động kiểm tra & đồng bộ mỗi khi tải trang hoặc dùng tính năng.'
-          : 'Auto-checks & syncs data on reload and feature usage.'
-      );
-      runLiveSyncCheck(false);
-    } else {
-      notifySuccess(
-        lang === 'vi' ? 'Live Sync đã tắt' : 'Live Sync Disabled',
-        lang === 'vi' ? 'Hệ thống chuyển sang chế độ lưu trữ thủ công.' : 'Switched to manual mode.'
-      );
-    }
-  }, [lang, runLiveSyncCheck]);
 
-  // Automatic Live Sync check on page reload / load or entering workspace
+    playToggleSound(enabled);
+
+    if (liveSyncDebounceTimerRef.current) {
+      clearTimeout(liveSyncDebounceTimerRef.current);
+    }
+
+    if (enabled) {
+      setSyncState('syncing');
+      // Debounce and delay sync execution smoothly by 800ms
+      liveSyncDebounceTimerRef.current = setTimeout(() => {
+        runLiveSyncCheck({ userInitiated: true });
+      }, 800);
+    } else {
+      setSyncState('offline');
+    }
+  }, [runLiveSyncCheck]);
+
+  // Automatic Live Sync check on page reload / load or entering workspace with 1.8s calm delay
   useEffect(() => {
     if (user && isLiveSyncEnabled) {
-      runLiveSyncCheck(true);
+      const timer = setTimeout(() => {
+        runLiveSyncCheck({ userInitiated: false });
+      }, 1800);
+      return () => clearTimeout(timer);
     }
   }, [user?.uid, isLiveSyncEnabled]);
 

@@ -95,12 +95,42 @@ export interface NotifyOptions {
   saveToHistory?: boolean;
 }
 
+// Anti-spam throttling & deduplication cache
+const recentToastMap = new Map<string, number>();
+const DEDUPE_WINDOW_MS = 2500; // 2.5s deduplication window for identical messages
+let lastGlobalToastTime = 0;
+const GLOBAL_THROTTLE_MS = 600; // Minimum 600ms gap between consecutive toasts
+
 export function notify(
   type: ToastType,
   title: string,
   message?: string,
   options?: NotifyOptions
 ): void {
+  const now = Date.now();
+  const notifKey = `${type}:${title.trim()}:${(message || '').trim()}`;
+  const lastTime = recentToastMap.get(notifKey) || 0;
+
+  // Suppress duplicate identical notifications within the dedupe window
+  if (now - lastTime < DEDUPE_WINDOW_MS) {
+    return;
+  }
+
+  // Rate-limit non-error toasts to avoid rapid fire bursts
+  if (type !== 'error' && now - lastGlobalToastTime < GLOBAL_THROTTLE_MS) {
+    return;
+  }
+
+  recentToastMap.set(notifKey, now);
+  lastGlobalToastTime = now;
+
+  // Prune map if getting large
+  if (recentToastMap.size > 80) {
+    for (const [key, timestamp] of recentToastMap.entries()) {
+      if (now - timestamp > 10000) recentToastMap.delete(key);
+    }
+  }
+
   const shouldPlaySound = options?.playSound ?? true;
 
   if (shouldPlaySound) {
@@ -113,11 +143,11 @@ export function notify(
 
   if (typeof window !== 'undefined') {
     const detail: ToastItem = {
-      id: `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      id: `toast-${now}-${Math.random().toString(36).slice(2, 7)}`,
       type,
       title,
       message,
-      durationMs: options?.durationMs ?? 4200,
+      durationMs: options?.durationMs ?? 2800, // Reduced from 4200ms to a concise 2800ms
     };
     window.dispatchEvent(new CustomEvent('app:toast', { detail }));
 

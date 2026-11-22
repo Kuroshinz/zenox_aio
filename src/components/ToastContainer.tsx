@@ -11,7 +11,7 @@ export const ToastContainer: React.FC = () => {
       if (!customEvent.detail) return;
 
       const newToast = customEvent.detail;
-      setToasts((prev) => [newToast, ...prev.slice(0, 4)]); // Keep at most 5 toasts visible
+      setToasts((prev) => [newToast, ...prev.slice(0, 2)]); // Keep at most 3 toasts visible
 
       // Auto dismiss
       setTimeout(() => {
