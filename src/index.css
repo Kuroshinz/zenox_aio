@@ -904,20 +904,5 @@
   animation: cyberSheen 3.2s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes neonSaberPulse {
-  0%, 100% {
-    opacity: 0.9;
-    transform: translateY(-50%) scaleY(1);
-    filter: drop-shadow(0 0 6px rgba(244, 63, 94, 0.8));
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(-50%) scaleY(1.1);
-    filter: drop-shadow(0 0 12px rgba(244, 63, 94, 1)) drop-shadow(0 0 4px #fff);
-  }
-}
 
-.animate-neon-saber {
-  animation: neonSaberPulse 2.4s infinite ease-in-out;
-}
 

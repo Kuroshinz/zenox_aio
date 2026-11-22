@@ -57,7 +57,6 @@ interface NavItemConfig {
     activeBg: string;
     activeBorder: string;
     activeGlow: string;
-    leftSaber: string;
     iconActiveBg: string;
     iconActiveBorder: string;
     iconActiveText: string;
@@ -114,7 +113,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeBg: 'bg-gradient-to-r from-rose-950/70 via-rose-900/30 to-rose-950/10',
         activeBorder: 'border-rose-500/40',
         activeGlow: 'shadow-[0_4px_24px_rgba(244,63,94,0.25),inset_0_1px_1px_rgba(255,255,255,0.12)]',
-        leftSaber: 'bg-gradient-to-b from-rose-400 via-rose-500 to-rose-600 shadow-[0_0_14px_rgba(244,63,94,0.95),0_0_4px_#fff]',
         iconActiveBg: 'bg-rose-500/20',
         iconActiveBorder: 'border-rose-400/40',
         iconActiveText: 'text-rose-300',
@@ -135,7 +133,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeBg: 'bg-gradient-to-r from-sky-950/70 via-sky-900/30 to-sky-950/10',
         activeBorder: 'border-sky-500/40',
         activeGlow: 'shadow-[0_4px_24px_rgba(56,189,248,0.25),inset_0_1px_1px_rgba(255,255,255,0.12)]',
-        leftSaber: 'bg-gradient-to-b from-sky-400 via-sky-500 to-blue-600 shadow-[0_0_14px_rgba(56,189,248,0.95),0_0_4px_#fff]',
         iconActiveBg: 'bg-sky-500/20',
         iconActiveBorder: 'border-sky-400/40',
         iconActiveText: 'text-sky-300',
@@ -156,7 +153,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeBg: 'bg-gradient-to-r from-purple-950/70 via-purple-900/30 to-purple-950/10',
         activeBorder: 'border-purple-500/40',
         activeGlow: 'shadow-[0_4px_24px_rgba(168,85,247,0.25),inset_0_1px_1px_rgba(255,255,255,0.12)]',
-        leftSaber: 'bg-gradient-to-b from-purple-400 via-purple-500 to-violet-600 shadow-[0_0_14px_rgba(168,85,247,0.95),0_0_4px_#fff]',
         iconActiveBg: 'bg-purple-500/20',
         iconActiveBorder: 'border-purple-400/40',
         iconActiveText: 'text-purple-300',
@@ -177,7 +173,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeBg: 'bg-gradient-to-r from-amber-950/70 via-amber-900/30 to-amber-950/10',
         activeBorder: 'border-amber-500/40',
         activeGlow: 'shadow-[0_4px_24px_rgba(245,158,11,0.25),inset_0_1px_1px_rgba(255,255,255,0.12)]',
-        leftSaber: 'bg-gradient-to-b from-amber-400 via-amber-500 to-orange-600 shadow-[0_0_14px_rgba(245,158,11,0.95),0_0_4px_#fff]',
         iconActiveBg: 'bg-amber-500/20',
         iconActiveBorder: 'border-amber-400/40',
         iconActiveText: 'text-amber-300',
@@ -200,7 +195,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeBg: 'bg-gradient-to-r from-emerald-950/70 via-emerald-900/30 to-emerald-950/10',
         activeBorder: 'border-emerald-500/40',
         activeGlow: 'shadow-[0_4px_24px_rgba(16,185,129,0.25),inset_0_1px_1px_rgba(255,255,255,0.12)]',
-        leftSaber: 'bg-gradient-to-b from-emerald-400 via-emerald-500 to-teal-600 shadow-[0_0_14px_rgba(16,185,129,0.95),0_0_4px_#fff]',
         iconActiveBg: 'bg-emerald-500/20',
         iconActiveBorder: 'border-emerald-400/40',
         iconActiveText: 'text-emerald-300',
@@ -221,7 +215,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeBg: 'bg-gradient-to-r from-teal-950/70 via-teal-900/30 to-teal-950/10',
         activeBorder: 'border-teal-500/40',
         activeGlow: 'shadow-[0_4px_24px_rgba(20,184,166,0.25),inset_0_1px_1px_rgba(255,255,255,0.12)]',
-        leftSaber: 'bg-gradient-to-b from-teal-400 via-teal-500 to-emerald-600 shadow-[0_0_14px_rgba(20,184,166,0.95),0_0_4px_#fff]',
         iconActiveBg: 'bg-teal-500/20',
         iconActiveBorder: 'border-teal-400/40',
         iconActiveText: 'text-teal-300',
@@ -242,7 +235,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeBg: 'bg-gradient-to-r from-indigo-950/70 via-indigo-900/30 to-indigo-950/10',
         activeBorder: 'border-indigo-500/40',
         activeGlow: 'shadow-[0_4px_24px_rgba(99,102,241,0.25),inset_0_1px_1px_rgba(255,255,255,0.12)]',
-        leftSaber: 'bg-gradient-to-b from-indigo-400 via-indigo-500 to-blue-600 shadow-[0_0_14px_rgba(99,102,241,0.95),0_0_4px_#fff]',
         iconActiveBg: 'bg-indigo-500/20',
         iconActiveBorder: 'border-indigo-400/40',
         iconActiveText: 'text-indigo-300',
@@ -315,19 +307,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
               </div>
 
-              <div className="flex items-center gap-1.5">
-                <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/[0.03] border border-white/[0.07] text-[10px] font-mono text-zinc-400 shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#10b981]" />
-                  <span className="text-zinc-300 font-semibold tracking-wider text-[9px]">CORE</span>
-                </div>
-
-                <button
-                  onClick={onCloseMobile}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 lg:hidden cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              <button
+                onClick={onCloseMobile}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 lg:hidden cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
           </div>
 
@@ -356,13 +341,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       : 'text-slate-400 hover:text-white hover:bg-white/[0.04] border border-transparent hover:border-white/[0.07] hover:translate-x-1 font-medium'
                   }`}
                 >
-                  {/* Left Neon Saber Accent for Active Tab */}
-                  {isActive && (
-                    <div
-                      className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full animate-neon-saber ${theme.leftSaber}`}
-                    />
-                  )}
-
                   <div className="flex items-center gap-3 min-w-0">
                     {/* Icon Pod Container with individual theme aura */}
                     <div
