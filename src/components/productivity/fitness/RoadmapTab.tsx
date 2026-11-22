@@ -66,6 +66,8 @@ import {
   calculatePhaseNutrition,
 } from '../../../utils/fitnessMetrics';
 import { notifySuccess } from '../../../utils/notify';
+import { CtgTrajectoryChart } from './CtgTrajectoryChart';
+import { CtgWeeklyAdvisor } from './CtgWeeklyAdvisor';
 
 interface RoadmapTabProps {
   profile: CtgProfile;
@@ -154,6 +156,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
   const [appliedBanner, setAppliedBanner] = useState<string | null>(null);
   const [isLiveTrackingCollapsed, setIsLiveTrackingCollapsed] = useState(false);
   const [phaseFilter, setPhaseFilter] = useState<'all' | 'current' | 'completed' | 'upcoming' | 'bulk' | 'cut'>('all');
+  const [carbCyclingMode, setCarbCyclingMode] = useState<'standard' | 'carb_cycling'>('standard');
 
   // Wizard state (4-Step CTG Generator)
   const [wizardStep, setWizardStep] = useState<number>(0);
@@ -274,6 +277,62 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
   }, [savedCtgRoadmaps, activeRoadmap]);
 
   // Actions
+  const handleApplyAdjustment = (calorieDelta: number, reason: string) => {
+    if (!activePhase || !activeRoadmap) return;
+    const newKcal = Math.max(1200, activePhase.targetKcal + calorieDelta);
+    const carbDelta = Math.round(calorieDelta / 4);
+    const newCarbs = Math.max(50, activePhase.macros.carbs + carbDelta);
+    const updatedPhase: CtgRoadmapPhase = {
+      ...activePhase,
+      targetKcal: newKcal,
+      macros: {
+        ...activePhase.macros,
+        carbs: newCarbs,
+      },
+      note: `Đã tự động điều chỉnh ${calorieDelta > 0 ? '+' : ''}${calorieDelta} kcal: ${reason}`,
+    };
+    const updatedPhases = phases.map((p) => (p.id === activePhase.id ? updatedPhase : p));
+    const updatedRoadmap: CtgPeriodizedRoadmap = {
+      ...activeRoadmap,
+      phases: updatedPhases,
+    };
+    onUpdateCtgPeriodizedRoadmap?.(updatedRoadmap);
+    handleApplySinglePhase(updatedPhase);
+    notifySuccess(
+      'Đã áp dụng điều chỉnh tuần!',
+      `Khẩu phần giai đoạn "${activePhase.name}" đã cập nhật thành ${newKcal.toLocaleString('vi-VN')} kcal/ngày.`
+    );
+  };
+
+  const handleApplyCarbCyclingDay = (type: 'training' | 'rest') => {
+    if (!activePhase) return;
+    const isTraining = type === 'training';
+    const kcal = isTraining ? activePhase.targetKcal + 180 : Math.max(1200, activePhase.targetKcal - 180);
+    const carbs = isTraining ? activePhase.macros.carbs + 45 : Math.max(40, activePhase.macros.carbs - 45);
+    const fat = isTraining ? Math.max(25, activePhase.macros.fat - 8) : activePhase.macros.fat + 8;
+    const protein = activePhase.macros.protein;
+
+    if (onUpdateNutritionSettings) {
+      const goalKey: Goal = activePhase.phaseType === 'bulk' ? 'bulk' : activePhase.phaseType === 'maintain' ? 'maintain' : 'cut';
+      onUpdateNutritionSettings({
+        overrides: {
+          ...(nutritionSettings?.overrides || {}),
+          [goalKey]: {
+            kcal,
+            protein,
+            carbs,
+            fat,
+          },
+        },
+      });
+    }
+
+    notifySuccess(
+      isTraining ? 'Đã kích hoạt chế độ Ngày Tập (Refeed)!' : 'Đã kích hoạt chế độ Ngày Nghỉ (Rest)!',
+      `Hôm nay: ${kcal.toLocaleString('vi-VN')} kcal · ${protein}g P · ${carbs}g C · ${fat}g F đã được nạp vào mục tiêu Dinh Dưỡng.`
+    );
+  };
+
   const handleApplySinglePhase = (phase: CtgRoadmapPhase) => {
     if (onSetActiveRoadmapPhase) {
       onSetActiveRoadmapPhase(phase.id);
@@ -726,6 +785,22 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
             </div>
           </div>
 
+          {/* 1.5. BIỂU ĐỒ ĐƯỜNG CONG CHU KỲ CHUYỂN HÓA CTG (TRAJECTORY CHART) */}
+          <CtgTrajectoryChart
+            phases={phases}
+            currentWeight={currentWeight}
+            currentBf={currentBf}
+            currentLbm={currentLbm}
+            activePhaseId={activePhase?.id}
+            onSelectPhase={(phaseId) => {
+              const el = document.getElementById(`phase-card-${phaseId}`);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }}
+            lang={lang}
+          />
+
           {/* 2. GIAI ĐOẠN ĐANG THEO DÕI TRỰC TIẾP (LIVE TRACKING CARD) */}
           {activePhase && (
             <div className="bg-[#0b0307] rounded-3xl border border-rose-500/30 p-5 sm:p-6 shadow-2xl relative overflow-hidden space-y-4">
@@ -846,24 +921,81 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
                     <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2.5">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-white/40 uppercase font-bold text-[10px]">Dinh Dưỡng Chuẩn CTG</span>
-                        <span className="font-mono text-base font-black text-white">
-                          {activePhase.targetKcal.toLocaleString('vi-VN')} kcal/ngày
-                        </span>
+                        <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/10 text-[9px] font-mono">
+                          <button
+                            type="button"
+                            onClick={() => setCarbCyclingMode('standard')}
+                            className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                              carbCyclingMode === 'standard' ? 'bg-rose-600 text-white font-bold' : 'text-white/40 hover:text-white'
+                            }`}
+                          >
+                            Cố định
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCarbCyclingMode('carb_cycling')}
+                            className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                              carbCyclingMode === 'carb_cycling' ? 'bg-amber-600 text-white font-bold' : 'text-white/40 hover:text-white'
+                            }`}
+                          >
+                            Carb Cycling
+                          </button>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-3 gap-1.5 text-center text-xs pt-1">
-                        <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/20 text-rose-300 font-mono font-bold">
-                          <div className="text-[9px] uppercase font-sans text-rose-300/80 font-normal">Đạm</div>
-                          {activePhase.macros.protein}g
+
+                      {carbCyclingMode === 'standard' ? (
+                        <>
+                          <div className="text-right font-mono text-base font-black text-white">
+                            {activePhase.targetKcal.toLocaleString('vi-VN')} kcal/ngày
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5 text-center text-xs pt-1">
+                            <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/20 text-rose-300 font-mono font-bold">
+                              <div className="text-[9px] uppercase font-sans text-rose-300/80 font-normal">Đạm</div>
+                              {activePhase.macros.protein}g
+                            </div>
+                            <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/20 text-amber-300 font-mono font-bold">
+                              <div className="text-[9px] uppercase font-sans text-amber-300/80 font-normal">Carb</div>
+                              {activePhase.macros.carbs}g
+                            </div>
+                            <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/20 text-emerald-300 font-mono font-bold">
+                              <div className="text-[9px] uppercase font-sans text-emerald-300/80 font-normal">Béo</div>
+                              {activePhase.macros.fat}g
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="space-y-2 pt-1 font-mono text-[11px]">
+                          <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between">
+                            <div>
+                              <div className="text-[9px] font-sans font-bold text-amber-400 uppercase">Ngày Tập (Refeed)</div>
+                              <span className="font-bold text-white">{(activePhase.targetKcal + 180).toLocaleString('vi-VN')} kcal</span>
+                              <span className="text-[10px] text-white/50 ml-1.5">({activePhase.macros.protein}P · {activePhase.macros.carbs + 45}C · {Math.max(25, activePhase.macros.fat - 8)}F)</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyCarbCyclingDay('training')}
+                              className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold cursor-pointer transition-colors"
+                            >
+                              Áp dụng
+                            </button>
+                          </div>
+
+                          <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between">
+                            <div>
+                              <div className="text-[9px] font-sans font-bold text-blue-400 uppercase">Ngày Nghỉ (Rest)</div>
+                              <span className="font-bold text-white">{Math.max(1200, activePhase.targetKcal - 180).toLocaleString('vi-VN')} kcal</span>
+                              <span className="text-[10px] text-white/50 ml-1.5">({activePhase.macros.protein}P · {Math.max(40, activePhase.macros.carbs - 45)}C · {activePhase.macros.fat + 8}F)</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyCarbCyclingDay('rest')}
+                              className="px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold cursor-pointer transition-colors"
+                            >
+                              Áp dụng
+                            </button>
+                          </div>
                         </div>
-                        <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/20 text-amber-300 font-mono font-bold">
-                          <div className="text-[9px] uppercase font-sans text-amber-300/80 font-normal">Carb</div>
-                          {activePhase.macros.carbs}g
-                        </div>
-                        <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/20 text-emerald-300 font-mono font-bold">
-                          <div className="text-[9px] uppercase font-sans text-emerald-300/80 font-normal">Béo</div>
-                          {activePhase.macros.fat}g
-                        </div>
-                      </div>
+                      )}
                     </div>
                   </div>
 
@@ -901,6 +1033,18 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
                 </>
               )}
             </div>
+          )}
+
+          {/* 2.5. CỐ VẤN ĐIỀU CHỈNH TUẦN TỰ ĐỘNG (CTG AUTO-ADJUSTMENT) */}
+          {activePhase && (
+            <CtgWeeklyAdvisor
+              activePhase={activePhase}
+              bodyPoints={bodyPoints}
+              currentWeight={currentWeight}
+              currentBf={currentBf}
+              onApplyAdjustment={handleApplyAdjustment}
+              lang={lang}
+            />
           )}
 
           {/* 3. TIẾN ĐỘ TOÀN CHU KỲ & INTERACTIVE STEPPER */}
