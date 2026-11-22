@@ -507,7 +507,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
         <div className="p-1.5 rounded-full bg-white/[0.04] dark:bg-white/[0.04] backdrop-blur-2xl border border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.36),0_0_20px_rgba(255,255,255,0.03)] inline-flex items-center gap-1.5 overflow-x-auto max-w-full scrollbar-none">
           {[
             { id: 'overview', label: lang === 'vi' ? 'Tổng quan & Chỉ số' : 'Overview & Logs', icon: HeartPulse },
-            { id: 'roadmap', label: lang === 'vi' ? 'Lộ trình thể hình (NTN)' : 'NTN Roadmap', icon: Compass },
+            { id: 'roadmap', label: lang === 'vi' ? 'Lộ trình chu kỳ CTG' : 'CTG Periodized Roadmap', icon: Compass },
             { id: 'inbody', label: lang === 'vi' ? 'Tiến độ & Check Body' : 'Progress & Body Check', icon: Scale },
             { id: 'training', label: lang === 'vi' ? 'Giáo án & Buổi tập' : 'Workouts & Mesocycle', icon: Dumbbell },
             { id: 'nutrition', label: lang === 'vi' ? 'Dinh dưỡng & Món Việt' : 'Nutrition & Meals', icon: Utensils },
