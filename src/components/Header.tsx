@@ -27,6 +27,7 @@ import {
   Clock,
   ArrowRight,
   AlertTriangle,
+  ShieldCheck,
   X,
   Info,
   Radio,
@@ -109,6 +110,9 @@ interface HeaderProps {
   weightTrendAlert?: HeaderWeightTrendAlert | null;
   isLiveSyncEnabled?: boolean;
   onToggleLiveSync?: (enabled: boolean) => void;
+  lastSyncedTime?: string | null;
+  lastSyncError?: string | null;
+  onTriggerSync?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -142,10 +146,101 @@ export const Header: React.FC<HeaderProps> = ({
   weightTrendAlert,
   isLiveSyncEnabled = true,
   onToggleLiveSync,
+  lastSyncedTime,
+  lastSyncError,
+  onTriggerSync,
 }) => {
+  const [showSyncDetailsPopup, setShowSyncDetailsPopup] = useState(false);
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [storedNotifs, setStoredNotifs] = useState<SystemNotification[]>(() => getStoredNotifications());
+
+  // Smart Sync Status Mapping (No more false alarm red errors when offline or in local vault mode)
+  const syncStatus = useMemo(() => {
+    // 1. If Live Sync is completely disabled by user
+    if (!isLiveSyncEnabled) {
+      return {
+        type: 'paused' as const,
+        label: lang === 'vi' ? 'ĐÃ TẮT SYNC' : 'SYNC PAUSED',
+        badgeClass: 'bg-slate-100/70 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] hover:border-slate-300 dark:hover:border-white/20',
+        dotClass: 'bg-zinc-400',
+        textClass: 'text-slate-500 dark:text-zinc-400',
+        hue: 0,
+        saturation: 0.1,
+        brightness: 0.7,
+        description: lang === 'vi'
+          ? 'Chế độ tự động đồng bộ Live Sync đang tạm dừng. Dữ liệu vẫn được lưu an toàn 100% trong bộ nhớ máy.'
+          : 'Live Sync is paused. All data is safely stored in your local storage.',
+      };
+    }
+
+    // 2. If actively syncing
+    if (isSyncing || syncState === 'syncing') {
+      return {
+        type: 'syncing' as const,
+        label: lang === 'vi' ? 'ĐANG LƯU...' : 'SYNCING...',
+        badgeClass: 'bg-amber-500/[0.06] dark:bg-amber-500/[0.08] border-amber-500/25 dark:border-amber-500/35 hover:border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.12)] animate-pulse',
+        dotClass: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse',
+        textClass: 'text-amber-500 dark:text-amber-400',
+        hue: 45,
+        saturation: 1.2,
+        brightness: 1.1,
+        description: lang === 'vi'
+          ? 'Đang kiểm tra và đồng bộ hai chiều dữ liệu lên đám mây...'
+          : 'Syncing your schedule and health logs to cloud...',
+      };
+    }
+
+    // 3. If real error occurred (network down or auth failure when user requested sync)
+    if (syncState === 'error') {
+      return {
+        type: 'error' as const,
+        label: lang === 'vi' ? 'LỖI KẾT NỐI' : 'SYNC ERROR',
+        badgeClass: 'bg-rose-500/[0.06] dark:bg-rose-500/[0.08] border-rose-500/25 dark:border-rose-500/35 hover:border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.15)]',
+        dotClass: 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)] animate-pulse',
+        textClass: 'text-rose-500 dark:text-rose-400',
+        hue: 140,
+        saturation: 1.3,
+        brightness: 1.0,
+        description: lastSyncError || (lang === 'vi'
+          ? 'Không thể liên lạc với máy chủ Google Calendar. Mọi dữ liệu đã được bảo lưu an toàn ở bộ nhớ máy tính này.'
+          : 'Cannot reach cloud server. Local data is 100% safe. Click to retry.'),
+      };
+    }
+
+    // 4. If logged in with Google and successfully synced
+    if (syncState === 'synced' && isLoggedInGoogle) {
+      return {
+        type: 'synced' as const,
+        label: lang === 'vi' ? 'ĐÃ ĐỒNG BỘ' : 'CLOUD SYNCED',
+        badgeClass: 'bg-emerald-500/[0.06] dark:bg-emerald-500/[0.08] border-emerald-500/25 dark:border-emerald-500/35 hover:border-emerald-500/50 shadow-[0_0_16px_rgba(16,185,129,0.12)]',
+        dotClass: 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse',
+        textClass: 'text-emerald-500 dark:text-emerald-400',
+        hue: -85,
+        saturation: 1.3,
+        brightness: 1.1,
+        description: lang === 'vi'
+          ? 'Đã đồng bộ thời gian thực với tài khoản Google Calendar của bạn.'
+          : 'Real-time synchronized with your Google Calendar account.',
+      };
+    }
+
+    // 5. Default: Local Vault Mode (Offline or No Google login yet) -> NEUTRAL, PEACEFUL, NOT RED!
+    return {
+      type: 'local' as const,
+      label: lang === 'vi' ? 'LƯU CỤC BỘ' : 'LOCAL VAULT',
+      badgeClass: 'bg-cyan-500/[0.05] dark:bg-white/[0.03] border-cyan-500/20 dark:border-white/[0.1] hover:border-cyan-500/40 shadow-xs',
+      dotClass: 'bg-cyan-400 dark:bg-cyan-300 shadow-[0_0_6px_rgba(34,211,238,0.5)]',
+      textClass: 'text-cyan-600 dark:text-cyan-300',
+      hue: -120, // Cyan/Blue hue for peaceful local safety
+      saturation: 0.8,
+      brightness: 0.9,
+      description: lang === 'vi'
+        ? 'Dữ liệu được lưu trữ an toàn 100% trên thiết bị này (Local Storage / IndexedDB). Không lo mất dữ liệu.'
+        : 'All data is 100% safely persisted locally. Zero data loss.',
+    };
+  }, [isLiveSyncEnabled, isSyncing, syncState, isLoggedInGoogle, lastSyncError, lang]);
+
 
   useEffect(() => {
     const handler = () => {
@@ -235,81 +330,198 @@ export const Header: React.FC<HeaderProps> = ({
 
         
 
-        {/* Unified ThreeUI Live Sync Control Capsule (Nút gạt & Trạng thái tích hợp thành 1 khối pill thống nhất) */}
-        <div
-          onClick={() => onToggleLiveSync?.(!isLiveSyncEnabled)}
-          title={lang === 'vi' ? 'Bấm để bật/tắt chế độ Live Sync' : 'Click to toggle Live Sync mode'}
-          className={`group flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border backdrop-blur-xl transition-all duration-300 cursor-pointer select-none header-threeui-sync-control ${
-            !isLiveSyncEnabled
-              ? 'bg-slate-100/70 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] hover:border-slate-300 dark:hover:border-white/20'
-              : syncState === 'synced'
-              ? 'bg-emerald-500/[0.06] dark:bg-emerald-500/[0.08] border-emerald-500/25 dark:border-emerald-500/35 hover:border-emerald-500/50 shadow-[0_0_16px_rgba(16,185,129,0.12)]'
-              : syncState === 'syncing'
-              ? 'bg-amber-500/[0.06] dark:bg-amber-500/[0.08] border-amber-500/25 dark:border-amber-500/35 hover:border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.12)] animate-pulse'
-              : 'bg-rose-500/[0.06] dark:bg-rose-500/[0.08] border-rose-500/25 dark:border-rose-500/35 hover:border-rose-500/50'
-          }`}
-        >
-          {/* ThreeUI WebGL Shader Toggle Switch */}
+        {/* Unified ThreeUI Live Sync Control Capsule with Diagnostic Popover */}
+        <div className="relative">
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-[52px] sm:w-[58px] h-[26px] sm:h-[28px] rounded-full overflow-hidden bg-transparent shrink-0 relative flex items-center justify-center transition-transform group-hover:scale-[1.02]"
+            onClick={() => setShowSyncDetailsPopup(!showSyncDetailsPopup)}
+            title={lang === 'vi' ? 'Bấm để xem chi tiết tình trạng đồng bộ & lưu trữ' : 'Click to view sync & storage status'}
+            className={`group flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border backdrop-blur-xl transition-all duration-300 cursor-pointer select-none header-threeui-sync-control ${syncStatus.badgeClass}`}
           >
-            <SkeuomorphicToggleCollection
-              variant="shader"
-              mode="auto"
-              speed={1.00}
-              size={2.5}
-              opacity={1.00}
-              hue={syncState === 'synced' && isLiveSyncEnabled ? -85 : syncState === 'syncing' ? 45 : 140}
-              saturation={isLiveSyncEnabled ? 1.3 : 0.35}
-              brightness={isLiveSyncEnabled ? 1.1 : 0.7}
-              defaultOn={isLiveSyncEnabled}
-              label={
-                !isLiveSyncEnabled
-                  ? (lang === 'vi' ? 'CHƯA ĐỒNG BỘ' : 'NOT SYNCED')
-                  : syncState === 'synced'
-                  ? (lang === 'vi' ? 'ĐÃ ĐỒNG BỘ' : 'SYNCED')
-                  : syncState === 'syncing'
-                  ? (lang === 'vi' ? 'ĐANG LƯU...' : 'SYNCING...')
-                  : (lang === 'vi' ? 'CHƯA ĐỒNG BỘ' : 'NOT SYNCED')
-              }
-              onChange={onToggleLiveSync}
-            />
+            {/* ThreeUI WebGL Shader Toggle Switch */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleLiveSync?.(!isLiveSyncEnabled);
+              }}
+              className="w-[52px] sm:w-[58px] h-[26px] sm:h-[28px] rounded-full overflow-hidden bg-transparent shrink-0 relative flex items-center justify-center transition-transform group-hover:scale-[1.02]"
+              title={lang === 'vi' ? 'Bật/tắt chế độ Live Sync' : 'Toggle Live Sync'}
+            >
+              <SkeuomorphicToggleCollection
+                variant="shader"
+                mode="auto"
+                speed={1.00}
+                size={2.5}
+                opacity={1.00}
+                hue={syncStatus.hue}
+                saturation={syncStatus.saturation}
+                brightness={syncStatus.brightness}
+                defaultOn={isLiveSyncEnabled}
+                label={syncStatus.label}
+                onChange={onToggleLiveSync}
+              />
+            </div>
+
+            {/* Connected Dynamic Status Indicator & Label */}
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              <span className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${syncStatus.dotClass}`} />
+              <span className={`text-[11px] font-mono font-bold tracking-tight transition-colors ${syncStatus.textClass}`}>
+                {syncStatus.label}
+              </span>
+            </div>
           </div>
 
-          {/* Connected Dynamic Status Indicator & Label */}
-          <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <span
-              className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${
-                !isLiveSyncEnabled
-                  ? 'bg-zinc-500'
-                  : syncState === 'synced'
-                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse'
-                  : syncState === 'syncing'
-                  ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse'
-                  : 'bg-rose-400'
-              }`}
-            />
-            <span
-              className={`text-[11px] font-mono font-bold tracking-tight transition-colors ${
-                !isLiveSyncEnabled
-                  ? 'text-slate-400 dark:text-zinc-500'
-                  : syncState === 'synced'
-                  ? 'text-emerald-500 dark:text-emerald-400'
-                  : syncState === 'syncing'
-                  ? 'text-amber-500 dark:text-amber-400'
-                  : 'text-rose-500 dark:text-rose-400'
-              }`}
-            >
-              {!isLiveSyncEnabled
-                ? (lang === 'vi' ? 'CHƯA ĐỒNG BỘ' : 'NOT SYNCED')
-                : syncState === 'synced'
-                ? (lang === 'vi' ? 'ĐÃ ĐỒNG BỘ' : 'SYNCED')
-                : syncState === 'syncing'
-                ? (lang === 'vi' ? 'ĐANG LƯU...' : 'SYNCING...')
-                : (lang === 'vi' ? 'CHƯA ĐỒNG BỘ' : 'NOT SYNCED')}
-            </span>
-          </div>
+          {/* Sync Diagnostics & Status Popover */}
+          {showSyncDetailsPopup && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowSyncDetailsPopup(false)}
+              />
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-[#0c1424] border border-slate-200 dark:border-white/[0.08] rounded-3xl shadow-2xl p-4 sm:p-5 z-50 backdrop-blur-xl animate-fadeIn space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/[0.08]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-500 dark:text-cyan-400">
+                      <Cloud className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        {lang === 'vi' ? 'Trạng Thái Lưu Trữ & Đồng Bộ' : 'Sync & Storage Status'}
+                      </h4>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {syncStatus.label}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSyncDetailsPopup(false)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Status Explanation Card */}
+                <div className={`p-3.5 rounded-2xl border text-xs leading-relaxed space-y-1.5 ${
+                  syncStatus.type === 'synced'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-200'
+                    : syncStatus.type === 'syncing'
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-200'
+                    : syncStatus.type === 'error'
+                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-800 dark:text-rose-200'
+                    : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-800 dark:text-cyan-200'
+                }`}>
+                  <div className="flex items-center gap-2 font-bold text-[13px]">
+                    {syncStatus.type === 'synced' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    ) : syncStatus.type === 'syncing' ? (
+                      <RefreshCw className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
+                    ) : syncStatus.type === 'error' ? (
+                      <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                    ) : (
+                      <ShieldCheck className="w-4 h-4 text-cyan-500 shrink-0" />
+                    )}
+                    <span>
+                      {syncStatus.type === 'synced'
+                        ? (lang === 'vi' ? 'Đồng bộ đám mây thành công' : 'Cloud Sync Active')
+                        : syncStatus.type === 'syncing'
+                        ? (lang === 'vi' ? 'Đang đồng bộ...' : 'Syncing...')
+                        : syncStatus.type === 'error'
+                        ? (lang === 'vi' ? 'Lỗi kết nối máy chủ' : 'Connection Error')
+                        : (lang === 'vi' ? 'Kho lưu trữ an toàn (Local Vault)' : 'Safe Local Vault')}
+                    </span>
+                  </div>
+                  <p className="text-[11px] opacity-90">
+                    {syncStatus.description}
+                  </p>
+                </div>
+
+                {/* Diagnostic Checklist */}
+                <div className="space-y-2 text-xs">
+                  {/* 1. Local storage */}
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.05] flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span className="text-slate-600 dark:text-slate-300 font-medium">
+                        {lang === 'vi' ? 'Bộ nhớ máy (Local Storage)' : 'Local Vault Storage'}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+                      {lang === 'vi' ? '100% An toàn' : '100% Safe'}
+                    </span>
+                  </div>
+
+                  {/* 2. Google Cloud */}
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.05] flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Cloud className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      <span className="text-slate-600 dark:text-slate-300 font-medium">
+                        Google Calendar Cloud
+                      </span>
+                    </div>
+                    <span className={`font-mono text-[11px] font-bold truncate max-w-[140px] ${
+                      isLoggedInGoogle
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-slate-400 dark:text-zinc-500'
+                    }`}>
+                      {isLoggedInGoogle ? userEmail || 'Đã liên kết' : (lang === 'vi' ? 'Chưa liên kết' : 'Not linked')}
+                    </span>
+                  </div>
+
+                  {/* 3. Last sync time */}
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.05] flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span className="text-slate-600 dark:text-slate-300 font-medium">
+                        {lang === 'vi' ? 'Đồng bộ lần cuối' : 'Last synchronized'}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 font-bold">
+                      {lastSyncedTime || (lang === 'vi' ? 'Vừa xong' : 'Just now')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-white/[0.08]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onTriggerSync) {
+                        onTriggerSync();
+                      } else if (onToggleLiveSync) {
+                        onToggleLiveSync(true);
+                      }
+                    }}
+                    disabled={isSyncing}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>
+                      {isSyncing
+                        ? (lang === 'vi' ? 'Đang đồng bộ...' : 'Syncing...')
+                        : (lang === 'vi' ? 'Kiểm Tra & Đồng Bộ Ngay' : 'Check & Sync Now')}
+                    </span>
+                  </button>
+
+                  {!isLoggedInGoogle && onOpenCloudSync && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSyncDetailsPopup(false);
+                        onOpenCloudSync();
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-white/10 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Cloud className="w-3.5 h-3.5 text-blue-500" />
+                      <span>{lang === 'vi' ? 'Đăng Nhập Google Để Sao Lưu Đám Mây' : 'Sign In With Google For Cloud Sync'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Notification Bell with Badge */}

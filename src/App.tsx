@@ -464,6 +464,7 @@ export default function App() {
   const [syncState, setSyncState] = useState<SyncState>(() => {
     return localStorage.getItem('gcal_active_user') ? 'synced' : 'offline';
   });
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(() => {
     return localStorage.getItem('gcal_active_user') ? 'Vừa xong' : null;
   });
@@ -1046,6 +1047,7 @@ export default function App() {
         second: '2-digit',
       });
       setLastSyncedTime(timeStr);
+      setLastSyncError(null);
       setSyncState('synced');
 
       // Only play subtle chime sound when explicitly initiated by user interaction
@@ -1055,7 +1057,8 @@ export default function App() {
       // Note: Automatic background sync is kept 100% quiet without spamming toast popups.
     } catch (err) {
       console.warn('Live Sync verification notice:', err);
-      setSyncState('offline');
+      setLastSyncError(err instanceof Error ? err.message : String(err));
+      setSyncState(user ? 'error' : 'offline');
     } finally {
       setIsSyncing(false);
     }
@@ -1083,6 +1086,25 @@ export default function App() {
       setSyncState('offline');
     }
   }, [runLiveSyncCheck]);
+
+  // Online/Offline network listener to auto-heal sync status
+  useEffect(() => {
+    const handleOnline = () => {
+      setLastSyncError(null);
+      if (isLiveSyncEnabled) {
+        runLiveSyncCheck({ userInitiated: false });
+      }
+    };
+    const handleOffline = () => {
+      setLastSyncError(lang === 'vi' ? 'Mất kết nối Internet tạm thời' : 'Internet connection lost');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [isLiveSyncEnabled, runLiveSyncCheck, lang]);
 
   // Automatic Live Sync check on page reload / load or entering workspace with 1.8s calm delay
   useEffect(() => {
@@ -1408,6 +1430,9 @@ export default function App() {
           syncState={syncState}
           isLiveSyncEnabled={isLiveSyncEnabled}
           onToggleLiveSync={handleToggleLiveSync}
+          lastSyncedTime={lastSyncedTime}
+          lastSyncError={lastSyncError}
+          onTriggerSync={() => runLiveSyncCheck({ userInitiated: true })}
           pendingTasksCount={productivity.tasks.filter((t) => t.status !== 'completed').length}
           nutritionSummary={nutritionSummary}
           activeRoadmapSummary={activeRoadmapSummary}
