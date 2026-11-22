@@ -69,7 +69,6 @@ import {
 import { notifySuccess } from '../../../utils/notify';
 import { CtgTrajectoryChart } from './CtgTrajectoryChart';
 import { CtgWeeklyAdvisor } from './CtgWeeklyAdvisor';
-import { MesocycleProgressionStudio } from './MesocycleProgressionStudio';
 import { CtgCalendarSyncModal } from './CtgCalendarSyncModal';
 import { CtgCheckinExportModal } from './CtgCheckinExportModal';
 import { CalendarEvent } from '../../../types/calendar';
@@ -720,10 +719,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
       {/* CASE 2: ĐÃ CÓ LỘ TRÌNH KÍCH HOẠT (UNIFIED CTG ROADMAP EXPERIENCE) */}
       {activeRoadmap && phases.length > 0 && (
         <div className="space-y-6 animate-fadeIn">
-          {/* Mesocycle Periodization Studio (RP 5-Week Volume & RIR Progression) */}
-          <MesocycleProgressionStudio activePhase={activePhase} />
-
-          {/* 1. HERO & TỔNG QUAN HÀNH TRÌNH CHUYỂN HÓA (MACROCYCLE OVERVIEW) */}
+{/* 1. HERO & TỔNG QUAN HÀNH TRÌNH CHUYỂN HÓA (MACROCYCLE OVERVIEW) */}
           <div className="bg-[#070205] rounded-3xl border border-white/10 p-5 sm:p-6 shadow-2xl relative overflow-hidden">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
               <div className="space-y-3">
