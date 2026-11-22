@@ -61,6 +61,7 @@ import {
 import { notifySuccess, notifyInfo } from '../../../utils/notify';
 import { BarChart, ProgressBar } from '../../charts/SimpleCharts';
 import { TrackedScheduleMatrix } from './TrackedScheduleMatrix';
+import { CtgDeloadAdvisor } from './CtgDeloadAdvisor';
 
 interface TrainingTabProps {
   plannedSessions: PlannedSession[];
@@ -488,6 +489,24 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     const baseWeight = cur?.weightKg || 40;
     const newWeight = Math.max(2.5, Math.round((baseWeight * factor) * 2) / 2);
     handleUpdateSet(exerciseId, setIndex, newWeight, cur?.reps || 10);
+  };
+
+  const handleApplyDeloadWeek = () => {
+    if (plannedSessions.length === 0) return;
+    if (!confirm('Bạn có muốn kích hoạt Tuần Deload? Số sets của các bài tập sẽ được giảm 40% để khớp và hệ thần kinh hồi phục mà không làm mất cơ bắp.')) return;
+
+    plannedSessions.forEach((session) => {
+      const updatedPrescriptions = session.prescriptions.map((p) => ({
+        ...p,
+        sets: Math.max(2, Math.round(p.sets * 0.6)),
+      }));
+      onUpdatePlannedSession?.({
+        ...session,
+        prescriptions: updatedPrescriptions,
+      });
+    });
+
+    notifySuccess('Đã kích hoạt Tuần Deload!', 'Các bài tập đã được giảm số hiệp (-40%). Hãy tập trung vào kỹ thuật, kiểm soát nhịp tạ và phục hồi!');
   };
 
   const handleFinishActiveSession = () => {
@@ -1002,6 +1021,14 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         lang={lang}
       />
 
+      {/* Tracked.gg Deload & Fatigue Management Advisor */}
+      <CtgDeloadAdvisor
+        workoutSessions={workoutSessions}
+        activePhase={ctgActivePhase}
+        onApplyDeloadWeek={handleApplyDeloadWeek}
+        lang={lang}
+      />
+
       {/* Routine Split Selector & Week Synchronizer */}
       <div className="bg-white dark:bg-white/[0.03] backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/[0.08] p-4 shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-gray-100 dark:border-white/[0.08] pb-3">
@@ -1167,6 +1194,17 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                               {ex.cue}
                             </div>
                           )}
+                          {(() => {
+                            const curPr = prs[pres.exerciseId];
+                            const target = curPr ? calculateProgressiveOverload(curPr.weightKg, curPr.reps, pres.reps) : null;
+                            if (!target) return null;
+                            return (
+                              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400 font-mono">
+                                <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+                                <span>Chỉ tiêu tới: <strong>{target.nextWeightKg}kg × {target.nextReps}r</strong> ({target.type === 'weight' ? '+tạ' : '+1 rep'})</span>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         <div className="text-right shrink-0">

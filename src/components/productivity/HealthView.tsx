@@ -21,6 +21,7 @@ import {
   Zap,
   TrendingDown,
   TrendingUp,
+  ChevronRight,
 } from 'lucide-react';
 import {
   BodyCheckPhoto,
@@ -210,6 +211,19 @@ export const HealthView: React.FC<HealthViewProps> = ({
     () => healthLogs.find((l) => l.date === today) || emptyLog(today),
     [healthLogs, today]
   );
+
+  const todayDayIndex = useMemo(() => {
+    const d = new Date().getDay();
+    return d === 0 ? 6 : d - 1; // 0: Mon ... 6: Sun
+  }, []);
+
+  const todayPlannedSession = useMemo(() => {
+    return (plannedSessions || []).find((p) => {
+      if (p.dayIndex !== undefined) return p.dayIndex === todayDayIndex;
+      const labels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'];
+      return p.dayOfWeek === labels[todayDayIndex];
+    });
+  }, [plannedSessions, todayDayIndex]);
 
   const [selectedDate, setSelectedDate] = useState(today);
   const selectedLog = useMemo(
@@ -726,6 +740,67 @@ export const HealthView: React.FC<HealthViewProps> = ({
                   <div className="text-base font-bold font-mono text-emerald-400">
                     {ctgActivePhase.targetLbmKg} kg <span className="text-xs text-white/50 font-normal">(FFMI {ctgActivePhase.targetFfmi})</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Tracked.gg Athlete Command Center Bar */}
+              <div className="pt-3 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                    <span className="text-white/50 text-[10px] uppercase font-mono font-bold">Hôm Nay:</span>
+                    {todayPlannedSession ? (
+                      <span className="font-bold text-white">
+                        🏋️ {todayPlannedSession.title} ({todayPlannedSession.prescriptions.length} bài)
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-emerald-300">
+                        💤 Ngày Nghỉ Phục Hồi (Rest Day)
+                      </span>
+                    )}
+                  </div>
+
+                  <span className="text-white/20 hidden sm:inline">•</span>
+
+                  <div className="hidden sm:flex items-center gap-1.5 text-amber-300 font-mono text-[11px]">
+                    <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>
+                      {todayPlannedSession
+                        ? 'Carb Cycling: Nạp Refeed (+180 kcal) cho ngày tập'
+                        : 'Carb Cycling: Hạ Carb nhẹ tăng nhạy insulin'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+                  {todayPlannedSession ? (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('training')}
+                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-rose-950/40 transition-all"
+                    >
+                      <Dumbbell className="w-3.5 h-3.5" />
+                      <span>Bắt Đầu Tập Ngay</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('nutrition')}
+                      className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Utensils className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Xem Bữa Ăn Hôm Nay</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubTab('roadmap')}
+                    className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <span>Lộ Trình &amp; Thẻ InBody</span>
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
                 </div>
               </div>
             </div>
