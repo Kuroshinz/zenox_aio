@@ -60,6 +60,7 @@ import {
 } from '../../../utils/fitnessMetrics';
 import { notifySuccess, notifyInfo } from '../../../utils/notify';
 import { BarChart, ProgressBar } from '../../charts/SimpleCharts';
+import { TrackedScheduleMatrix } from './TrackedScheduleMatrix';
 
 interface TrainingTabProps {
   plannedSessions: PlannedSession[];
@@ -161,7 +162,18 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     planned: PlannedSession;
     startedAt: number;
     prescriptions: PlannedSession['prescriptions'];
-    sets: Record<string, { weightKg: number; reps: number; completed: boolean }>;
+    sets: Record<
+      string,
+      {
+        weightKg: number;
+        reps: number;
+        completed: boolean;
+        setType?: 'normal' | 'warmup' | 'dropset' | 'failure';
+        rpe?: number;
+        rir?: number;
+        isPr?: boolean;
+      }
+    >;
   }
   const [activeSession, setActiveSession] = useState<ActiveSessionState | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -285,7 +297,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   }, [restSecondsLeft]);
 
   const handleStartActiveSession = (session: PlannedSession) => {
-    const initialSets: Record<string, { weightKg: number; reps: number; completed: boolean }> = {};
+    const initialSets: ActiveSessionState['sets'] = {};
     session.prescriptions.forEach((p) => {
       const lastPr = prs[p.exerciseId]?.weightKg || 40;
       const defaultReps = parseInt(p.reps) || 10;
@@ -294,6 +306,9 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           weightKg: lastPr,
           reps: defaultReps,
           completed: false,
+          setType: i === 0 && p.sets > 3 ? 'warmup' : 'normal',
+          rpe: p.rpe || 8,
+          rir: p.rpe ? Math.max(0, 10 - p.rpe) : 2,
         };
       }
     });
@@ -397,6 +412,8 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     const key = `${exerciseId}-${setIndex}`;
     const cur = activeSession.sets[key];
     const willBeCompleted = !cur?.completed;
+    const curPr = prs[exerciseId]?.weightKg || 0;
+    const isNewPr = willBeCompleted && cur && cur.weightKg > curPr && curPr > 0;
 
     setActiveSession({
       ...activeSession,
@@ -405,14 +422,54 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         [key]: {
           ...cur,
           completed: willBeCompleted,
+          isPr: isNewPr,
         },
       },
     });
 
     if (willBeCompleted) {
+      if (isNewPr) {
+        notifySuccess('Kỷ Lục Mới (PR)! ⭐', `Chúc mừng! Bạn đã vượt kỷ lục bài này với mức tạ ${cur.weightKg}kg!`);
+      }
       setRestTotal(restSeconds || 90);
       setRestSecondsLeft(restSeconds || 90);
     }
+  };
+
+  const handleCycleSetType = (exerciseId: string, setIndex: number) => {
+    if (!activeSession) return;
+    const key = `${exerciseId}-${setIndex}`;
+    const cur = activeSession.sets[key];
+    const types: ('normal' | 'warmup' | 'dropset' | 'failure')[] = ['normal', 'warmup', 'dropset', 'failure'];
+    const curIdx = types.indexOf(cur?.setType || 'normal');
+    const nextType = types[(curIdx + 1) % types.length];
+    setActiveSession({
+      ...activeSession,
+      sets: {
+        ...activeSession.sets,
+        [key]: {
+          ...(cur || { weightKg: 40, reps: 10, completed: false }),
+          setType: nextType,
+        },
+      },
+    });
+  };
+
+  const handleUpdateRpe = (exerciseId: string, setIndex: number, rpe: number) => {
+    if (!activeSession) return;
+    const key = `${exerciseId}-${setIndex}`;
+    const cur = activeSession.sets[key];
+    setActiveSession({
+      ...activeSession,
+      sets: {
+        ...activeSession.sets,
+        [key]: {
+          ...(cur || { weightKg: 40, reps: 10, completed: false }),
+          rpe,
+          rir: Math.max(0, 10 - rpe),
+        },
+      },
+    });
   };
 
   const handleCopyPrevSet = (exerciseId: string, setIndex: number) => {
@@ -446,7 +503,10 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           setIndex: parseInt(setIdx) || 0,
           weightKg: s.weightKg,
           reps: s.reps,
-          rpe: 8,
+          rpe: s.rpe || 8,
+          rir: s.rir ?? (s.rpe ? 10 - s.rpe : 2),
+          setType: s.setType || 'normal',
+          isPr: s.isPr,
         };
       });
 
@@ -923,6 +983,24 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           <span>{scheduledBanner}</span>
         </div>
       )}
+
+      {/* Tracked.gg 7-Day Split Matrix & Muscle Recovery Radar */}
+      <TrackedScheduleMatrix
+        plannedSessions={plannedSessions}
+        workoutSessions={workoutSessions}
+        activePhase={ctgActivePhase}
+        onStartSession={handleStartActiveSession}
+        onScheduleToCalendar={handleSchedule}
+        onQuickLog={handleQuickLog}
+        onSelectSplit={(s) => {
+          setCurrentSplit(s);
+          onApplySplitTemplate?.(s);
+          setScheduledBanner(`Đã chuyển lịch tập sang ${s.toUpperCase()}!`);
+          setTimeout(() => setScheduledBanner(null), 4000);
+        }}
+        currentSplit={currentSplit}
+        lang={lang}
+      />
 
       {/* Routine Split Selector & Week Synchronizer */}
       <div className="bg-white dark:bg-white/[0.03] backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/[0.08] p-4 shadow-xs space-y-3">
@@ -2054,7 +2132,24 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                             }`}
                           >
                             <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="text-xs font-bold text-gray-500 w-11">
+                              <button
+                                type="button"
+                                onClick={() => handleCycleSetType(pres.exerciseId, sIdx)}
+                                disabled={setItem.completed}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
+                                  setItem.setType === 'warmup'
+                                    ? 'bg-amber-500/20 text-amber-500 dark:text-amber-300 border-amber-500/40'
+                                    : setItem.setType === 'dropset'
+                                    ? 'bg-purple-500/20 text-purple-500 dark:text-purple-300 border-purple-500/40'
+                                    : setItem.setType === 'failure'
+                                    ? 'bg-rose-500/20 text-rose-500 dark:text-rose-300 border-rose-500/40'
+                                    : 'bg-blue-500/15 text-blue-600 dark:text-blue-300 border-blue-500/30'
+                                }`}
+                                title="Nhấp đổi loại hiệp: [1] Chính · [W] Khởi động · [D] Drop set · [F] Thất bại"
+                              >
+                                {setItem.setType === 'warmup' ? 'W' : setItem.setType === 'dropset' ? 'D' : setItem.setType === 'failure' ? 'F' : `${sIdx + 1}`}
+                              </button>
+                              <span className="text-xs font-bold text-gray-500 hidden sm:inline">
                                 Hiệp {sIdx + 1}
                               </span>
                               {!setItem.completed && (
@@ -2144,6 +2239,25 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                                 />
                                 <span className="text-[10px] text-gray-400">reps</span>
                               </div>
+
+                              {/* Live Estimated 1RM */}
+                              <span className="text-[9px] font-mono text-gray-400 hidden md:inline" title="1RM ước tính (Epley Formula)">
+                                1RM: ~{Math.round(setItem.weightKg * (1 + setItem.reps / 30))}kg
+                              </span>
+
+                              {/* RPE Selector */}
+                              <select
+                                value={setItem.rpe || 8}
+                                onChange={(e) => handleUpdateRpe(pres.exerciseId, sIdx, Number(e.target.value))}
+                                disabled={setItem.completed}
+                                className="py-0.5 px-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-[10px] font-mono font-bold text-gray-700 dark:text-gray-300 cursor-pointer hidden sm:inline"
+                                title="Độ khó hiệp tập RPE (Rate of Perceived Exertion)"
+                              >
+                                <option value={7}>RPE 7 (RIR 3)</option>
+                                <option value={8}>RPE 8 (RIR 2)</option>
+                                <option value={9}>RPE 9 (RIR 1)</option>
+                                <option value={10}>RPE 10 (Failure)</option>
+                              </select>
 
                               {isPr && !setItem.completed && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold shrink-0">
