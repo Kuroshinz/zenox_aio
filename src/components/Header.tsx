@@ -235,9 +235,25 @@ export const Header: React.FC<HeaderProps> = ({
 
         
 
-        {/* ThreeUI Live Sync Switch in Header - Chỉ là nút và trạng thái, không nền xám */}
-        <div className="flex items-center gap-2 select-none header-threeui-sync-control">
-          <div className="w-[74px] sm:w-[82px] h-[36px] sm:h-[40px] rounded-full overflow-hidden bg-transparent relative">
+        {/* Unified ThreeUI Live Sync Control Capsule (Nút gạt & Trạng thái tích hợp thành 1 khối pill thống nhất) */}
+        <div
+          onClick={() => onToggleLiveSync?.(!isLiveSyncEnabled)}
+          title={lang === 'vi' ? 'Bấm để bật/tắt chế độ Live Sync' : 'Click to toggle Live Sync mode'}
+          className={`group flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border backdrop-blur-xl transition-all duration-300 cursor-pointer select-none header-threeui-sync-control ${
+            !isLiveSyncEnabled
+              ? 'bg-slate-100/70 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] hover:border-slate-300 dark:hover:border-white/20'
+              : syncState === 'synced'
+              ? 'bg-emerald-500/[0.06] dark:bg-emerald-500/[0.08] border-emerald-500/25 dark:border-emerald-500/35 hover:border-emerald-500/50 shadow-[0_0_16px_rgba(16,185,129,0.12)]'
+              : syncState === 'syncing'
+              ? 'bg-amber-500/[0.06] dark:bg-amber-500/[0.08] border-amber-500/25 dark:border-amber-500/35 hover:border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.12)] animate-pulse'
+              : 'bg-rose-500/[0.06] dark:bg-rose-500/[0.08] border-rose-500/25 dark:border-rose-500/35 hover:border-rose-500/50'
+          }`}
+        >
+          {/* ThreeUI WebGL Shader Toggle Switch */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-[52px] sm:w-[58px] h-[26px] sm:h-[28px] rounded-full overflow-hidden bg-transparent shrink-0 relative flex items-center justify-center transition-transform group-hover:scale-[1.02]"
+          >
             <SkeuomorphicToggleCollection
               variant="shader"
               mode="auto"
@@ -261,27 +277,39 @@ export const Header: React.FC<HeaderProps> = ({
             />
           </div>
 
-          <span
-            onClick={() => onToggleLiveSync?.(!isLiveSyncEnabled)}
-            title={lang === 'vi' ? 'Bấm để bật/tắt Live Sync' : 'Click to toggle Live Sync'}
-            className={`text-[11px] font-mono font-bold tracking-tight cursor-pointer transition-colors whitespace-nowrap select-none ${
-              !isLiveSyncEnabled
-                ? 'text-slate-400 dark:text-zinc-500'
+          {/* Connected Dynamic Status Indicator & Label */}
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <span
+              className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${
+                !isLiveSyncEnabled
+                  ? 'bg-zinc-500'
+                  : syncState === 'synced'
+                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse'
+                  : syncState === 'syncing'
+                  ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse'
+                  : 'bg-rose-400'
+              }`}
+            />
+            <span
+              className={`text-[11px] font-mono font-bold tracking-tight transition-colors ${
+                !isLiveSyncEnabled
+                  ? 'text-slate-400 dark:text-zinc-500'
+                  : syncState === 'synced'
+                  ? 'text-emerald-500 dark:text-emerald-400'
+                  : syncState === 'syncing'
+                  ? 'text-amber-500 dark:text-amber-400'
+                  : 'text-rose-500 dark:text-rose-400'
+              }`}
+            >
+              {!isLiveSyncEnabled
+                ? (lang === 'vi' ? 'CHƯA ĐỒNG BỘ' : 'NOT SYNCED')
                 : syncState === 'synced'
-                ? 'text-emerald-500 dark:text-emerald-400'
+                ? (lang === 'vi' ? 'ĐÃ ĐỒNG BỘ' : 'SYNCED')
                 : syncState === 'syncing'
-                ? 'text-amber-500 dark:text-amber-400 animate-pulse'
-                : 'text-rose-500 dark:text-rose-400'
-            }`}
-          >
-            {!isLiveSyncEnabled
-              ? (lang === 'vi' ? 'CHƯA ĐỒNG BỘ' : 'NOT SYNCED')
-              : syncState === 'synced'
-              ? (lang === 'vi' ? 'ĐÃ ĐỒNG BỘ' : 'SYNCED')
-              : syncState === 'syncing'
-              ? (lang === 'vi' ? 'ĐANG LƯU...' : 'SYNCING...')
-              : (lang === 'vi' ? 'CHƯA ĐỒNG BỘ' : 'NOT SYNCED')}
-          </span>
+                ? (lang === 'vi' ? 'ĐANG LƯU...' : 'SYNCING...')
+                : (lang === 'vi' ? 'CHƯA ĐỒNG BỘ' : 'NOT SYNCED')}
+            </span>
+          </div>
         </div>
 
         {/* Notification Bell with Badge */}
