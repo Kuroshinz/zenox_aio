@@ -575,6 +575,8 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
         tdeeValue={userTdee}
         goal={profile.goal}
         bodyFatPct={profile.targetBodyFatPct || 15}
+        selectedDate={selectedDate}
+        onAddMealLog={onAddMealLog}
       />
 
       {/* CTG Active Phase Sync Card */}

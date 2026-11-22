@@ -48,6 +48,7 @@ import {
   calculateBarbellPlates,
   calculateProgressiveOverload,
   calculateMuscleVolumeLandmarks,
+  calculateMesocycleWeekPlan,
   compareProgressiveOverload,
   exerciseById,
   gymCalories,
@@ -185,6 +186,27 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   const [autoScheduleOnFinish, setAutoScheduleOnFinish] = useState(true);
   const [extraExerciseId, setExtraExerciseId] = useState('');
   const [isSessionMinimized, setIsSessionMinimized] = useState<boolean>(false);
+  const [activeMesoWeek, setActiveMesoWeek] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('vortexcal_active_mesocycle_week');
+      return saved ? parseInt(saved, 10) : 1;
+    } catch {
+      return 1;
+    }
+  });
+
+  useEffect(() => {
+    const handleMesoChange = () => {
+      try {
+        const saved = localStorage.getItem('vortexcal_active_mesocycle_week');
+        if (saved) setActiveMesoWeek(parseInt(saved, 10));
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('vortexcal_meso_week_changed', handleMesoChange);
+    return () => window.removeEventListener('vortexcal_meso_week_changed', handleMesoChange);
+  }, []);
 
   // CTG Active Phase
   const ctgActivePhase = useMemo(() => {
@@ -300,9 +322,43 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     return () => clearInterval(interval);
   }, [restSecondsLeft]);
 
+  const handleApplyReadinessAdjustment = (adjustmentPct: number) => {
+    if (adjustmentPct === 0) {
+      notifyInfo('Giữ nguyên giáo án', 'Khối lượng và cường độ được giữ nguyên theo đúng kê đơn cơ sở.');
+      return;
+    }
+
+    if (adjustmentPct < 0) {
+      setScheduledBanner(
+        `Đã kích hoạt Autoregulation: Giảm ${Math.abs(adjustmentPct)}% thể tích hôm nay để bảo vệ hệ thần kinh trung ương (CNS Recovery)!`
+      );
+      setTimeout(() => setScheduledBanner(null), 5000);
+      notifySuccess(
+        'Đã kích hoạt Autoregulation!',
+        `Đã tự động giảm ${Math.abs(adjustmentPct)}% số hiệp tập để cơ thể phục hồi tối ưu.`
+      );
+    } else {
+      setScheduledBanner(
+        `Trạng thái đỉnh cao (+${adjustmentPct}%)! Bạn có thể tự tin thêm 1 hiệp làm việc hoặc tăng 1-2.5kg cho bài compound chính hôm nay!`
+      );
+      setTimeout(() => setScheduledBanner(null), 5000);
+      notifySuccess(
+        'Sẵn sàng bứt phá PR!',
+        'Cơ thể và hệ thần kinh đang ở trạng thái tối ưu (Green Zone).'
+      );
+    }
+  };
+
   const handleStartActiveSession = (session: PlannedSession) => {
+    const weekPlan = calculateMesocycleWeekPlan(activeMesoWeek);
     const initialSets: ActiveSessionState['sets'] = {};
-    session.prescriptions.forEach((p) => {
+    const effectivePrescriptions = session.prescriptions.map((p) => {
+      // If Deload week (Week 5), cut sets by ~45%
+      const setsCount = activeMesoWeek === 5 ? Math.max(2, Math.round(p.sets * 0.55)) : p.sets;
+      return { ...p, sets: setsCount };
+    });
+
+    effectivePrescriptions.forEach((p) => {
       const lastPr = prs[p.exerciseId]?.weightKg || 40;
       const defaultReps = parseInt(p.reps) || 10;
       for (let i = 0; i < p.sets; i++) {
@@ -311,14 +367,14 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           reps: defaultReps,
           completed: false,
           setType: i === 0 && p.sets > 3 ? 'warmup' : 'normal',
-          rpe: p.rpe || 8,
-          rir: p.rpe ? Math.max(0, 10 - p.rpe) : 2,
+          rpe: weekPlan.targetRpe,
+          rir: weekPlan.targetRir,
         };
       }
     });
     setActiveSession({
       planned: session,
-      prescriptions: [...session.prescriptions],
+      prescriptions: effectivePrescriptions,
       startedAt: Date.now(),
       sets: initialSets,
     });
@@ -864,6 +920,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     return (
       <LiveWorkoutSessionView
         activeSession={activeSession}
+        activeMesoWeek={activeMesoWeek}
         elapsedSeconds={elapsedSeconds}
         restSecondsLeft={restSecondsLeft}
         prs={prs}
@@ -1050,6 +1107,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       <TrainingReadinessAutoregulator
         plannedSessions={plannedSessions}
         customExercises={customExercises}
+        onApplyReadinessAdjustment={handleApplyReadinessAdjustment}
       />
 
       {/* Tracked.gg 7-Day Split Matrix & Muscle Recovery Radar */}

@@ -48,6 +48,7 @@ export const TrainingReadinessAutoregulator: React.FC<TrainingReadinessAutoregul
   const [stressEnergy, setStressEnergy] = useState<number>(4); // 1-5 (5=tràn đầy năng lượng)
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'readiness' | 'splitAnalysis'>('readiness');
+  const [copiedReport, setCopiedReport] = useState<boolean>(false);
 
   // Tính Readiness Score theo công thức khoa học
   const readiness = useMemo(() => {
@@ -64,6 +65,23 @@ export const TrainingReadinessAutoregulator: React.FC<TrainingReadinessAutoregul
   const splitEval = useMemo(() => {
     return evaluateSplitScientificQuality(plannedSessions, customExercises);
   }, [plannedSessions, customExercises]);
+
+  const handleCopyReport = () => {
+    const text = [
+      '📊 BÁO CÁO PHỤC HỒI & ĐỘ SẴN SÀNG (AUTOREGULATION CHECK-IN)',
+      `• Điểm sẵn sàng: ${readiness.score}/100 (${readiness.level.toUpperCase()})`,
+      `• Đánh giá: ${readiness.title}`,
+      `• Chỉ dẫn: ${readiness.actionHeadline}`,
+      `• Giấc ngủ: ${sleepHours}h (Chất lượng ${sleepQuality}/5)`,
+      `• Mỏi cơ (DOMS): ${sorenessLevel}/5 | Khớp: ${jointComfort}/5 | Năng lượng: ${stressEnergy}/5`,
+      `• Phân bổ lịch tập: Tần suất trung bình ${splitEval.averageFrequency}x / tuần (Điểm tối ưu: ${splitEval.scientificScore}/100)`,
+      `• Khuyến nghị thể tích: ${readiness.volumeAdjustmentPct >= 0 ? '+' : ''}${readiness.volumeAdjustmentPct}% volume`,
+    ].join('\n');
+
+    navigator.clipboard.writeText(text);
+    setCopiedReport(true);
+    setTimeout(() => setCopiedReport(false), 2500);
+  };
 
   return (
     <div className="bg-gradient-to-br from-[#0e131f] via-[#111827] to-[#0b0f19] border border-blue-500/30 rounded-3xl p-4 sm:p-6 shadow-xl text-white relative overflow-hidden">
@@ -201,7 +219,25 @@ export const TrainingReadinessAutoregulator: React.FC<TrainingReadinessAutoregul
                   </div>
 
                   {onApplyReadinessAdjustment && readiness.volumeAdjustmentPct !== 0 && (
-                    <div className="pt-3 border-t border-white/[0.08] mt-3 flex justify-end">
+                    <div className="pt-3 border-t border-white/[0.08] mt-3 flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyReport}
+                        className="px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-white/80 hover:text-white text-xs font-semibold border border-white/10 transition-all flex items-center gap-1.5 cursor-pointer"
+                        title="Sao chép tóm tắt chẩn đoán phục hồi"
+                      >
+                        {copiedReport ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-emerald-300">Đã sao chép!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Sao Chép Chẩn Đoán</span>
+                          </>
+                        )}
+                      </button>
                       <button
                         type="button"
                         onClick={() => onApplyReadinessAdjustment(readiness.volumeAdjustmentPct)}

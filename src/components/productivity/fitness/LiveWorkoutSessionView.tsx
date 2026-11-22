@@ -33,6 +33,7 @@ import {
   calculateBarbellPlates,
   calculateProgressiveOverload,
   compareProgressiveOverload,
+  calculateMesocycleWeekPlan,
 } from '../../../utils/fitnessMetrics';
 
 export interface ActiveSessionState {
@@ -76,6 +77,7 @@ export interface LiveWorkoutSessionViewProps {
   onAdjustRestTimer: (deltaSeconds: number) => void;
   onSkipRestTimer: () => void;
   onSetRestTimerTotal: (seconds: number) => void;
+  activeMesoWeek?: number;
   customExercises?: Exercise[];
   lang?: 'vi' | 'en';
 }
@@ -102,11 +104,16 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
   onAdjustRestTimer,
   onSkipRestTimer,
   onSetRestTimerTotal,
+  activeMesoWeek = 1,
   customExercises = [],
   lang = 'vi',
 }) => {
   const [extraExId, setExtraExId] = useState('');
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
+
+  const mesoPlan = useMemo(() => {
+    return calculateMesocycleWeekPlan(activeMesoWeek);
+  }, [activeMesoWeek]);
 
   const getExercise = (id: string): Exercise | undefined => {
     return exerciseById(id) || customExercises.find((e) => e.id === id);
@@ -235,13 +242,15 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
 
         {/* Scientific RP Hypertrophy Guidance Bar */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-cyan-950/20 to-transparent border border-cyan-500/20 text-xs">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="font-bold text-white">Nguyên Lý Quá Tải RP:</span>
-            <span className="text-cyan-300 font-mono font-bold">Dải MAV · Mục tiêu RIR 1-2 (RPE 8-9)</span>
+            <span className="font-bold text-white">Tuần {mesoPlan.weekNumber}: {mesoPlan.title.split(': ')[1]} ({mesoPlan.stage.toUpperCase()})</span>
+            <span className="text-cyan-300 font-mono font-bold bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
+              Mục Tiêu: RIR {mesoPlan.targetRir} · RPE {mesoPlan.targetRpe}
+            </span>
           </div>
           <div className="text-[11px] text-white/60">
-            Dừng mỗi hiệp khi còn 1-2 rep dự trữ để tối ưu hóa phì đại cơ mTOR và hạn chế mệt mỏi thần kinh
+            {mesoPlan.summary}
           </div>
         </div>
 

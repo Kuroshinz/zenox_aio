@@ -17,20 +17,27 @@ import {
   Dumbbell,
   ShieldCheck,
   RotateCcw,
+  Plus,
+  Check,
 } from 'lucide-react';
-import { Goal } from '../../../types/productivity';
+import { Goal, MealLog, MealSlot } from '../../../types/productivity';
 import {
   calculatePeriWorkoutNutrition,
   calculateRefeedTargets,
   PeriWorkoutNutritionPlan,
   RefeedPlanResult,
+  todayString,
 } from '../../../utils/fitnessMetrics';
+import { notifySuccess } from '../../../utils/notify';
+import { playSuccessSound } from '../../../utils/sound';
 
 interface ScientificNutritionStudioProps {
   userWeightKg: number;
   tdeeValue: number;
   goal: Goal;
   bodyFatPct?: number;
+  selectedDate?: string;
+  onAddMealLog?: (meal: Omit<MealLog, 'id' | 'createdAt'>) => MealLog;
 }
 
 export const ScientificNutritionStudio: React.FC<ScientificNutritionStudioProps> = ({
@@ -38,9 +45,15 @@ export const ScientificNutritionStudio: React.FC<ScientificNutritionStudioProps>
   tdeeValue,
   goal,
   bodyFatPct = 15,
+  selectedDate = todayString(),
+  onAddMealLog,
 }) => {
   const [activeTab, setActiveTab] = useState<'periWorkout' | 'refeed' | 'supplements'>('periWorkout');
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
+  const [selectedPreIndex, setSelectedPreIndex] = useState<number>(0);
+  const [selectedPostIndex, setSelectedPostIndex] = useState<number>(0);
+  const [justLoggedPre, setJustLoggedPre] = useState<boolean>(false);
+  const [justLoggedPost, setJustLoggedPost] = useState<boolean>(false);
 
   // Tính toán dinh dưỡng quanh buổi tập theo thể trọng & mục tiêu
   const periPlan: PeriWorkoutNutritionPlan = useMemo(() => {
@@ -51,6 +64,78 @@ export const ScientificNutritionStudio: React.FC<ScientificNutritionStudioProps>
   const refeedPlan: RefeedPlanResult = useMemo(() => {
     return calculateRefeedTargets(userWeightKg, tdeeValue, goal, bodyFatPct);
   }, [userWeightKg, tdeeValue, goal, bodyFatPct]);
+
+  // 1-Click Log Pre-Workout Meal
+  const handleLogPreWorkout = () => {
+    if (!onAddMealLog) return;
+    const foodDesc = periPlan.preWorkout.recommendedFoods[selectedPreIndex] || 'Bữa trước tập chuẩn ISSN';
+    const cals = Math.round(
+      periPlan.preWorkout.carbsGrams * 4 +
+        periPlan.preWorkout.proteinGrams * 4 +
+        periPlan.preWorkout.fatsGrams * 9
+    );
+
+    onAddMealLog({
+      date: selectedDate,
+      slot: 'snack',
+      description: `Bữa Trước Tập (Pre-Workout ISSN): ${foodDesc}`,
+      items: [
+        {
+          name: foodDesc,
+          amount: 1,
+          unit: 'g',
+          kcal: cals,
+          protein: periPlan.preWorkout.proteinGrams,
+          carbs: periPlan.preWorkout.carbsGrams,
+          fat: periPlan.preWorkout.fatsGrams,
+        },
+      ],
+    });
+
+    setJustLoggedPre(true);
+    setTimeout(() => setJustLoggedPre(false), 2500);
+    playSuccessSound();
+    notifySuccess(
+      'Đã ghi bữa Pre-Workout!',
+      `+${periPlan.preWorkout.proteinGrams}g đạm, +${periPlan.preWorkout.carbsGrams}g carb nạp năng lượng chuẩn bị tập.`
+    );
+  };
+
+  // 1-Click Log Post-Workout Recovery Meal
+  const handleLogPostWorkout = () => {
+    if (!onAddMealLog) return;
+    const foodDesc = periPlan.postWorkout.recommendedFoods[selectedPostIndex] || 'Bữa phục hồi sau tập mTOR';
+    const cals = Math.round(
+      periPlan.postWorkout.carbsGrams * 4 +
+        periPlan.postWorkout.proteinGrams * 4 +
+        5 * 9
+    );
+
+    onAddMealLog({
+      date: selectedDate,
+      slot: 'dinner',
+      description: `Bữa Sau Tập (Post-Workout Recovery mTOR): ${foodDesc}`,
+      items: [
+        {
+          name: foodDesc,
+          amount: 1,
+          unit: 'g',
+          kcal: cals,
+          protein: periPlan.postWorkout.proteinGrams,
+          carbs: periPlan.postWorkout.carbsGrams,
+          fat: 5,
+        },
+      ],
+    });
+
+    setJustLoggedPost(true);
+    setTimeout(() => setJustLoggedPost(false), 2500);
+    playSuccessSound();
+    notifySuccess(
+      'Đã ghi bữa Post-Workout!',
+      `+${periPlan.postWorkout.proteinGrams}g đạm (Leucine ≥ 3.2g) kích hoạt phục hồi mô cơ và tái tạo glycogen.`
+    );
+  };
 
   return (
     <div className="bg-gradient-to-br from-[#120d18] via-[#1a1222] to-[#0c0910] border border-fuchsia-500/30 rounded-3xl p-4 sm:p-6 shadow-xl text-white relative overflow-hidden">
@@ -137,7 +222,7 @@ export const ScientificNutritionStudio: React.FC<ScientificNutritionStudioProps>
               <div className="p-3.5 rounded-2xl bg-fuchsia-950/30 border border-fuchsia-500/20 text-xs text-fuchsia-200 flex items-start gap-2.5">
                 <Info className="w-4 h-4 text-fuchsia-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Nguyên tắc ISSN:</strong> Phân bổ Carbohydrate và Protein tập trung trong khung cửa sổ quanh buổi tập (Peri-workout window) tối ưu hóa nồng độ Glycogen, đẩy cao nồng độ amino acid tự do trong máu và giảm thiểu dị hóa mô cơ.
+                  <strong>Nguyên tắc ISSN:</strong> Phân bổ Carbohydrate và Protein tập trung trong khung cửa sổ quanh buổi tập (Peri-workout window) tối ưu hóa nồng độ Glycogen, đẩy cao nồng độ amino acid tự do trong máu và kích hoạt tổng hợp protein cơ bắp (MPS).
                 </span>
               </div>
 
@@ -172,16 +257,58 @@ export const ScientificNutritionStudio: React.FC<ScientificNutritionStudioProps>
                       "{periPlan.preWorkout.scientificPurpose}"
                     </p>
 
-                    <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-1.5">
-                      <span className="text-[10px] uppercase font-bold text-white/50 block">Gợi ý thực tế:</span>
+                    {/* Interactive Combo Selector */}
+                    <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-2">
+                      <span className="text-[10px] uppercase font-bold text-white/50 block">Chọn thực đơn mẫu:</span>
                       {periPlan.preWorkout.recommendedFoods.map((f, idx) => (
-                        <div key={idx} className="text-xs text-white/80 flex items-start gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                          <span>{f}</span>
-                        </div>
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setSelectedPreIndex(idx)}
+                          className={`w-full text-left p-2 rounded-xl border text-xs transition-all cursor-pointer flex items-start gap-2 ${
+                            selectedPreIndex === idx
+                              ? 'bg-amber-950/50 border-amber-500/50 text-white shadow-md'
+                              : 'bg-white/[0.02] border-white/[0.05] text-white/70 hover:bg-white/[0.05]'
+                          }`}
+                        >
+                          <div
+                            className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                              selectedPreIndex === idx
+                                ? 'border-amber-400 bg-amber-500 text-black'
+                                : 'border-white/30'
+                            }`}
+                          >
+                            {selectedPreIndex === idx && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                          </div>
+                          <span className="text-[11px] leading-snug">{f}</span>
+                        </button>
                       ))}
                     </div>
                   </div>
+
+                  {/* 1-Click Log Button */}
+                  {onAddMealLog && (
+                    <div className="pt-2 border-t border-white/[0.06]">
+                      <button
+                        type="button"
+                        onClick={handleLogPreWorkout}
+                        disabled={justLoggedPre}
+                        className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {justLoggedPre ? (
+                          <>
+                            <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                            <span>Đã ghi vào nhật ký!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-4 h-4" />
+                            <span>⚡ Ghi Bữa Pre-Workout Vào Hôm Nay</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Intra-Workout */}
@@ -211,7 +338,7 @@ export const ScientificNutritionStudio: React.FC<ScientificNutritionStudioProps>
                     </p>
                   </div>
 
-                  <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] text-[11px] text-cyan-200">
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] text-[11px] text-cyan-200">
                     💡 Chỉ cần mất 2% trọng lượng nước cơ thể do mồ hôi, lực phát triển tối đa (Peak Force) đã có thể suy giảm tới 10-15%.
                   </div>
                 </div>
@@ -246,16 +373,58 @@ export const ScientificNutritionStudio: React.FC<ScientificNutritionStudioProps>
                       "{periPlan.postWorkout.scientificPurpose}"
                     </p>
 
-                    <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-1.5">
-                      <span className="text-[10px] uppercase font-bold text-white/50 block">Gợi ý thực tế:</span>
+                    {/* Interactive Combo Selector */}
+                    <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-2">
+                      <span className="text-[10px] uppercase font-bold text-white/50 block">Chọn thực đơn mẫu:</span>
                       {periPlan.postWorkout.recommendedFoods.map((f, idx) => (
-                        <div key={idx} className="text-xs text-white/80 flex items-start gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                          <span>{f}</span>
-                        </div>
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setSelectedPostIndex(idx)}
+                          className={`w-full text-left p-2 rounded-xl border text-xs transition-all cursor-pointer flex items-start gap-2 ${
+                            selectedPostIndex === idx
+                              ? 'bg-emerald-950/50 border-emerald-500/50 text-white shadow-md'
+                              : 'bg-white/[0.02] border-white/[0.05] text-white/70 hover:bg-white/[0.05]'
+                          }`}
+                        >
+                          <div
+                            className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                              selectedPostIndex === idx
+                                ? 'border-emerald-400 bg-emerald-500 text-black'
+                                : 'border-white/30'
+                            }`}
+                          >
+                            {selectedPostIndex === idx && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                          </div>
+                          <span className="text-[11px] leading-snug">{f}</span>
+                        </button>
                       ))}
                     </div>
                   </div>
+
+                  {/* 1-Click Log Button */}
+                  {onAddMealLog && (
+                    <div className="pt-2 border-t border-white/[0.06]">
+                      <button
+                        type="button"
+                        onClick={handleLogPostWorkout}
+                        disabled={justLoggedPost}
+                        className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {justLoggedPost ? (
+                          <>
+                            <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                            <span>Đã ghi vào nhật ký!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            <span>⚡ Ghi Bữa Post-Workout Vào Hôm Nay</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

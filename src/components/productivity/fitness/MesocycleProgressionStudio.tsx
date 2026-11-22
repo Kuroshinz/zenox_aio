@@ -37,7 +37,14 @@ export const MesocycleProgressionStudio: React.FC<MesocycleProgressionStudioProp
   onSelectWeek,
   activePhase,
 }) => {
-  const [selectedWeek, setSelectedWeek] = useState<number>(currentWeekNumber);
+  const [selectedWeek, setSelectedWeek] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('vortexcal_active_mesocycle_week');
+      return saved ? parseInt(saved, 10) : currentWeekNumber;
+    } catch {
+      return currentWeekNumber;
+    }
+  });
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
 
   // Lấy thông tin tuần đang chọn theo RP Periodization
@@ -51,6 +58,12 @@ export const MesocycleProgressionStudio: React.FC<MesocycleProgressionStudioProp
 
   const handleWeekChange = (w: number) => {
     setSelectedWeek(w);
+    try {
+      localStorage.setItem('vortexcal_active_mesocycle_week', String(w));
+      window.dispatchEvent(new Event('vortexcal_meso_week_changed'));
+    } catch {
+      // ignore
+    }
     if (onSelectWeek) {
       onSelectWeek(w);
     }
