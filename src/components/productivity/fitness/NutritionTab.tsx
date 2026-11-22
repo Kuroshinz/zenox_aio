@@ -74,6 +74,7 @@ import {
 } from '../../../utils/fitnessMetrics';
 import { Donut, ProgressBar, StackedBar } from '../../charts/SimpleCharts';
 import { GeminiMacroModal } from './GeminiMacroModal';
+import { ScientificNutritionStudio } from './ScientificNutritionStudio';
 import { GeminiMacroItem } from '../../../services/geminiSync';
 import { notifySuccess, notifyInfo } from '../../../utils/notify';
 import { playSuccessSound } from '../../../utils/sound';
@@ -568,6 +569,14 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
 
   return (
     <div className="space-y-5">
+      {/* Evidence-Based Scientific Nutrition Studio (Peri-workout, Refeed, ISSN Tier A Supplements) */}
+      <ScientificNutritionStudio
+        userWeightKg={userWeightKg}
+        tdeeValue={userTdee}
+        goal={profile.goal}
+        bodyFatPct={profile.targetBodyFatPct || 15}
+      />
+
       {/* CTG Active Phase Sync Card */}
       {ctgActivePhase && (
         <div className="bg-gradient-to-r from-rose-950/40 via-red-950/30 to-[#070204] border border-rose-500/40 rounded-2xl p-4 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white">

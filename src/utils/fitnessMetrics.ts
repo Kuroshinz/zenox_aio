@@ -3183,3 +3183,532 @@ export function compareProgressiveOverload(
     badgeText,
   };
 }
+
+// ==========================================
+// KHOA HỌC THỂ THAO & CHU KỲ HÓA (EXERCISE SCIENCE & PERIODIZATION)
+// Nguồn tham chiếu: Renaissance Periodization (Dr. Mike Israetel),
+// Brad Schoenfeld (Hypertrophy Meta-analyses), ISSN Position Stands, Eric Helms (3DMJ)
+// ==========================================
+
+export interface MesocycleWeekInfo {
+  weekNumber: number;
+  title: string;
+  stage: 'entry_mev' | 'ramp_mav' | 'overreach_mrv' | 'deload';
+  targetRir: number;
+  targetRpe: number;
+  volumeMultiplier: number; // Tỉ lệ hiệp so với tuần cơ sở
+  summary: string;
+  scientificRationale: string;
+  actionGuidance: string[];
+}
+
+export function calculateMesocycleWeekPlan(weekNumber: number): MesocycleWeekInfo {
+  const normalizedWeek = ((weekNumber - 1) % 5) + 1;
+
+  switch (normalizedWeek) {
+    case 1:
+      return {
+        weekNumber: 1,
+        title: 'Tuần 1: Khởi động Chu kỳ (MEV Entry)',
+        stage: 'entry_mev',
+        targetRir: 3,
+        targetRpe: 7,
+        volumeMultiplier: 1.0,
+        summary: 'Bắt đầu ở Khối lượng Hiệu quả Tối thiểu (MEV) với RIR 3 (còn 3 reps trong bình).',
+        scientificRationale: 'Tạo đà thích nghi thần kinh - cơ sau tuần Deload trước mà không gây tổn thương mô quá mức. Cho phép cơ thể nhạy cảm với phì đại (hypertrophic sensitivity).',
+        actionGuidance: [
+          'Thực hiện đúng số hiệp cơ sở được kê đơn.',
+          'Dừng mỗi hiệp khi còn 3 lần lặp nữa mới tới thất bại (RIR 3 / RPE 7).',
+          'Tập trung tối đa vào kỹ thuật chuẩn và phạm vi chuyển động đầy đủ (Full ROM).',
+        ],
+      };
+    case 2:
+      return {
+        weekNumber: 2,
+        title: 'Tuần 2: Tích lũy Tải trọng (MAV Ramp 1)',
+        stage: 'ramp_mav',
+        targetRir: 2,
+        targetRpe: 8,
+        volumeMultiplier: 1.1,
+        summary: 'Tiến vào dải Thích nghi Tối đa (MAV) với RIR 2 (còn 2 reps trong bình).',
+        scientificRationale: 'Cơ bắp bắt đầu kháng cự với kích thích của Tuần 1. Tăng nhẹ tải trọng (2.5%) hoặc thêm 1 hiệp cho các bài compound để duy trì tín hiệu mTOR.',
+        actionGuidance: [
+          'Tăng nhẹ mức tạ 1-2.5kg hoặc tăng 1 rep so với Tuần 1.',
+          'Độ khó đẩy lên RIR 2 (RPE 8) - cảm giác nặng rõ rệt ở những rep cuối.',
+          'Ghi nhận mức độ mỏi cơ (DOMS) để điều chỉnh tuần tiếp theo.',
+        ],
+      };
+    case 3:
+      return {
+        weekNumber: 3,
+        title: 'Tuần 3: Đỉnh cao Thích nghi (MAV Ramp 2)',
+        stage: 'ramp_mav',
+        targetRir: 1,
+        targetRpe: 9,
+        volumeMultiplier: 1.25,
+        summary: 'Điểm ngọt ngào nhất của chu kỳ phì đại (Sweet Spot) với RIR 1.',
+        scientificRationale: 'Khai thác tối đa đơn vị vận động ngưỡng cao (High-threshold motor units). Tuyển dụng gần như 100% sợi cơ Type II.',
+        actionGuidance: [
+          'Đẩy mạnh cường độ: chỉ để lại đúng 1 rep dự trữ (RIR 1 / RPE 9).',
+          'Có thể thêm 1 hiệp phụ (back-off set) cho các nhóm cơ ưu tiên.',
+          'Tăng cường ăn carb quanh buổi tập và ngủ đủ 7.5 - 8.5 tiếng để phục hồi.',
+        ],
+      };
+    case 4:
+      return {
+        weekNumber: 4,
+        title: 'Tuần 4: Quá tải Vượt ngưỡng (MRV Overreaching)',
+        stage: 'overreach_mrv',
+        targetRir: 0,
+        targetRpe: 10,
+        volumeMultiplier: 1.35,
+        summary: 'Chạm trần Khối lượng Phục hồi Tối đa (MRV) với RIR 0 (Failure có kiểm soát).',
+        scientificRationale: 'Functional Overreaching: cố ý tích tụ lượng mệt mỏi đỉnh điểm trong thời gian ngắn để kích hoạt siêu bù đắp (Supercompensation) sau khi xả tải.',
+        actionGuidance: [
+          'Tập đến gần hoặc chạm ngưỡng thất bại kỹ thuật (Technical Failure) ở hiệp cuối.',
+          'Chấp nhận cảm giác mỏi cơ toàn thân và hiệu suất bắt đầu chững lại.',
+          'Chuẩn bị tâm lý chuyển sang tuần Deload tiếp theo.',
+        ],
+      };
+    case 5:
+    default:
+      return {
+        weekNumber: 5,
+        title: 'Tuần 5: Xả tải Chủ động (Deload & Resensitization)',
+        stage: 'deload',
+        targetRir: 4,
+        targetRpe: 6,
+        volumeMultiplier: 0.55,
+        summary: 'Giảm 45-50% số hiệp, giữ nguyên hoặc giảm nhẹ mức tạ để xả mệt mỏi.',
+        scientificRationale: 'Tiêu biến mệt mỏi hệ thần kinh trung ương (CNS fatigue), chữa lành vi chấn thương gân khớp, và khôi phục độ nhạy của thụ thể sợi cơ với kích thích phì đại.',
+        actionGuidance: [
+          'Cắt giảm 40-50% tổng số hiệp tập so với Tuần 4.',
+          'Duy trì mức tạ vừa phải, dừng ở RIR 3-4 (cực kỳ thoải mái, không kiệt sức).',
+          'Rời phòng gym với cảm giác sảng khoái và tràn đầy năng lượng tích lũy.',
+        ],
+      };
+  }
+}
+
+export interface TrainingReadinessInput {
+  sleepHours: number;
+  sleepQuality: number; // 1-5
+  sorenessLevel: number; // 1-5 (1=rất đau nhức, 5=hoàn toàn tươi mới)
+  jointAche: number; // 1-5 (1=đau khớp rõ, 5=khớp êm ru)
+  stressEnergy: number; // 1-5 (1=kiệt sức/stress cao, 5=tràn đầy sinh lực)
+}
+
+export interface TrainingReadinessResult {
+  score: number; // 0 - 100
+  level: 'optimal' | 'moderate' | 'fatigued' | 'critical';
+  title: string;
+  color: string;
+  volumeAdjustmentPct: number; // e.g. +10%, 0%, -20%, -50%
+  rpeAdjustment: number; // e.g. 0, -0.5, -1, -2
+  actionHeadline: string;
+  detailedAdvice: string[];
+}
+
+export function calculateTrainingReadiness(input: TrainingReadinessInput): TrainingReadinessResult {
+  // Trọng số: Giấc ngủ (30%), Độ đau cơ (25%), Khớp (20%), Căng thẳng/Năng lượng (25%)
+  const sleepFactor = Math.min(100, (input.sleepHours / 8) * 50 + (input.sleepQuality / 5) * 50);
+  const sorenessFactor = (input.sorenessLevel / 5) * 100;
+  const jointFactor = (input.jointAche / 5) * 100;
+  const stressFactor = (input.stressEnergy / 5) * 100;
+
+  const totalScore = Math.round(
+    sleepFactor * 0.3 + sorenessFactor * 0.25 + jointFactor * 0.2 + stressFactor * 0.25
+  );
+
+  if (totalScore >= 85) {
+    return {
+      score: totalScore,
+      level: 'optimal',
+      title: 'Trạng Thái Tối Ưu (Green Zone - Peak Readiness)',
+      color: '#10b981',
+      volumeAdjustmentPct: 5,
+      rpeAdjustment: 0,
+      actionHeadline: 'Hệ thần kinh và cơ bắp đang ở đỉnh cao! Sẵn sàng chinh phục PR mới.',
+      detailedAdvice: [
+        'Hôm nay bạn hoàn toàn có thể tự tin đẩy mức tạ tăng tiến (+1-2.5kg).',
+        'Có thể thực hiện thêm 1 hiệp nếu cảm thấy lực còn dồi dào ở hiệp cuối.',
+        'Khai thác triệt để buổi tập này với cường độ RPE 8-9.',
+      ],
+    };
+  }
+
+  if (totalScore >= 68) {
+    return {
+      score: totalScore,
+      level: 'moderate',
+      title: 'Trạng Thái Tốt (Standard Zone - High Performance)',
+      color: '#3b82f6',
+      volumeAdjustmentPct: 0,
+      rpeAdjustment: 0,
+      actionHeadline: 'Sẵn sàng tập luyện theo đúng kế hoạch kê đơn (Prescribed Plan).',
+      detailedAdvice: [
+        'Thực hiện chuẩn xác số hiệp và reps như lịch trình.',
+        'Khởi động kỹ nhóm cơ chính và khớp liên quan trước khi vào working set.',
+        'Giữ RIR ở mức 1-2, không nhất thiết phải ép tới failure nếu chưa đến tuần peak.',
+      ],
+    };
+  }
+
+  if (totalScore >= 50) {
+    return {
+      score: totalScore,
+      level: 'fatigued',
+      title: 'Cảnh Báo Mệt Mỏi (Yellow Zone - Accumulated Fatigue)',
+      color: '#f59e0b',
+      volumeAdjustmentPct: -25,
+      rpeAdjustment: -1,
+      actionHeadline: 'Cơ thể đang tích tụ mệt mỏi đáng kể. Cần tự điều chỉnh (Autoregulation).',
+      detailedAdvice: [
+        'Nên giảm 1 hiệp cho mỗi bài tập để bảo vệ hệ thần kinh trung ương.',
+        'Hạ bớt 5-10% mức tạ nếu tốc độ phát lực (bar velocity) bị chậm rõ rệt.',
+        'Tránh tập tới failure; giữ RIR >= 2-3 để đảm bảo an toàn kỹ thuật.',
+      ],
+    };
+  }
+
+  return {
+    score: totalScore,
+    level: 'critical',
+    title: 'Báo Động Quá Tải (Red Zone - Deload / Recovery Needed)',
+    color: '#ef4444',
+    volumeAdjustmentPct: -50,
+    rpeAdjustment: -2,
+    actionHeadline: 'Nguy cơ chấn thương và quá tải cấp tính cao! Đề xuất Active Recovery.',
+    detailedAdvice: [
+      'Chuyển buổi tập hôm nay thành buổi đi dạo nhẹ (LISS cardio) hoặc giãn cơ cơ động (Mobility).',
+      'Nếu vẫn muốn nâng tạ: Chỉ tập 50% số hiệp với mức tạ nhẹ (RPE 5-6), không đẩy nặng.',
+      'Ưu tiên hàng đầu hôm nay là dinh dưỡng bù đắp, uống nước và ngủ bù sớm.',
+    ],
+  };
+}
+
+export interface SplitMuscleFrequencyItem {
+  muscle: MuscleGroup;
+  muscleLabel: string;
+  weeklySets: number;
+  frequencyDays: number;
+  landmarkEvaluation: 'below_mev' | 'mev' | 'mav_sweet_spot' | 'mrv_near' | 'mrv_exceeded';
+  statusLabel: string;
+  statusColor: string;
+  scientificFeedback: string;
+}
+
+export function evaluateSplitScientificQuality(
+  sessions: PlannedSession[],
+  customList: Exercise[] = []
+): {
+  items: SplitMuscleFrequencyItem[];
+  averageFrequency: number;
+  junkVolumeWarnings: string[];
+  scientificScore: number; // 0 - 100
+} {
+  const muscleSets: Record<MuscleGroup, number> = {
+    chest: 0,
+    back: 0,
+    legs: 0,
+    shoulders: 0,
+    arms: 0,
+    core: 0,
+    cardio: 0,
+  };
+
+  const muscleDays: Record<MuscleGroup, Set<number>> = {
+    chest: new Set(),
+    back: new Set(),
+    legs: new Set(),
+    shoulders: new Set(),
+    arms: new Set(),
+    core: new Set(),
+    cardio: new Set(),
+  };
+
+  const junkVolumeWarnings: string[] = [];
+
+  sessions.forEach((s) => {
+    const sessionMuscleSets: Partial<Record<MuscleGroup, number>> = {};
+
+    s.prescriptions.forEach((p) => {
+      const ex = exerciseById(p.exerciseId, customList);
+      if (!ex) return;
+      const m = ex.muscle;
+      muscleSets[m] = (muscleSets[m] || 0) + p.sets;
+      muscleDays[m].add(s.dayIndex);
+      sessionMuscleSets[m] = (sessionMuscleSets[m] || 0) + p.sets;
+    });
+
+    // Cảnh báo Junk volume (> 10-12 sets cho 1 nhóm cơ trong cùng 1 buổi)
+    Object.entries(sessionMuscleSets).forEach(([mKey, setsCount]) => {
+      if (setsCount && setsCount > 10) {
+        const m = mKey as MuscleGroup;
+        junkVolumeWarnings.push(
+          `Buổi "${s.title}": Có ${setsCount} sets cho ${MUSCLE_LABEL[m]} trong 1 buổi. Nghiên cứu của Brad Schoenfeld chỉ ra rằng trên 10 sets/buổi/nhóm cơ có xu hướng sinh ra "Junk Volume" (thể tích rác) do mệt mỏi tích tụ làm giảm khả năng kích thích cơ bắp.`
+        );
+      }
+    });
+  });
+
+  const items: SplitMuscleFrequencyItem[] = (Object.keys(muscleSets) as MuscleGroup[])
+    .filter((m) => muscleSets[m] > 0)
+    .map((m) => {
+      const totalSets = muscleSets[m];
+      const freq = muscleDays[m].size;
+      const config = VOLUME_LANDMARKS_CONFIG[m] || { mev: 8, mav: 14, mrv: 22 };
+      const mavLow = Math.max(config.mev, config.mav - 2);
+      const mavHigh = config.mav + 2;
+
+      let evaluation: SplitMuscleFrequencyItem['landmarkEvaluation'] = 'mav_sweet_spot';
+      let statusLabel = 'Tối Ưu (MAV)';
+      let statusColor = '#10b981';
+      let scientificFeedback = `Tần suất ${freq}x/tuần và ${totalSets} sets/tuần hoàn toàn rơi vào dải phì đại cơ lý tưởng (MAV: ${mavLow}-${mavHigh} sets).`;
+
+      if (totalSets < config.mev) {
+        evaluation = 'below_mev';
+        statusLabel = 'Dưới MEV';
+        statusColor = '#f59e0b';
+        scientificFeedback = `${totalSets} sets/tuần dưới mức hiệu quả tối thiểu (MEV: ${config.mev} sets). Khó tạo ra tín hiệu phì đại rõ rệt, chỉ đủ duy trì.`;
+      } else if (totalSets <= mavLow) {
+        evaluation = 'mev';
+        statusLabel = 'Cơ Bản (MEV)';
+        statusColor = '#3b82f6';
+        scientificFeedback = `Đạt ngưỡng khởi động chu kỳ (${config.mev}-${mavLow} sets). Rất tốt cho tuần đầu của mesocycle.`;
+      } else if (totalSets > config.mrv) {
+        evaluation = 'mrv_exceeded';
+        statusLabel = 'Vượt MRV!';
+        statusColor = '#ef4444';
+        scientificFeedback = `${totalSets} sets/tuần vượt trần phục hồi (MRV: ${config.mrv} sets). Nguy cơ cao gây quá tải hệ thần kinh và teo cơ do không kịp phục hồi.`;
+      } else if (totalSets >= mavHigh) {
+        evaluation = 'mrv_near';
+        statusLabel = 'Cận MRV (Peak)';
+        statusColor = '#8b5cf6';
+        scientificFeedback = `Khối lượng rất cao (${totalSets} sets), gần ngưỡng phục hồi tối đa. Thích hợp cho tuần Peak 4 trước Deload.`;
+      }
+
+      if (freq === 1 && totalSets >= 10) {
+        scientificFeedback += ' Lưu ý: Tần suất 1x/tuần kém hiệu quả hơn 2x/tuần theo phân tích tổng hợp (meta-analysis). Nên tách ra 2 buổi.';
+      }
+
+      return {
+        muscle: m,
+        muscleLabel: MUSCLE_LABEL[m],
+        weeklySets: totalSets,
+        frequencyDays: freq,
+        landmarkEvaluation: evaluation,
+        statusLabel,
+        statusColor,
+        scientificFeedback,
+      };
+    });
+
+  const avgFreq =
+    items.length > 0
+      ? Math.round((items.reduce((acc, curr) => acc + curr.frequencyDays, 0) / items.length) * 10) / 10
+      : 0;
+
+  // Tính điểm khoa học (0-100)
+  let score = 75;
+  if (avgFreq >= 1.8) score += 15;
+  if (junkVolumeWarnings.length === 0) score += 10;
+  else score -= Math.min(20, junkVolumeWarnings.length * 5);
+
+  return {
+    items,
+    averageFrequency: avgFreq,
+    junkVolumeWarnings,
+    scientificScore: Math.min(100, Math.max(30, score)),
+  };
+}
+
+export interface PeriWorkoutNutritionPlan {
+  preWorkout: {
+    timingText: string;
+    carbsGrams: number;
+    proteinGrams: number;
+    fatsGrams: number;
+    hydrationMl: number;
+    recommendedFoods: string[];
+    scientificPurpose: string;
+  };
+  intraWorkout: {
+    hydrationMl: number;
+    sodiumMg: number;
+    carbsGramsOptional: number;
+    notes: string;
+  };
+  postWorkout: {
+    timingText: string;
+    proteinGrams: number;
+    carbsGrams: number;
+    leucineGrams: number;
+    recommendedFoods: string[];
+    scientificPurpose: string;
+  };
+  evidenceBasedSupplements: {
+    name: string;
+    tier: 'A_Grade' | 'B_Grade';
+    dosage: string;
+    bestTiming: string;
+    provenBenefit: string;
+    citation: string;
+  }[];
+}
+
+export function calculatePeriWorkoutNutrition(
+  weightKg: number,
+  goal: Goal = 'maintain'
+): PeriWorkoutNutritionPlan {
+  const isCut = goal === 'cut';
+  const isBulk = goal === 'bulk';
+
+  // Pre-workout: 0.35-0.5g carbs/kg, 0.3-0.4g protein/kg
+  const preCarbs = Math.round(weightKg * (isCut ? 0.35 : isBulk ? 0.55 : 0.45));
+  const preProtein = Math.round(weightKg * 0.35);
+  const preFat = Math.round(weightKg * 0.12);
+
+  // Post-workout: 0.4-0.5g protein/kg (đảm bảo ~3g leucine), 0.5-0.8g carbs/kg
+  const postProtein = Math.round(weightKg * (isCut ? 0.45 : 0.4));
+  const postCarbs = Math.round(weightKg * (isCut ? 0.45 : isBulk ? 0.85 : 0.65));
+
+  return {
+    preWorkout: {
+      timingText: '1 - 2 giờ trước buổi tập',
+      carbsGrams: preCarbs,
+      proteinGrams: preProtein,
+      fatsGrams: preFat,
+      hydrationMl: 400 + Math.round(weightKg * 2),
+      recommendedFoods: [
+        `Yến mạch (${Math.round(preCarbs * 1.5)}g) nấu với 1 muỗng Whey Protein + 1 quả chuối`,
+        `1 củ khoai lang luộc (${Math.round(preCarbs * 3.5)}g) + 120g ức gà áp chảo`,
+        `Bánh mì ngũ cốc nguyên cám + 3 lòng trắng trứng + 1 lòng đỏ quả trứng`,
+      ],
+      scientificPurpose: 'Làm đầy kho dự trữ Glycogen trong cơ bắp, ổn định đường huyết, và cung cấp acid amin tự do trong máu để ngăn chặn dị hóa cơ bắp trong lúc tập.',
+    },
+    intraWorkout: {
+      hydrationMl: 500 + Math.round(weightKg * 3),
+      sodiumMg: 400 + Math.round(weightKg * 4),
+      carbsGramsOptional: isBulk ? 25 : 0,
+      notes: 'Uống từng ngụm nhỏ 150-200ml mỗi 15-20 phút. Bổ sung một nhúm nhỏ muối khoáng/điện giải nếu tập trong môi trường nóng hoặc đổ nhiều mồ hôi.',
+    },
+    postWorkout: {
+      timingText: 'Trong vòng 30 - 120 phút sau khi kết thúc buổi tập',
+      proteinGrams: postProtein,
+      carbsGrams: postCarbs,
+      leucineGrams: 3.2,
+      recommendedFoods: [
+        `1 muỗng Whey Isolate (25g protein) + ${Math.round(postCarbs * 2)}g cơm trắng + 150g cá hồi hoặc thịt bò nạc`,
+        `Cơm trắng hoặc phở gà (${Math.round(postCarbs * 3.2)}g) + 150g ức gà/tôm hấp + rau củ quả`,
+        `Sữa chua Hy Lạp (Greek Yogurt 200g) + 1 quả chuối chín + việt quất và các loại hạt`,
+      ],
+      scientificPurpose: 'Kích hoạt công tắc mTOR khởi phát Tổng hợp Protein Cơ bắp (MPS) nhờ hàm lượng Leucine cao (>= 3g), đồng thời tái nạp Glycogen nhanh chóng.',
+    },
+    evidenceBasedSupplements: [
+      {
+        name: 'Creatine Monohydrate',
+        tier: 'A_Grade',
+        dosage: '3 - 5g mỗi ngày (không cần phase xả tải, uống đều đặn mỗi ngày)',
+        bestTiming: 'Cùng bữa ăn bất kỳ hoặc ngay sau buổi tập với carb/protein',
+        provenBenefit: 'Tăng lượng phosphocreatine tế bào, tăng 5-15% sức mạnh tối đa và khả năng lặp lại hiệp nặng, kéo nước vào tế bào cơ.',
+        citation: 'ISSN Position Stand on Creatine (Buford et al., JISSN 2017)',
+      },
+      {
+        name: 'Caffeine Anhydrous / Cà phê đen',
+        tier: 'A_Grade',
+        dosage: '3 - 6 mg/kg thể trọng (~150 - 300mg)',
+        bestTiming: '45 - 60 phút trước khi bắt đầu tập',
+        provenBenefit: 'Ức chế thụ thể Adenosine, giảm cảm nhận gắng sức (RPE), tăng khả năng phát lực tối đa và sức bền yếm khí.',
+        citation: 'ISSN Position Stand on Caffeine and Exercise Performance (Guest et al., JISSN 2021)',
+      },
+      {
+        name: 'Whey Protein Isolate / Concentrate',
+        tier: 'A_Grade',
+        dosage: '25 - 40g mỗi lần (tương đương 1-1.5 muỗng)',
+        bestTiming: 'Sau tập hoặc giữa các bữa ăn khi thiếu hụt protein thức ăn thô',
+        provenBenefit: 'Cung cấp đầy đủ 9 acid amin thiết yếu (EAA) với hàm lượng Leucine tự nhiên cao nhất (11-12%), hấp thu nhanh.',
+        citation: 'ISSN Position Stand: Protein and Exercise (Jäger et al., JISSN 2017)',
+      },
+      {
+        name: 'Vitamin D3 + K2',
+        tier: 'A_Grade',
+        dosage: '2000 - 5000 IU Vitamin D3 + 100mcg K2 (MK-7) mỗi ngày',
+        bestTiming: 'Buổi sáng cùng bữa ăn có chất béo',
+        provenBenefit: 'Tối ưu hóa nồng độ Testosterone tự nhiên, tăng mật độ xương và khả năng miễn dịch, hỗ trợ chức năng co cơ.',
+        citation: 'Owens et al., Sports Med 2018 (Vitamin D and the Athlete)',
+      },
+      {
+        name: 'Omega-3 Dầu Cá (EPA & DHA)',
+        tier: 'A_Grade',
+        dosage: '2000 - 3000 mg tổng EPA + DHA mỗi ngày',
+        bestTiming: 'Cùng bữa ăn chính',
+        provenBenefit: 'Giảm viêm hệ thống, bảo vệ màng khớp và tăng độ nhạy đồng hóa của cơ bắp với protein nạp vào.',
+        citation: 'Smith et al., Am J Clin Nutr (Omega-3 fatty acids augment muscle protein synthesis)',
+      },
+    ],
+  };
+}
+
+export interface RefeedPlanResult {
+  isRefeedRecommended: boolean;
+  frequencyDays: number; // e.g. every 7 days or 14 days
+  refeedCalories: number;
+  refeedCarbsGrams: number;
+  refeedProteinGrams: number;
+  refeedFatsGrams: number;
+  scientificMechanism: string;
+  guidelines: string[];
+}
+
+export function calculateRefeedTargets(
+  weightKg: number,
+  tdeeValue: number,
+  goal: Goal = 'cut',
+  bodyFatPct = 15
+): RefeedPlanResult {
+  const isLean = bodyFatPct <= 12;
+  const isCut = goal === 'cut';
+
+  if (!isCut) {
+    return {
+      isRefeedRecommended: false,
+      frequencyDays: 0,
+      refeedCalories: tdeeValue,
+      refeedCarbsGrams: Math.round((tdeeValue * 0.5) / 4),
+      refeedProteinGrams: Math.round(weightKg * 2.0),
+      refeedFatsGrams: Math.round((tdeeValue * 0.25) / 9),
+      scientificMechanism: 'Bạn đang không ở trong giai đoạn thâm hụt calo (Cutting) nên không cần áp dụng Refeed chống thích nghi chuyển hóa.',
+      guidelines: ['Duy trì chế độ ăn ổn định hàng ngày theo dải calo mục tiêu.'],
+    };
+  }
+
+  // Refeed ở mức calo duy trì (TDEE) hoặc cao hơn nhẹ 5%
+  const refeedCals = Math.round(tdeeValue);
+  // Protein giữ ổn định 2.0-2.2g/kg
+  const refeedProtein = Math.round(weightKg * 2.0);
+  // Fat hạ thấp xuống mức tối thiểu (30-40g) để nhường chỗ cho Carb tối đa
+  const refeedFats = Math.max(30, Math.round(weightKg * 0.5));
+  // Carb = phần calo còn lại / 4
+  const remainingCals = refeedCals - (refeedProtein * 4 + refeedFats * 9);
+  const refeedCarbs = Math.max(150, Math.round(remainingCals / 4));
+
+  // Tần suất: người càng nạc (body fat thấp) càng cần refeed thường xuyên hơn
+  const frequency = isLean ? 5 : bodyFatPct <= 16 ? 7 : 12;
+
+  return {
+    isRefeedRecommended: true,
+    frequencyDays: frequency,
+    refeedCalories: refeedCals,
+    refeedCarbsGrams: refeedCarbs,
+    refeedProteinGrams: refeedProtein,
+    refeedFatsGrams: refeedFats,
+    scientificMechanism: 'Tăng đột biến lượng carbohydrate nạp vào trong 24-48h giúp kích hoạt lại nồng độ Leptin huyết thanh (hormone báo no & điều hòa chuyển hóa), nạp đầy Glycogen cơ bắp bị cạn kiệt, và giảm nồng độ Cortisol do thâm hụt calo kéo dài sinh ra (Theo nghiên cứu thích nghi chuyển hóa Trexler et al. & Campbell et al.).',
+    guidelines: [
+      `Áp dụng 1 ngày Refeed mỗi ${frequency} ngày thâm hụt calo.`,
+      `Tập trung 70-80% lượng Carb từ thực phẩm tinh bột sạch (cơm trắng, khoai tây, mì sợi, yến mạch, hoa quả).`,
+      `Giữ lượng chất béo ở mức rất thấp (${refeedFats}g) để hạn chế tích lũy mỡ thừa khi nạp lượng carb lớn.`,
+      `Đừng lo lắng nếu cân nặng hôm sau tăng nhẹ 0.5-1.5kg: đây hoàn toàn là nước và glycogen được giữ trong sợi cơ, không phải mỡ!`,
+    ],
+  };
+}

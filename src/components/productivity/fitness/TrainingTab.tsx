@@ -63,6 +63,7 @@ import { BarChart, ProgressBar } from '../../charts/SimpleCharts';
 import { TrackedScheduleMatrix } from './TrackedScheduleMatrix';
 import { CtgDeloadAdvisor } from './CtgDeloadAdvisor';
 import { LiveWorkoutSessionView } from './LiveWorkoutSessionView';
+import { TrainingReadinessAutoregulator } from './TrainingReadinessAutoregulator';
 
 interface TrainingTabProps {
   plannedSessions: PlannedSession[];
@@ -1044,6 +1045,12 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           <span>{scheduledBanner}</span>
         </div>
       )}
+
+      {/* Training Readiness & Autoregulation Check-in / Scientific Split Quality */}
+      <TrainingReadinessAutoregulator
+        plannedSessions={plannedSessions}
+        customExercises={customExercises}
+      />
 
       {/* Tracked.gg 7-Day Split Matrix & Muscle Recovery Radar */}
       <TrackedScheduleMatrix
