@@ -13,12 +13,15 @@ import {
   Check,
   Calculator,
   Minimize2,
+  Maximize2,
   Copy,
   Sparkles,
   Trophy,
   Scale,
   Calendar,
   AlertTriangle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   PlannedSession,
@@ -30,6 +33,7 @@ import {
 } from '../../../types/productivity';
 import {
   exerciseById,
+  EXERCISES,
   calculateBarbellPlates,
   calculateProgressiveOverload,
   compareProgressiveOverload,
@@ -110,10 +114,17 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
 }) => {
   const [extraExId, setExtraExId] = useState('');
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
+  const [showAddExModal, setShowAddExModal] = useState(false);
+  const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
 
   const mesoPlan = useMemo(() => {
     return calculateMesocycleWeekPlan(activeMesoWeek);
   }, [activeMesoWeek]);
+
+  const allAvailableExercises = useMemo(() => {
+    return [...EXERCISES, ...customExercises];
+  }, [customExercises]);
 
   const getExercise = (id: string): Exercise | undefined => {
     return exerciseById(id) || customExercises.find((e) => e.id === id);
@@ -126,7 +137,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
     const completedCount = completedSets.length;
     const totalCount = Object.keys(activeSession.sets).length;
     const prCount = completedSets.filter((s) => s.isPr).length;
-    // Estimated kcal (approx 5.5 kcal per completed working set)
+    // Estimated kcal (approx 18 kcal per completed working set + 3 kcal/min)
     const kcal = Math.round(completedCount * 18 + (elapsedSeconds / 60) * 3);
 
     return { volumeKg, completedCount, totalCount, prCount, kcal };
@@ -143,179 +154,250 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  const scrollToExercise = (exerciseId: string) => {
+    const el = document.getElementById(`exercise-${exerciseId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const wrapperClass = isFocusMode
+    ? 'fixed inset-0 z-50 bg-[#070205] text-white flex flex-col overflow-y-auto p-4 sm:p-6 lg:p-8 animate-in fade-in duration-200'
+    : 'space-y-4 animate-in fade-in duration-300 pb-24 relative';
+
   return (
-    <div className="space-y-5 animate-in fade-in duration-300 pb-16">
-      {/* 1. TOP STICKY GYM COMMAND BAR */}
-      <div className="sticky top-2 z-40 bg-[#0c050e]/95 backdrop-blur-xl border border-rose-500/30 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Left: Title & Live indicator */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-900/50 animate-pulse">
-              <Dumbbell className="w-5 h-5" />
+    <div className={wrapperClass}>
+      {/* 1. TOP SLEEK GYM COMMAND BAR (Compacted to ~54px so it never blocks content when scrolling!) */}
+      <div className="sticky top-0 z-30 bg-[#0c050e]/95 backdrop-blur-xl border-b border-rose-500/25 shadow-xl -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2.5 transition-all">
+        <div className="flex items-center justify-between gap-2.5">
+          {/* Left: Live pulsing badge + Title & Timer */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-600 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-rose-950/60">
+              <Dumbbell className="w-4 h-4 animate-pulse" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.2 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                  Tracked.gg Live Workstation
-                </span>
-                <span className="text-xs text-white/50 font-mono">
-                  Bắt đầu lúc {new Date(activeSession.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-              <h2 className="text-lg sm:text-xl font-black text-white mt-0.5 tracking-tight flex items-center gap-2">
-                <span>{activeSession.planned.title}</span>
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
+                <h2 className="text-sm sm:text-base font-black text-white truncate tracking-tight">
+                  {activeSession.planned.title}
+                </h2>
                 {stats.prCount > 0 && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold flex items-center gap-1">
+                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold flex items-center gap-1 shrink-0">
                     <Trophy className="w-3 h-3 text-amber-400" />
-                    {stats.prCount} PR mới
+                    {stats.prCount} PR
                   </span>
                 )}
-              </h2>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-mono text-white/60">
+                <span className="text-rose-400 font-bold">{formatTime(elapsedSeconds)}</span>
+                <span>•</span>
+                <span className="text-emerald-400 font-bold">
+                  {stats.completedCount}/{stats.totalCount} hiệp
+                </span>
+                <span className="hidden sm:inline">•</span>
+                <span className="hidden sm:inline text-white/50">{stats.volumeKg.toLocaleString()} kg</span>
+              </div>
             </div>
           </div>
 
-          {/* Right Action Buttons */}
-          <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+          {/* Right: Actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Toggle Full Metrics Details */}
+            <button
+              type="button"
+              onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                isHeaderExpanded
+                  ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/70 hover:text-white'
+              }`}
+              title={isHeaderExpanded ? 'Thu gọn bảng chỉ số' : 'Xem chi tiết chỉ số & RP Deload'}
+            >
+              <span className="hidden md:inline">{isHeaderExpanded ? 'Thu gọn' : 'Chỉ số'}</span>
+              {isHeaderExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+
+            {/* Toggle Focus Fullscreen Mode */}
+            <button
+              type="button"
+              onClick={() => setIsFocusMode(!isFocusMode)}
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 text-xs font-bold cursor-pointer transition-colors"
+              title={isFocusMode ? 'Thoát chế độ toàn màn hình' : 'Chế độ tập trung toàn màn hình (Focus Mode)'}
+            >
+              {isFocusMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+
+            {/* Minimize */}
             <button
               type="button"
               onClick={onMinimize}
-              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-              title="Thu nhỏ để xem các tab khác mà không mất buổi tập"
+              className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+              title="Thu nhỏ để xem các tab khác mà không gián đoạn buổi tập"
             >
               <Minimize2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Thu nhỏ</span>
+              <span className="hidden lg:inline">Thu nhỏ</span>
             </button>
 
+            {/* Cancel */}
             <button
               type="button"
               onClick={() => setShowConfirmCancel(true)}
-              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-rose-500/20 text-white/60 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-              title="Hủy buổi tập đang chạy"
+              className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-white/60 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+              title="Hủy buổi tập"
             >
               <X className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Hủy</span>
+              <span className="hidden lg:inline">Hủy</span>
             </button>
 
+            {/* Finish Button */}
             <button
               type="button"
               onClick={onFinishSession}
               disabled={stats.completedCount === 0}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3.5 sm:px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-950/60 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Check className="w-4 h-4 stroke-[3]" />
-              <span>Hoàn Thành Buổi Tập ({stats.completedCount}/{stats.totalCount})</span>
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
+              <span className="hidden sm:inline">Hoàn Thành</span>
+              <span className="font-mono">({stats.completedCount}/{stats.totalCount})</span>
             </button>
           </div>
         </div>
 
-        {/* Live Metrics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 border-t border-white/5 text-center">
-          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
-            <div className="text-[10px] text-white/40 uppercase font-bold font-mono">Thời Gian Tập</div>
-            <div className="text-base sm:text-lg font-black text-white font-mono mt-0.5">
-              {formatTime(elapsedSeconds)}
-            </div>
-          </div>
+        {/* Quick Exercise Jump Chips (Tracked.gg / Hevy style: Tap to jump smoothly to any exercise) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pt-2 pb-0.5 scrollbar-none text-xs">
+          <span className="text-[10px] font-mono font-bold text-white/40 uppercase tracking-wider shrink-0 mr-1 hidden sm:inline">
+            Bài tập:
+          </span>
+          {activeSession.prescriptions.map((pres, idx) => {
+            const ex = getExercise(pres.exerciseId);
+            const completedSets = Array.from({ length: pres.sets }).filter(
+              (_, sIdx) => activeSession.sets[`${pres.exerciseId}-${sIdx}`]?.completed
+            ).length;
+            const isAllDone = completedSets === pres.sets;
 
-          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
-            <div className="text-[10px] text-white/40 uppercase font-bold font-mono">Tổng Tải Lượng</div>
-            <div className="text-base sm:text-lg font-black text-rose-400 font-mono mt-0.5">
-              {stats.volumeKg.toLocaleString()} kg
-            </div>
-          </div>
-
-          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
-            <div className="text-[10px] text-white/40 uppercase font-bold font-mono">Tiến Độ Hiệp</div>
-            <div className="text-base sm:text-lg font-black text-emerald-400 font-mono mt-0.5">
-              {stats.completedCount} / {stats.totalCount}
-            </div>
-          </div>
-
-          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
-            <div className="text-[10px] text-white/40 uppercase font-bold font-mono">Ước Tính Tiêu Hao</div>
-            <div className="text-base sm:text-lg font-black text-amber-400 font-mono mt-0.5">
-              ~{stats.kcal} kcal
-            </div>
-          </div>
-        </div>
-
-        {/* Scientific RP Hypertrophy Guidance Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-cyan-950/20 to-transparent border border-cyan-500/20 text-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="font-bold text-white">Tuần {mesoPlan.weekNumber}: {mesoPlan.title.split(': ')[1]} ({mesoPlan.stage.toUpperCase()})</span>
-            <span className="text-cyan-300 font-mono font-bold bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
-              Mục Tiêu: RIR {mesoPlan.targetRir} · RPE {mesoPlan.targetRpe}
-            </span>
-          </div>
-          <div className="text-[11px] text-white/60">
-            {mesoPlan.summary}
-          </div>
-        </div>
-
-        {/* Sticky Rest Timer Countdown */}
-        <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
-          restSecondsLeft !== null
-            ? 'bg-blue-500/15 border-blue-500/40 shadow-lg shadow-blue-950/40'
-            : 'bg-white/[0.02] border-white/5'
-        }`}>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Clock className={`w-4 h-4 text-blue-400 shrink-0 ${restSecondsLeft !== null ? 'animate-spin' : ''}`} />
-            <div className="text-xs truncate">
-              {restSecondsLeft !== null ? (
-                <span className="font-bold text-blue-200 font-mono text-sm">
-                  Đang nghỉ giữa hiệp: <strong className="text-white text-base">{restSecondsLeft}s</strong> còn lại
+            return (
+              <button
+                key={pres.exerciseId}
+                type="button"
+                onClick={() => scrollToExercise(pres.exerciseId)}
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer flex items-center gap-1.5 border ${
+                  isAllDone
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                    : completedSets > 0
+                    ? 'bg-indigo-950/40 border-indigo-500/40 text-indigo-300'
+                    : 'bg-white/5 border-white/10 text-white/70 hover:border-white/20 hover:text-white'
+                }`}
+              >
+                {isAllDone ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <span className="font-mono text-white/40 text-[11px]">#{idx + 1}</span>
+                )}
+                <span className="truncate max-w-[120px]">{ex?.name || pres.exerciseId}</span>
+                <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-black/40 text-white/60">
+                  {completedSets}/{pres.sets}
                 </span>
-              ) : (
-                <span className="text-white/50 font-medium">
-                  Đồng hồ nghỉ: Sẵn sàng hiệp tiếp theo
-                </span>
-              )}
-            </div>
-          </div>
+              </button>
+            );
+          })}
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            {restSecondsLeft !== null ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onAdjustRestTimer(30)}
-                  className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold cursor-pointer transition-colors"
-                >
-                  +30s
-                </button>
-                <button
-                  type="button"
-                  onClick={onSkipRestTimer}
-                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 text-[11px] font-bold cursor-pointer transition-colors"
-                >
-                  Bỏ qua
-                </button>
-              </>
-            ) : (
-              <div className="flex items-center gap-1 font-mono text-[10px]">
-                <span className="text-white/40 mr-1 hidden sm:inline">Chuẩn:</span>
-                {[60, 90, 120, 180].map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => {
-                      onSetRestTimerTotal(s);
-                      onAdjustRestTimer(s);
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white cursor-pointer"
-                  >
-                    {s}s
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddExModal(true)}
+            className="px-2 py-1 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 cursor-pointer transition-colors flex items-center gap-1"
+            title="Thêm bài tập vào buổi tập hôm nay"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Thêm bài</span>
+          </button>
         </div>
       </div>
 
-      {/* 2. EXERCISE CARDS WORKSTATION */}
+      {/* 2. COLLAPSIBLE METRICS & RP DELOAD PANEL (Scrolls away naturally, never blocks content!) */}
+      {isHeaderExpanded && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-[#0c050e]/90 border border-rose-500/20 shadow-2xl space-y-4 animate-in slide-in-from-top-3 duration-200">
+          <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-rose-400" />
+              <h3 className="text-sm font-bold text-white">Chỉ Số Buổi Tập &amp; Khoa Học RP Periodization</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsHeaderExpanded(false)}
+              className="text-white/40 hover:text-white text-xs cursor-pointer"
+            >
+              Thu gọn ✕
+            </button>
+          </div>
+
+          {/* 4 Stats Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+              <div className="text-[10px] text-white/40 uppercase font-bold font-mono">Thời Gian Tập</div>
+              <div className="text-base sm:text-lg font-black text-white font-mono mt-0.5">
+                {formatTime(elapsedSeconds)}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+              <div className="text-[10px] text-white/40 uppercase font-bold font-mono">Tổng Tải Lượng</div>
+              <div className="text-base sm:text-lg font-black text-rose-400 font-mono mt-0.5">
+                {stats.volumeKg.toLocaleString()} kg
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+              <div className="text-[10px] text-white/40 uppercase font-bold font-mono">Tiến Độ Hiệp</div>
+              <div className="text-base sm:text-lg font-black text-emerald-400 font-mono mt-0.5">
+                {stats.completedCount} / {stats.totalCount}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+              <div className="text-[10px] text-white/40 uppercase font-bold font-mono">Ước Tính Tiêu Hao</div>
+              <div className="text-base sm:text-lg font-black text-amber-400 font-mono mt-0.5">
+                ~{stats.kcal} kcal
+              </div>
+            </div>
+          </div>
+
+          {/* Scientific RP Hypertrophy Guidance Bar */}
+          <div className="p-3 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-cyan-950/20 to-transparent border border-cyan-500/20 text-xs space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="font-bold text-white">Tuần {mesoPlan.weekNumber}: {mesoPlan.title.split(': ')[1]} ({mesoPlan.stage.toUpperCase()})</span>
+              <span className="text-cyan-300 font-mono font-bold bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
+                Mục Tiêu: RIR {mesoPlan.targetRir} • RPE {mesoPlan.targetRpe}
+              </span>
+            </div>
+            <div className="text-white/70 text-[11px] leading-relaxed">
+              {mesoPlan.summary}
+            </div>
+          </div>
+
+          {/* Quick Rest Presets */}
+          <div className="flex items-center justify-between text-xs pt-1 border-t border-white/5">
+            <span className="text-white/50">Cài đặt đồng hồ nghỉ chuẩn:</span>
+            <div className="flex items-center gap-1 font-mono text-[11px]">
+              {[60, 90, 120, 180].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    onSetRestTimerTotal(s);
+                    onAdjustRestTimer(s);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white cursor-pointer"
+                >
+                  {s}s
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. EXERCISE CARDS WORKSTATION (With scroll-mt-24 so titles are never cut off!) */}
       <div className="space-y-5">
         {activeSession.prescriptions.map((pres, pIdx) => {
           const ex = getExercise(pres.exerciseId);
@@ -338,7 +420,8 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
           return (
             <div
               key={pres.exerciseId}
-              className="bg-[#0b040c] rounded-3xl border border-white/10 p-5 shadow-xl space-y-4 relative overflow-hidden"
+              id={`exercise-${pres.exerciseId}`}
+              className="bg-[#0b040c] rounded-3xl border border-white/10 p-4 sm:p-5 shadow-xl space-y-4 relative overflow-hidden scroll-mt-24"
             >
               {/* Exercise Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
@@ -347,12 +430,12 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                     #{pIdx + 1}
                   </span>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span
                         className="text-[9px] px-2 py-0.2 rounded font-bold uppercase"
                         style={{ backgroundColor: `${color}25`, color }}
                       >
-                        {ex ? MUSCLE_LABEL[ex.muscle as MuscleGroup] : 'Cơ'} · {ex?.equipment}
+                        {ex ? MUSCLE_LABEL[ex.muscle as MuscleGroup] : 'Cơ'} • {ex?.equipment}
                       </span>
                       <h3 className="font-black text-base sm:text-lg text-white">
                         {ex?.name || pres.exerciseId}
@@ -366,9 +449,9 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-center font-mono text-xs">
+                <div className="flex items-center gap-2 self-start sm:self-center font-mono text-xs flex-wrap">
                   <span className="text-white/40">
-                    Mục tiêu: <strong className="text-white">{pres.reps} reps · RPE {pres.rpe}</strong>
+                    Mục tiêu: <strong className="text-white">{pres.reps} reps • RPE {pres.rpe}</strong>
                   </span>
                   {curPr && (
                     <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[11px] flex items-center gap-1">
@@ -457,7 +540,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                               ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                               : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
                           }`}
-                          title="Nhấp đổi loại hiệp: [1] Chính · [W] Khởi động · [D] Drop set · [F] Thất bại"
+                          title="Nhấp để đổi loại hiệp: [1] Chính • [W] Khởi động • [D] Drop set • [F] Thất bại"
                         >
                           {setItem.setType === 'warmup' ? 'W' : setItem.setType === 'dropset' ? 'D' : setItem.setType === 'failure' ? 'F' : `#${sIdx + 1}`}
                         </button>
@@ -488,7 +571,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                           value={setItem.weightKg}
                           onChange={(e) => onUpdateSet(pres.exerciseId, sIdx, Number(e.target.value) || 0, setItem.reps)}
                           disabled={setItem.completed}
-                          className="w-14 text-center py-1 px-1 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm disabled:opacity-70"
+                          className="w-12 text-center py-1 px-1 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm disabled:opacity-70 focus:border-rose-500 outline-none"
                         />
                         <button
                           type="button"
@@ -528,7 +611,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                           value={setItem.reps}
                           onChange={(e) => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, Number(e.target.value) || 1)}
                           disabled={setItem.completed}
-                          className="w-11 text-center py-1 px-1 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm disabled:opacity-70"
+                          className="w-11 text-center py-1 px-1 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm disabled:opacity-70 focus:border-rose-500 outline-none"
                         />
                         <button
                           type="button"
@@ -572,7 +655,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
 
               {/* Set Actions Bar */}
               <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     type="button"
                     onClick={() => onAddSet(pres.exerciseId)}
@@ -590,6 +673,18 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                     >
                       <Minus className="w-3.5 h-3.5" />
                       <span>Xóa hiệp cuối</span>
+                    </button>
+                  )}
+
+                  {pres.sets > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => onCopyPrevSet(pres.exerciseId, pres.sets - 1)}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5"
+                      title="Sao chép mức tạ và số reps từ hiệp trước sang hiệp cuối"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Chép hiệp trước</span>
                     </button>
                   )}
                 </div>
@@ -616,7 +711,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
         })}
       </div>
 
-      {/* 3. BOTTOM WORKOUT ACTIONS & CONFIRM CANCEL MODAL */}
+      {/* 4. BOTTOM WORKOUT ACTIONS & CONFIRM CANCEL MODAL */}
       <div className="p-5 rounded-3xl bg-white/[0.02] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h4 className="text-sm font-bold text-white">Bạn Đã Hoàn Thành Xong?</h4>
@@ -635,6 +730,55 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
           <span>Hoàn Thành &amp; Lưu Buổi Tập</span>
         </button>
       </div>
+
+      {/* 5. FLOATING DYNAMIC REST TIMER ISLAND (Hevy / Tracked.gg style: only pops up when resting, out of the way at bottom!) */}
+      {restSecondsLeft !== null && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-300 max-w-[92vw]">
+          <div className="flex items-center gap-3.5 px-5 py-3 rounded-2xl bg-[#0e0712]/95 border border-cyan-500/50 backdrop-blur-2xl shadow-2xl shadow-cyan-950/80 text-white">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 animate-pulse">
+              <Clock className="w-5 h-5 text-cyan-400" />
+            </div>
+
+            <div className="min-w-0 pr-1">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-300 font-extrabold">
+                Nghỉ giữa hiệp
+              </div>
+              <div className="text-lg sm:text-xl font-black font-mono text-white tracking-tight flex items-center gap-1.5">
+                <span>{restSecondsLeft}s</span>
+                <span className="text-xs font-medium text-white/50 hidden sm:inline">còn lại</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0 border-l border-white/10 pl-2.5">
+              <button
+                type="button"
+                onClick={() => onAdjustRestTimer(-15)}
+                disabled={restSecondsLeft <= 15}
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-mono font-bold cursor-pointer transition-colors disabled:opacity-30"
+                title="Giảm 15 giây"
+              >
+                -15s
+              </button>
+              <button
+                type="button"
+                onClick={() => onAdjustRestTimer(30)}
+                className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-mono font-bold cursor-pointer transition-colors shadow-sm"
+                title="Tăng 30 giây"
+              >
+                +30s
+              </button>
+              <button
+                type="button"
+                onClick={onSkipRestTimer}
+                className="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold cursor-pointer transition-colors"
+                title="Bỏ qua thời gian nghỉ"
+              >
+                Bỏ qua
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Modal for Cancelling Workout */}
       {showConfirmCancel && (
@@ -664,6 +808,70 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer"
               >
                 Xác nhận hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Add Extra Exercise to Workout */}
+      {showAddExModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-[#0b0307] border border-white/20 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <Dumbbell className="w-5 h-5 text-rose-400" />
+                <h3 className="text-base font-black text-white">Thêm Bài Tập Vào Buổi Tập</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddExModal(false)}
+                className="text-white/50 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-white/60">
+              Chọn bài tập bổ sung cho buổi hôm nay (Tracked.gg Dynamic Exercise Swap):
+            </p>
+
+            <select
+              value={extraExId}
+              onChange={(e) => setExtraExId(e.target.value)}
+              className="w-full py-2.5 px-3 rounded-xl bg-white/5 border border-white/15 text-white text-xs font-semibold outline-none focus:border-rose-500"
+            >
+              <option value="" className="bg-[#0b0307] text-white">-- Chọn bài tập cần thêm --</option>
+              {allAvailableExercises
+                .filter((e) => !activeSession.prescriptions.some((p) => p.exerciseId === e.id))
+                .map((e) => (
+                  <option key={e.id} value={e.id} className="bg-[#0b0307] text-white">
+                    {e.name} ({MUSCLE_LABEL[e.muscle as MuscleGroup]} • {e.equipment})
+                  </option>
+                ))}
+            </select>
+
+            <div className="flex justify-end gap-2 text-xs pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAddExModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 text-white font-bold cursor-pointer hover:bg-white/15"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                disabled={!extraExId}
+                onClick={() => {
+                  if (extraExId) {
+                    onAddExercise(extraExId);
+                    setExtraExId('');
+                    setShowAddExModal(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer disabled:opacity-40"
+              >
+                Thêm bài này
               </button>
             </div>
           </div>
