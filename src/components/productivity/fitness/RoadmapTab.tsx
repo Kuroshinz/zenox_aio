@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
+  Share2,
   User,
   Activity,
   Compass,
@@ -68,6 +69,10 @@ import {
 import { notifySuccess } from '../../../utils/notify';
 import { CtgTrajectoryChart } from './CtgTrajectoryChart';
 import { CtgWeeklyAdvisor } from './CtgWeeklyAdvisor';
+import { CtgCalendarSyncModal } from './CtgCalendarSyncModal';
+import { CtgCheckinExportModal } from './CtgCheckinExportModal';
+import { CalendarEvent } from '../../../types/calendar';
+import { PlannedSession } from '../../../types/productivity';
 
 interface RoadmapTabProps {
   profile: CtgProfile;
@@ -89,6 +94,10 @@ interface RoadmapTabProps {
   onDeleteCtgRoadmap?: (roadmapId: string) => void;
   onSwitchCtgRoadmap?: (roadmapId: string) => void;
   onDeleteCurrentCtgRoadmap?: () => void;
+  events?: CalendarEvent[];
+  plannedSessions?: PlannedSession[];
+  onBatchScheduleToCalendar?: (events: CalendarEvent[]) => Promise<void> | void;
+  onScheduleSessionToCalendar?: (title: string, date: string, color: string) => void;
 }
 
 export function parseVnDate(str: string): Date {
@@ -146,6 +155,10 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
   onDeleteCtgRoadmap,
   onSwitchCtgRoadmap,
   onDeleteCurrentCtgRoadmap,
+  events = [],
+  plannedSessions = [],
+  onBatchScheduleToCalendar,
+  onScheduleSessionToCalendar,
 }) => {
   // Modal states
   const [showWizardModal, setShowWizardModal] = useState(false);
@@ -157,6 +170,8 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
   const [isLiveTrackingCollapsed, setIsLiveTrackingCollapsed] = useState(false);
   const [phaseFilter, setPhaseFilter] = useState<'all' | 'current' | 'completed' | 'upcoming' | 'bulk' | 'cut'>('all');
   const [carbCyclingMode, setCarbCyclingMode] = useState<'standard' | 'carb_cycling'>('standard');
+  const [isCalendarSyncModalOpen, setIsCalendarSyncModalOpen] = useState<boolean>(false);
+  const [isCheckinExportModalOpen, setIsCheckinExportModalOpen] = useState<boolean>(false);
 
   // Wizard state (4-Step CTG Generator)
   const [wizardStep, setWizardStep] = useState<number>(0);
@@ -1023,6 +1038,26 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
                       )}
                     </div>
 
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setIsCalendarSyncModalOpen(true)}
+                        className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600/30 via-indigo-600/20 to-blue-700/30 hover:from-blue-600/40 hover:to-indigo-600/40 border border-blue-500/40 text-blue-200 hover:text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-all shadow-md group"
+                      >
+                        <Calendar className="w-3.5 h-3.5 text-blue-400 group-hover:scale-110 transition-transform" />
+                        <span>⚡ Lên Lịch Tập Google Calendar (Giờ Rảnh)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsCheckinExportModalOpen(true)}
+                        className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600/30 via-pink-600/20 to-rose-700/30 hover:from-rose-600/40 hover:to-pink-600/40 border border-rose-500/40 text-rose-200 hover:text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-all shadow-md group"
+                      >
+                        <Share2 className="w-3.5 h-3.5 text-rose-400 group-hover:scale-110 transition-transform" />
+                        <span>📷 Xuất Thẻ Check-in Tuần (3:4 HD)</span>
+                      </button>
+                    </div>
+
                     {activePhase.note && (
                       <div className="text-xs text-white/50 italic flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -1043,6 +1078,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
               currentWeight={currentWeight}
               currentBf={currentBf}
               onApplyAdjustment={handleApplyAdjustment}
+              onOpenCheckinExport={() => setIsCheckinExportModalOpen(true)}
               lang={lang}
             />
           )}
@@ -2173,6 +2209,30 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL 6: ĐỒNG BỘ LỊCH TẬP VÀO GOOGLE CALENDAR (SMART FREE SLOTS) */}
+      {activePhase && (
+        <CtgCalendarSyncModal
+          isOpen={isCalendarSyncModalOpen}
+          onClose={() => setIsCalendarSyncModalOpen(false)}
+          activePhase={activePhase}
+          existingEvents={events}
+          plannedSessions={plannedSessions}
+          onBatchSchedule={onBatchScheduleToCalendar}
+          lang={lang}
+        />
+      )}
+
+      {/* MODAL 7: XUẤT THẺ CHECK-IN TUẦN CHUẨN CTG (3:4 HD) */}
+      <CtgCheckinExportModal
+        isOpen={isCheckinExportModalOpen}
+        onClose={() => setIsCheckinExportModalOpen(false)}
+        activePhase={activePhase}
+        roadmap={activeRoadmap}
+        bodyPoints={bodyPoints || []}
+        profile={profile}
+        lang={lang}
+      />
     </div>
   );
 };

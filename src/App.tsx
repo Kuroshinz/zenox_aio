@@ -1701,6 +1701,22 @@ export default function App() {
                   onDeleteMealLog={productivity.deleteMealLog}
                   nutritionSettings={productivity.nutritionSettings}
                   onUpdateNutritionSettings={productivity.updateNutritionSettings}
+                  events={events}
+                  onBatchScheduleToCalendar={async (newEvents: CalendarEvent[]) => {
+                    setEvents((prev) => [...prev, ...newEvents]);
+                    try {
+                      const token = await getAccessToken();
+                      if (token) {
+                        for (const ev of newEvents) {
+                          await createGoogleCalendarEvent(token, ev).catch((e) =>
+                            console.warn('Batch GCal sync error:', e)
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      console.warn('GCal sync error:', e);
+                    }
+                  }}
                   onScheduleSessionToCalendar={(title, date, color) => {
                     const newEv: CalendarEvent = {
                       id: `scheduled-wo-${Date.now()}`,
@@ -1717,6 +1733,11 @@ export default function App() {
                       createdAt: Date.now(),
                     };
                     setEvents((prev) => [...prev, newEv]);
+                    getAccessToken().then((token) => {
+                      if (token) {
+                        createGoogleCalendarEvent(token, newEv).catch(() => {});
+                      }
+                    });
                   }}
                 />
               )}

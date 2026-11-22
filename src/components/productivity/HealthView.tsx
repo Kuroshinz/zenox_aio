@@ -1,3 +1,4 @@
+import { CalendarEvent } from '../../types/calendar';
 import React, { useMemo, useState } from 'react';
 import {
   HeartPulse,
@@ -125,6 +126,8 @@ export interface HealthViewProps {
   onDeleteMealLog?: (id: string) => void;
   nutritionSettings?: NutritionSettings;
   onUpdateNutritionSettings?: (patch: Partial<NutritionSettings>) => void;
+  events?: CalendarEvent[];
+  onBatchScheduleToCalendar?: (newEvents: CalendarEvent[]) => Promise<void> | void;
   onScheduleSessionToCalendar?: (title: string, date: string, color: string) => void;
 }
 
@@ -191,6 +194,8 @@ export const HealthView: React.FC<HealthViewProps> = ({
   onDeleteMealLog = () => {},
   nutritionSettings = DEFAULT_NUTRITION_SETTINGS,
   onUpdateNutritionSettings = () => {},
+  events = [],
+  onBatchScheduleToCalendar,
   onScheduleSessionToCalendar,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(() => {
@@ -555,6 +560,10 @@ export const HealthView: React.FC<HealthViewProps> = ({
           onUpdateProfile={onUpdateCtgProfile}
           onNavigateTab={(tab) => setActiveSubTab(tab as SubTab)}
           onApplySplitTemplate={onApplySplitTemplate}
+          events={events}
+          plannedSessions={plannedSessions}
+          onBatchScheduleToCalendar={onBatchScheduleToCalendar}
+          onScheduleSessionToCalendar={onScheduleSessionToCalendar}
         />
       )}
 

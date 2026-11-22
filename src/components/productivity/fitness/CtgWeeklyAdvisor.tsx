@@ -8,6 +8,7 @@ interface CtgWeeklyAdvisorProps {
   currentWeight: number;
   currentBf: number;
   onApplyAdjustment?: (calorieDelta: number, reason: string) => void;
+  onOpenCheckinExport?: () => void;
   lang?: 'vi' | 'en';
 }
 
@@ -17,6 +18,7 @@ export const CtgWeeklyAdvisor: React.FC<CtgWeeklyAdvisorProps> = ({
   currentWeight,
   currentBf,
   onApplyAdjustment,
+  onOpenCheckinExport,
   lang = 'vi',
 }) => {
   // Sort body points newest to oldest
@@ -164,6 +166,17 @@ export const CtgWeeklyAdvisor: React.FC<CtgWeeklyAdvisorProps> = ({
             </h4>
           </div>
         </div>
+
+        {onOpenCheckinExport && (
+          <button
+            type="button"
+            onClick={onOpenCheckinExport}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-white border border-rose-500/20 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors self-start sm:self-center shrink-0"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-rose-400" />
+            <span>Xuất thẻ tuần này (3:4 HD)</span>
+          </button>
+        )}
 
         {hasEnoughHistory && (
           <div className="px-3.5 py-1.5 rounded-xl bg-white/5 border border-white/10 font-mono text-xs flex items-center gap-1.5 self-end sm:self-center">
