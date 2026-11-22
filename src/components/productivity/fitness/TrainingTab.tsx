@@ -62,6 +62,7 @@ import { notifySuccess, notifyInfo } from '../../../utils/notify';
 import { BarChart, ProgressBar } from '../../charts/SimpleCharts';
 import { TrackedScheduleMatrix } from './TrackedScheduleMatrix';
 import { CtgDeloadAdvisor } from './CtgDeloadAdvisor';
+import { LiveWorkoutSessionView } from './LiveWorkoutSessionView';
 
 interface TrainingTabProps {
   plannedSessions: PlannedSession[];
@@ -182,6 +183,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   const [restTotal, setRestTotal] = useState(90);
   const [autoScheduleOnFinish, setAutoScheduleOnFinish] = useState(true);
   const [extraExerciseId, setExtraExerciseId] = useState('');
+  const [isSessionMinimized, setIsSessionMinimized] = useState<boolean>(false);
 
   // CTG Active Phase
   const ctgActivePhase = useMemo(() => {
@@ -321,6 +323,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     });
     setElapsedSeconds(0);
     setRestSecondsLeft(null);
+    setIsSessionMinimized(false);
   };
 
   const handleAddSetToExercise = (exerciseId: string) => {
@@ -854,6 +857,45 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       e.name.toLowerCase().includes(exerciseSearch.toLowerCase()) ||
       MUSCLE_LABEL[e.muscle]?.toLowerCase().includes(exerciseSearch.toLowerCase())
   );
+
+  // Live Workout Workstation Full View (tracked.gg / Hevy style dedicated view)
+  if (activeSession && !isSessionMinimized) {
+    return (
+      <LiveWorkoutSessionView
+        activeSession={activeSession}
+        elapsedSeconds={elapsedSeconds}
+        restSecondsLeft={restSecondsLeft}
+        prs={prs}
+        workoutSessions={workoutSessions}
+        onUpdateSet={handleUpdateSet}
+        onToggleSet={handleToggleSet}
+        onCycleSetType={handleCycleSetType}
+        onUpdateRpe={handleUpdateRpe}
+        onCopyPrevSet={handleCopyPrevSet}
+        onApplyQuickScale={handleApplyQuickScale}
+        onAddSet={handleAddSetToExercise}
+        onRemoveSet={handleRemoveSetFromExercise}
+        onAddExercise={handleAddExerciseToActiveSession}
+        onFinishSession={handleFinishActiveSession}
+        onCancelSession={() => {
+          setActiveSession(null);
+          setRestSecondsLeft(null);
+          setIsSessionMinimized(false);
+        }}
+        onMinimize={() => setIsSessionMinimized(true)}
+        onOpenPlateCalculator={(w) => {
+          setPlateTargetTotal(String(w));
+          setCalcTab('plates');
+          setShowCalculatorModal(true);
+        }}
+        onAdjustRestTimer={(delta) => setRestSecondsLeft((s) => (s !== null ? Math.max(0, s + delta) : delta))}
+        onSkipRestTimer={() => setRestSecondsLeft(null)}
+        onSetRestTimerTotal={setRestTotal}
+        customExercises={customExercises}
+        lang={lang}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -1936,472 +1978,23 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         </div>
       )}
 
-      {/* Active Workout Player Modal / Sheet */}
-      {activeSession && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white dark:bg-[#161a20] rounded-3xl border border-slate-200 dark:border-white/[0.08] max-w-2xl w-full p-4 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col animate-fadeIn">
-            {/* Player Header */}
-            <div className="flex items-start justify-between border-b border-gray-100 dark:border-white/[0.08] pb-3.5">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400">
-                    Đang tập trực tiếp
-                  </span>
-                  <span className="text-xs font-mono font-bold text-gray-900 dark:text-gray-100 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800">
-                    {String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}:
-                    {String(elapsedSeconds % 60).padStart(2, '0')}
-                  </span>
-                </div>
-                <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 mt-1">
-                  {activeSession.planned.title}
-                </h3>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeWorkoutStats.completedCount > 0) {
-                    if (confirm('Bạn có chắc muốn hủy phiên tập đang chạy?')) {
-                      setActiveSession(null);
-                      setRestSecondsLeft(null);
-                    }
-                  } else {
-                    setActiveSession(null);
-                    setRestSecondsLeft(null);
-                  }
-                }}
-                className="p-1.5 rounded-xl text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
-                title="Đóng phiên tập"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Live Stats Row */}
-            <div className="grid grid-cols-3 gap-2 py-3 border-b border-gray-100 dark:border-white/[0.08] text-center">
-              <div className="p-2 rounded-xl bg-orange-50/60 dark:bg-orange-950/20">
-                <div className="text-[10px] text-gray-500 uppercase font-semibold">Tải trọng</div>
-                <div className="text-sm sm:text-base font-bold text-orange-600 dark:text-orange-400 font-mono">
-                  {activeWorkoutStats.volumeKg.toLocaleString()} kg
-                </div>
-              </div>
-              <div className="p-2 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20">
-                <div className="text-[10px] text-gray-500 uppercase font-semibold">Tiến độ hiệp</div>
-                <div className="text-sm sm:text-base font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                  {activeWorkoutStats.completedCount} / {activeWorkoutStats.totalCount}
-                </div>
-              </div>
-              <div className="p-2 rounded-xl bg-purple-50/60 dark:bg-purple-950/20">
-                <div className="text-[10px] text-gray-500 uppercase font-semibold">Ước tính tiêu thụ</div>
-                <div className="text-sm sm:text-base font-bold text-purple-600 dark:text-purple-400 font-mono">
-                  {activeWorkoutStats.kcal} kcal
-                </div>
-              </div>
-            </div>
-
-            {/* Rest Timer Bar */}
-            <div className="py-2.5 px-3 my-2 rounded-2xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/70 dark:bg-blue-950/30 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <Clock className={`w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 ${restSecondsLeft ? 'animate-spin' : ''}`} />
-                <div className="text-xs truncate">
-                  {restSecondsLeft !== null ? (
-                    <span className="font-bold text-blue-700 dark:text-blue-300 font-mono text-sm">
-                      Nghỉ giữa hiệp: {restSecondsLeft}s
-                    </span>
-                  ) : (
-                    <span className="text-gray-600 dark:text-gray-300 font-medium">
-                      Đồng hồ nghỉ: Sẵn sàng hiệp tiếp
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                {restSecondsLeft !== null ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setRestSecondsLeft((s) => (s ? s + 30 : 30))}
-                      className="px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold cursor-pointer"
-                    >
-                      +30s
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRestSecondsLeft(null)}
-                      className="px-2 py-1 rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-[10px] font-semibold cursor-pointer"
-                    >
-                      Bỏ qua
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {[60, 90, 120].map((sec) => (
-                      <button
-                        key={sec}
-                        type="button"
-                        onClick={() => {
-                          setRestTotal(sec);
-                          setRestSecondsLeft(sec);
-                        }}
-                        className="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-[10px] font-semibold hover:bg-blue-50 cursor-pointer"
-                      >
-                        {sec}s
-                      </button>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Exercise Prescriptions & Sets List */}
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1 my-1">
-              {activeSession.prescriptions.map((pres) => {
-                const ex = getExercise(pres.exerciseId);
-                const color = ex ? MUSCLE_COLOR[ex.muscle as MuscleGroup] : '#2563EB';
-                const curPr = prs[pres.exerciseId];
-                const overloadRec = curPr ? calculateProgressiveOverload(curPr.weightKg, curPr.reps, pres.reps) : null;
-
-                return (
-                  <div
-                    key={pres.exerciseId}
-                    className="p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-gray-850 space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
-                            style={{ backgroundColor: `${color}22`, color }}
-                          >
-                            {ex ? MUSCLE_LABEL[ex.muscle as MuscleGroup] : 'Cơ'} · {ex?.equipment}
-                          </span>
-                          <span className="font-bold text-xs sm:text-sm text-gray-900 dark:text-gray-100">
-                            {ex?.name || pres.exerciseId}
-                          </span>
-                        </div>
-                        {ex?.cue && (
-                          <div className="text-[10px] text-gray-400 italic mt-0.5">
-                            {ex.cue}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="text-right">
-                        <span className="text-[10px] text-gray-400 block font-mono">
-                          Mục tiêu: {pres.reps} reps · RPE {pres.rpe}
-                        </span>
-                        {curPr && (
-                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                            PR: {curPr.weightKg}kg × {curPr.reps}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Tracked.gg Live Progressive Overload Advisor */}
-                    {(() => {
-                      const curSetsForEx = Array.from({ length: pres.sets }).map((_, sIdx) => {
-                        const st = activeSession.sets[`${pres.exerciseId}-${sIdx}`];
-                        return st ? { weightKg: st.weightKg, reps: st.reps } : { weightKg: 0, reps: 0 };
-                      });
-                      const liveOverload = compareProgressiveOverload(
-                        pres.exerciseId,
-                        curSetsForEx,
-                        workoutSessions,
-                        ex?.name
-                      );
-
-                      return (
-                        <div className="space-y-1.5">
-                          {liveOverload.hasPreviousData && (
-                            <div className="p-2.5 rounded-xl bg-rose-950/20 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <Award className="w-4 h-4 text-rose-400 shrink-0" />
-                                <div className="truncate">
-                                  <span className="font-bold text-white mr-2">
-                                    Buổi trước ({liveOverload.previousBest?.date}):
-                                  </span>
-                                  <span className="font-mono text-rose-300 font-bold">
-                                    {liveOverload.previousBest?.weightKg}kg × {liveOverload.previousBest?.reps} reps (1RM ~{liveOverload.previousBest?.oneRmKg}kg)
-                                  </span>
-                                </div>
-                              </div>
-
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase shrink-0 self-start sm:self-center ${
-                                liveOverload.isNewPr
-                                  ? 'bg-rose-600 text-white animate-pulse shadow-xs shadow-rose-500/50'
-                                  : 'bg-white/[0.08] text-gray-300'
-                              }`}>
-                                {liveOverload.badgeText}
-                              </span>
-                            </div>
-                          )}
-
-                          {overloadRec && (
-                            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/25 text-[11px] text-orange-700 dark:text-orange-300">
-                              <Zap className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                              <span className="font-semibold leading-tight">{overloadRec.tipVi}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Sets Table */}
-                    <div className="space-y-1.5">
-                      {Array.from({ length: pres.sets }).map((_, sIdx) => {
-                        const setKey = `${pres.exerciseId}-${sIdx}`;
-                        const setItem = activeSession.sets[setKey] || {
-                          weightKg: curPr?.weightKg || 40,
-                          reps: parseInt(pres.reps) || 10,
-                          completed: false,
-                        };
-                        const isPr = curPr ? setItem.weightKg > curPr.weightKg : false;
-
-                        return (
-                          <div
-                            key={sIdx}
-                            className={`p-2 rounded-xl flex items-center justify-between gap-2 border transition-colors ${
-                              setItem.completed
-                                ? 'bg-emerald-50/90 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800'
-                                : 'bg-white dark:bg-gray-800 border-slate-200 dark:border-white/[0.1]'
-                            }`}
-                          >
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleCycleSetType(pres.exerciseId, sIdx)}
-                                disabled={setItem.completed}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
-                                  setItem.setType === 'warmup'
-                                    ? 'bg-amber-500/20 text-amber-500 dark:text-amber-300 border-amber-500/40'
-                                    : setItem.setType === 'dropset'
-                                    ? 'bg-purple-500/20 text-purple-500 dark:text-purple-300 border-purple-500/40'
-                                    : setItem.setType === 'failure'
-                                    ? 'bg-rose-500/20 text-rose-500 dark:text-rose-300 border-rose-500/40'
-                                    : 'bg-blue-500/15 text-blue-600 dark:text-blue-300 border-blue-500/30'
-                                }`}
-                                title="Nhấp đổi loại hiệp: [1] Chính · [W] Khởi động · [D] Drop set · [F] Thất bại"
-                              >
-                                {setItem.setType === 'warmup' ? 'W' : setItem.setType === 'dropset' ? 'D' : setItem.setType === 'failure' ? 'F' : `${sIdx + 1}`}
-                              </button>
-                              <span className="text-xs font-bold text-gray-500 hidden sm:inline">
-                                Hiệp {sIdx + 1}
-                              </span>
-                              {!setItem.completed && (
-                                <div className="hidden sm:flex items-center gap-1">
-                                  {sIdx > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyPrevSet(pres.exerciseId, sIdx)}
-                                      className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-650 text-gray-600 dark:text-gray-300 cursor-pointer transition-colors"
-                                      title="Lấy số tạ & reps của hiệp trước"
-                                    >
-                                      📋 Lặp
-                                    </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleApplyQuickScale(pres.exerciseId, sIdx, 0.8)}
-                                    className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 dark:bg-orange-950/40 hover:bg-orange-200 text-orange-700 dark:text-orange-300 cursor-pointer transition-colors"
-                                    title="Drop-set giảm 20% tạ"
-                                  >
-                                    🔥 -20%
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleApplyQuickScale(pres.exerciseId, sIdx, 0.6)}
-                                    className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 dark:bg-blue-950/40 hover:bg-blue-200 text-blue-700 dark:text-blue-300 cursor-pointer transition-colors"
-                                    title="Hiệp khởi động giảm 40% tạ"
-                                  >
-                                    🏋️ Khởi động
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-2 flex-1 justify-center">
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.5"
-                                  value={setItem.weightKg}
-                                  onChange={(e) =>
-                                    handleUpdateSet(
-                                      pres.exerciseId,
-                                      sIdx,
-                                      Number(e.target.value) || 0,
-                                      setItem.reps
-                                    )
-                                  }
-                                  disabled={setItem.completed}
-                                  className="w-14 text-center py-1 px-1 rounded-lg border border-gray-300 dark:border-gray-600 text-xs font-bold bg-white dark:bg-gray-900 disabled:opacity-75"
-                                />
-                                <span className="text-[10px] text-gray-400">kg</span>
-                                {setItem.weightKg >= 20 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setPlateTargetTotal(String(setItem.weightKg));
-                                      setCalcTab('plates');
-                                      setShowCalculatorModal(true);
-                                    }}
-                                    className="p-1 text-gray-400 hover:text-rose-500 cursor-pointer text-[10px]"
-                                    title={`Mỗi bên: ${calculateBarbellPlates(setItem.weightKg, 20).platesPerSide.map(p => `${p.count}x${p.plateKg}kg`).join(', ') || 'Đòn không'}`}
-                                  >
-                                    ⚖️
-                                  </button>
-                                )}
-                              </div>
-
-                              <span className="text-gray-300 dark:text-gray-600">×</span>
-
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={setItem.reps}
-                                  onChange={(e) =>
-                                    handleUpdateSet(
-                                      pres.exerciseId,
-                                      sIdx,
-                                      setItem.weightKg,
-                                      Number(e.target.value) || 1
-                                    )
-                                  }
-                                  disabled={setItem.completed}
-                                  className="w-12 text-center py-1 px-1 rounded-lg border border-gray-300 dark:border-gray-600 text-xs font-bold bg-white dark:bg-gray-900 disabled:opacity-75"
-                                />
-                                <span className="text-[10px] text-gray-400">reps</span>
-                              </div>
-
-                              {/* Live Estimated 1RM */}
-                              <span className="text-[9px] font-mono text-gray-400 hidden md:inline" title="1RM ước tính (Epley Formula)">
-                                1RM: ~{Math.round(setItem.weightKg * (1 + setItem.reps / 30))}kg
-                              </span>
-
-                              {/* RPE Selector */}
-                              <select
-                                value={setItem.rpe || 8}
-                                onChange={(e) => handleUpdateRpe(pres.exerciseId, sIdx, Number(e.target.value))}
-                                disabled={setItem.completed}
-                                className="py-0.5 px-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-[10px] font-mono font-bold text-gray-700 dark:text-gray-300 cursor-pointer hidden sm:inline"
-                                title="Độ khó hiệp tập RPE (Rate of Perceived Exertion)"
-                              >
-                                <option value={7}>RPE 7 (RIR 3)</option>
-                                <option value={8}>RPE 8 (RIR 2)</option>
-                                <option value={9}>RPE 9 (RIR 1)</option>
-                                <option value={10}>RPE 10 (Failure)</option>
-                              </select>
-
-                              {isPr && !setItem.completed && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold shrink-0">
-                                  ⭐ PR
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-1 shrink-0">
-                              {!setItem.completed && pres.sets > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveSetFromExercise(pres.exerciseId, sIdx)}
-                                  className="p-1.5 rounded-lg text-gray-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
-                                  title="Xóa hiệp này"
-                                >
-                                  <Minus className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={() => handleToggleSet(pres.exerciseId, sIdx, pres.restSeconds)}
-                                className={`p-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                                  setItem.completed
-                                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                                    : 'bg-gray-100 hover:bg-orange-500 hover:text-white dark:bg-gray-700 text-gray-700 dark:text-gray-200'
-                                }`}
-                              >
-                                <Check className="w-4 h-4" />
-                                <span className="text-[11px]">
-                                  {setItem.completed ? 'Xong' : 'Ghi'}
-                                </span>
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Add extra set button */}
-                    <div className="flex justify-end pt-1">
-                      <button
-                        type="button"
-                        onClick={() => handleAddSetToExercise(pres.exerciseId)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-dashed border-orange-300 dark:border-orange-800 text-orange-600 dark:text-orange-400 text-[10px] font-bold hover:bg-orange-50 dark:hover:bg-orange-950/30 cursor-pointer transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>+ Thêm hiệp cho bài này</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Add extra exercise dropdown in active workout */}
-              <div className="p-3.5 rounded-2xl border border-dashed border-gray-300 dark:border-white/[0.1] bg-gray-50/30 dark:bg-gray-800/20 flex flex-wrap items-center justify-between gap-2.5">
-                <div className="flex items-center gap-2 flex-1 min-w-[220px]">
-                  <Dumbbell className="w-4 h-4 text-orange-500 shrink-0" />
-                  <select
-                    value={extraExerciseId}
-                    onChange={(e) => setExtraExerciseId(e.target.value)}
-                    className="w-full text-xs px-2.5 py-1.5 rounded-xl border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
-                  >
-                    <option value="">-- Thêm bài tập khác vào buổi tập này --</option>
-                    {allExercises.map((ex) => (
-                      <option key={ex.id} value={ex.id}>
-                        {ex.name} ({MUSCLE_LABEL[ex.muscle]} · {ex.equipment}){ex.isCustom ? ' [Bài Ngoài]' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  type="button"
-                  disabled={!extraExerciseId}
-                  onClick={() => handleAddExerciseToActiveSession(extraExerciseId)}
-                  className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer shrink-0 flex items-center gap-1 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Thêm bài tập</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-3 border-t border-gray-100 dark:border-white/[0.08] space-y-2">
-              <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoScheduleOnFinish}
-                  onChange={(e) => setAutoScheduleOnFinish(e.target.checked)}
-                  className="rounded text-orange-600 focus:ring-orange-500"
-                />
-                <span>Tự động đồng bộ buổi tập này vào Google Calendar hôm nay</span>
-              </label>
-
-              <button
-                type="button"
-                onClick={handleFinishActiveSession}
-                className="w-full py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Hoàn Thành Buổi Tập & Lưu Vào Lịch Sử</span>
-              </button>
-            </div>
+      {/* Floating Minimized Active Workout Pill */}
+      {activeSession && isSessionMinimized && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0c050e]/95 border border-rose-500/50 rounded-2xl p-3.5 shadow-2xl flex items-center gap-3 backdrop-blur-xl animate-pulse">
+          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+          <div className="text-xs">
+            <span className="font-bold text-white block truncate max-w-[160px]">{activeSession.planned.title}</span>
+            <span className="text-[10px] text-rose-300 font-mono">
+              ⏱ {String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}:{String(elapsedSeconds % 60).padStart(2, '0')} · {activeWorkoutStats.completedCount}/{activeWorkoutStats.totalCount} sets
+            </span>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsSessionMinimized(false)}
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white text-xs font-bold shadow-md cursor-pointer transition-all"
+          >
+            Mở Lại Tab Tập
+          </button>
         </div>
       )}
 
