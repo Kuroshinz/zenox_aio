@@ -130,6 +130,7 @@ export interface HealthViewProps {
   events?: CalendarEvent[];
   onBatchScheduleToCalendar?: (newEvents: CalendarEvent[]) => Promise<void> | void;
   onScheduleSessionToCalendar?: (title: string, date: string, color: string) => void;
+  onClearWorkoutEventsFromCalendar?: () => Promise<number> | number | void;
 }
 
 type SubTab = 'overview' | 'roadmap' | 'inbody' | 'training' | 'nutrition' | 'profile';
@@ -198,6 +199,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
   events = [],
   onBatchScheduleToCalendar,
   onScheduleSessionToCalendar,
+  onClearWorkoutEventsFromCalendar,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(() => {
     const saved = localStorage.getItem('vortex_health_subtab');
@@ -578,6 +580,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
           plannedSessions={plannedSessions}
           onBatchScheduleToCalendar={onBatchScheduleToCalendar}
           onScheduleSessionToCalendar={onScheduleSessionToCalendar}
+          onClearWorkoutEventsFromCalendar={onClearWorkoutEventsFromCalendar}
         />
       )}
 
@@ -622,6 +625,9 @@ export const HealthView: React.FC<HealthViewProps> = ({
           onUpsertHealthLog={onUpsertHealthLog}
           healthLogs={healthLogs}
           ctgPeriodizedRoadmap={ctgPeriodizedRoadmap}
+          events={events}
+          onBatchScheduleToCalendar={onBatchScheduleToCalendar}
+          onClearWorkoutEventsFromCalendar={onClearWorkoutEventsFromCalendar}
         />
       )}
 

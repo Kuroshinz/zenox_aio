@@ -21,6 +21,9 @@ import {
   X,
   Check,
   Zap,
+  AlertCircle,
+  ExternalLink,
+  LogIn,
   History,
   Minus,
   Calculator,
@@ -64,6 +67,10 @@ import { BarChart, ProgressBar } from '../../charts/SimpleCharts';
 import { TrackedScheduleMatrix } from './TrackedScheduleMatrix';
 import { CtgDeloadAdvisor } from './CtgDeloadAdvisor';
 import { LiveWorkoutSessionView } from './LiveWorkoutSessionView';
+import { CtgCalendarSyncModal } from './CtgCalendarSyncModal';
+import { CalendarEvent } from '../../../types/calendar';
+import { getAccessToken, googleSignIn } from '../../../services/auth';
+import { notifyError, notifyWarning } from '../../../utils/notify';
 import { TrainingReadinessAutoregulator } from './TrainingReadinessAutoregulator';
 
 interface TrainingTabProps {
@@ -88,6 +95,9 @@ interface TrainingTabProps {
   onUpsertHealthLog?: (log: HealthDayLog) => void;
   healthLogs?: HealthDayLog[];
   ctgPeriodizedRoadmap?: CtgPeriodizedRoadmap | null;
+  events?: CalendarEvent[];
+  onBatchScheduleToCalendar?: (newEvents: CalendarEvent[]) => Promise<void> | void;
+  onClearWorkoutEventsFromCalendar?: () => Promise<number> | number | void;
 }
 
 const SPORT_OPTIONS: SportType[] = [
@@ -123,6 +133,9 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   onUpsertHealthLog,
   healthLogs,
   ctgPeriodizedRoadmap,
+  events = [],
+  onBatchScheduleToCalendar,
+  onClearWorkoutEventsFromCalendar,
 }) => {
   const [scheduledBanner, setScheduledBanner] = useState<string | null>(null);
   const [showSportModal, setShowSportModal] = useState(false);
@@ -183,7 +196,71 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [restSecondsLeft, setRestSecondsLeft] = useState<number | null>(null);
   const [restTotal, setRestTotal] = useState(90);
-  const [autoScheduleOnFinish, setAutoScheduleOnFinish] = useState(true);
+  const [autoScheduleOnFinish, setAutoScheduleOnFinish] = useState(false); // DEFAULT FALSE to prevent unrequested calendar injection!
+  const [showCalendarSyncModal, setShowCalendarSyncModal] = useState(false);
+  const [hasGoogleToken, setHasGoogleToken] = useState(false);
+  const [googleUserEmail, setGoogleUserEmail] = useState<string | null>(null);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isClearingWorkouts, setIsClearingWorkouts] = useState(false);
+
+  useEffect(() => {
+    getAccessToken()
+      .then((t) => setHasGoogleToken(Boolean(t)))
+      .catch(() => setHasGoogleToken(false));
+    try {
+      const raw = localStorage.getItem('gcal_active_user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        setGoogleUserEmail(u.email || null);
+      }
+    } catch {}
+  }, []);
+
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      const { user, accessToken } = await googleSignIn();
+      setGoogleUserEmail(user.email);
+      setHasGoogleToken(Boolean(accessToken));
+      notifySuccess('Đã kết nối Google Calendar!', `Đã liên kết với tài khoản ${user.email}`);
+    } catch (err: any) {
+      console.error('Google Sign-In failed:', err);
+      notifyError('Lỗi kết nối Google', err?.message || 'Không thể đăng nhập tài khoản Google.');
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
+  const workoutEventsCount = useMemo(() => {
+    return (events || []).filter(
+      (e) =>
+        e.id.startsWith('scheduled-wo-') ||
+        e.id.startsWith('ctg-workout-') ||
+        (e.calendarId === 'health' && e.title.includes('💪'))
+    ).length;
+  }, [events]);
+
+  const handleClearScheduledWorkouts = async () => {
+    if (workoutEventsCount === 0) return;
+    if (
+      !window.confirm(
+        `Bạn có chắc chắn muốn gỡ bỏ toàn bộ ${workoutEventsCount} buổi tập đã lên lịch khỏi Lịch Zenox và Google Calendar không?`
+      )
+    ) {
+      return;
+    }
+    setIsClearingWorkouts(true);
+    try {
+      if (onClearWorkoutEventsFromCalendar) {
+        const removed = await onClearWorkoutEventsFromCalendar();
+        notifySuccess('Đã gỡ lịch tập!', `Đã xóa toàn bộ ${removed || workoutEventsCount} buổi tập khỏi Lịch.`);
+      }
+    } catch (err: any) {
+      notifyError('Lỗi xóa lịch tập', err?.message || 'Không thể xóa các buổi tập.');
+    } finally {
+      setIsClearingWorkouts(false);
+    }
+  };
   const [extraExerciseId, setExtraExerciseId] = useState('');
   const [isSessionMinimized, setIsSessionMinimized] = useState<boolean>(false);
   const [activeMesoWeek, setActiveMesoWeek] = useState<number>(() => {

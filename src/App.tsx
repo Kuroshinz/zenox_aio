@@ -80,7 +80,7 @@ import { buildWorkoutEvents, startOfWeek, tdee, calorieTarget, macroTargets } fr
 import { parseVnDate } from './components/productivity/fitness/RoadmapTab';
 import { User } from 'firebase/auth';
 import { initAuth, logout, getAccessToken, googleSignIn, AppUser } from './services/auth';
-import { fetchGoogleCalendarEvents, createGoogleCalendarEvent } from './services/googleCalendarSync';
+import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './services/googleCalendarSync';
 import { fetchCalendarFromICalUrl } from './services/googleCalendarUrlSync';
 import { executeRealGoogleSync, hasOwnClientId } from './services/realGoogleAuth';
 import {
@@ -1727,6 +1727,38 @@ export default function App() {
                   nutritionSettings={productivity.nutritionSettings}
                   onUpdateNutritionSettings={productivity.updateNutritionSettings}
                   events={events}
+                  onClearWorkoutEventsFromCalendar={async () => {
+                    const workoutEvents = events.filter(
+                      (e) =>
+                        e.id.startsWith('scheduled-wo-') ||
+                        e.id.startsWith('ctg-workout-') ||
+                        (e.calendarId === 'health' && e.title.includes('💪'))
+                    );
+                    if (workoutEvents.length === 0) return 0;
+
+                    setEvents((prev) =>
+                      prev.filter(
+                        (e) =>
+                          !e.id.startsWith('scheduled-wo-') &&
+                          !e.id.startsWith('ctg-workout-') &&
+                          !(e.calendarId === 'health' && e.title.includes('💪'))
+                      )
+                    );
+
+                    try {
+                      const token = await getAccessToken();
+                      if (token) {
+                        for (const ev of workoutEvents) {
+                          if (ev.id.startsWith('gcal-')) {
+                            await deleteGoogleCalendarEvent(token, ev.id.slice(5)).catch(() => {});
+                          }
+                        }
+                      }
+                    } catch (e) {
+                      console.warn('GCal delete error:', e);
+                    }
+                    return workoutEvents.length;
+                  }}
                   onBatchScheduleToCalendar={async (newEvents: CalendarEvent[]) => {
                     setEvents((prev) => [...prev, ...newEvents]);
                     try {

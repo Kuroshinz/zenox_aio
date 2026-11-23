@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar,
   Clock,
@@ -6,27 +6,30 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  ChevronRight,
   Dumbbell,
   RefreshCw,
-  Sliders,
   Check,
   Zap,
+  Trash2,
+  ExternalLink,
+  ShieldCheck,
+  LogIn,
 } from 'lucide-react';
 import { CalendarEvent } from '../../../types/calendar';
 import { CtgRoadmapPhase, PlannedSession, RoutineSplitTemplate } from '../../../types/productivity';
 import { generateSplitSessions } from '../../../utils/fitnessMetrics';
-import { getAccessToken } from '../../../services/auth';
-import { createGoogleCalendarEvent } from '../../../services/googleCalendarSync';
+import { getAccessToken, googleSignIn, AppUser } from '../../../services/auth';
+import { createGoogleCalendarEvent, deleteGoogleCalendarEvent } from '../../../services/googleCalendarSync';
 import { notifySuccess, notifyWarning, notifyError } from '../../../utils/notify';
 
 export interface CtgCalendarSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
-  activePhase: CtgRoadmapPhase;
+  activePhase?: CtgRoadmapPhase;
   existingEvents?: CalendarEvent[];
   plannedSessions?: PlannedSession[];
   onBatchSchedule?: (events: CalendarEvent[]) => Promise<void> | void;
+  onClearWorkoutEvents?: () => Promise<number> | number | void;
   lang?: 'vi' | 'en';
 }
 
@@ -46,25 +49,25 @@ const SPLIT_OPTIONS: { id: RoutineSplitTemplate; nameVi: string; descVi: string;
   {
     id: 'ppl',
     nameVi: 'Push / Pull / Legs (PPL)',
-    descVi: 'Phổ biến nhất của CTG · 5-6 buổi/tuần · Tối ưu phì đại và phục hồi khớp',
+    descVi: 'Phổ biến nhất · 5-6 buổi/tuần · Tối ưu phì đại cơ bắp và phục hồi khớp',
     daysPerWeek: 5,
   },
   {
     id: 'upper_lower',
     nameVi: 'Upper / Lower (Thân Trên / Thân Dưới)',
-    descVi: '4 buổi/tuần · Cân bằng hoàn hảo giữa sức mạnh và thời gian làm việc',
+    descVi: '4 buổi/tuần · Cân bằng hoàn hảo giữa sức mạnh và thời gian bận rộn',
     daysPerWeek: 4,
   },
   {
     id: 'fullbody',
     nameVi: 'Full Body 3x (Toàn Thân)',
-    descVi: '3 buổi/tuần · Thích hợp người bận rộn, kích thích tần suất cao',
+    descVi: '3 buổi/tuần · Thích hợp người ít thời gian, kích thích tần suất cao',
     daysPerWeek: 3,
   },
   {
     id: 'arnold',
     nameVi: 'Arnold Split (Ngực-Lưng / Vai-Tay / Chân)',
-    descVi: '6 buổi/tuần · Pump cơ cực đại, tập trung cánh tay và thân trên',
+    descVi: '6 buổi/tuần · Pump cơ cực đại, tập trung thân trên và cánh tay',
     daysPerWeek: 6,
   },
 ];
@@ -95,16 +98,22 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
   existingEvents = [],
   plannedSessions = [],
   onBatchSchedule,
+  onClearWorkoutEvents,
   lang = 'vi',
 }) => {
-  // Infer split from activePhase or fallback to ppl
+  // Safe phase fallback
+  const resolvedPhase = activePhase || {
+    name: 'Giáo án thể hình CTG',
+    phaseType: 'maintain' as const,
+  };
+
   const defaultSplit: RoutineSplitTemplate = useMemo(() => {
-    const nameLower = (activePhase.name || '').toLowerCase();
+    const nameLower = (resolvedPhase.name || '').toLowerCase();
     if (nameLower.includes('upper') || nameLower.includes('lower')) return 'upper_lower';
     if (nameLower.includes('full')) return 'fullbody';
     if (nameLower.includes('arnold')) return 'arnold';
     return 'ppl';
-  }, [activePhase]);
+  }, [resolvedPhase]);
 
   const [selectedSplit, setSelectedSplit] = useState<RoutineSplitTemplate>(defaultSplit);
   const [useCurrentPlanned, setUseCurrentPlanned] = useState<boolean>(plannedSessions.length > 0);
@@ -113,7 +122,51 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
   const [customStart, setCustomStart] = useState<string>('17:30');
   const [customDurationMins, setCustomDurationMins] = useState<number>(75);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isClearing, setIsClearing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+
+  // Google Calendar Connection state
+  const [googleUser, setGoogleUser] = useState<AppUser | null>(null);
+  const [hasGoogleToken, setHasGoogleToken] = useState<boolean>(false);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      getAccessToken()
+        .then((t) => setHasGoogleToken(Boolean(t)))
+        .catch(() => setHasGoogleToken(false));
+
+      try {
+        const raw = localStorage.getItem('gcal_active_user');
+        if (raw) setGoogleUser(JSON.parse(raw));
+      } catch {}
+    }
+  }, [isOpen]);
+
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      const { user, accessToken } = await googleSignIn();
+      setGoogleUser(user);
+      setHasGoogleToken(Boolean(accessToken));
+      notifySuccess('Đã kết nối Google Calendar!', `Đã liên kết với tài khoản ${user.email}`);
+    } catch (err: any) {
+      console.error('Google Sign-In failed:', err);
+      notifyError('Lỗi kết nối Google', err?.message || 'Không thể đăng nhập tài khoản Google.');
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
+  // Count existing workout events in user's calendar
+  const currentWorkoutEvents = useMemo(() => {
+    return existingEvents.filter(
+      (e) =>
+        e.id.startsWith('scheduled-wo-') ||
+        e.id.startsWith('ctg-workout-') ||
+        (e.calendarId === 'health' && e.title.includes('💪'))
+    );
+  }, [existingEvents]);
 
   // Preferred window
   const activeWindow = useMemo(() => {
@@ -129,7 +182,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
   const [proposedSlots, setProposedSlots] = useState<ProposedSlot[]>([]);
 
   // Compute proposed slots whenever parameters change
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) return;
 
     // 1. Get base template sessions
@@ -168,10 +221,12 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
         const d = String(targetDate.getDate()).padStart(2, '0');
         const dateStr = `${y}-${m}-${d}`;
 
-        // Check conflicts in existingEvents
+        // Check conflicts in existingEvents (ignore existing workout events when calculating conflicts)
         const eventsOnDay = existingEvents.filter(
           (ev) =>
             !ev.allDay &&
+            !ev.id.startsWith('scheduled-wo-') &&
+            !ev.id.startsWith('ctg-workout-') &&
             (ev.startDate === dateStr || (ev.startDate <= dateStr && ev.endDate >= dateStr)) &&
             ev.startTime &&
             ev.endTime
@@ -243,11 +298,48 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
     );
   };
 
+  const handleClearWorkouts = async () => {
+    if (currentWorkoutEvents.length === 0) return;
+    const confirmMsg = `Bạn có chắc chắn muốn gỡ bỏ toàn bộ ${currentWorkoutEvents.length} buổi tập đã lên lịch khỏi Lịch Zenox và Google Calendar không?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsClearing(true);
+    try {
+      if (onClearWorkoutEvents) {
+        await onClearWorkoutEvents();
+      }
+      notifySuccess('Đã gỡ lịch tập!', `Đã xóa toàn bộ ${currentWorkoutEvents.length} buổi tập khỏi Lịch.`);
+    } catch (err: any) {
+      console.error('Lỗi khi xóa lịch tập:', err);
+      notifyError('Lỗi', err?.message || 'Không thể xóa các buổi tập.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   const handleExecuteSync = async () => {
     const activeSlots = proposedSlots.filter((s) => s.selected);
     if (activeSlots.length === 0) {
       notifyWarning('Chưa chọn buổi tập nào', 'Vui lòng tích chọn ít nhất 1 buổi để đồng bộ.');
       return;
+    }
+
+    // Check token or prompt user
+    let token = await getAccessToken().catch(() => null);
+    if (!token) {
+      const wantLogin = window.confirm(
+        'Google Calendar chưa được kết nối! Bạn có muốn đăng nhập tài khoản Google ngay bây giờ để đồng bộ trực tiếp vào điện thoại không?'
+      );
+      if (wantLogin) {
+        try {
+          const res = await googleSignIn();
+          token = res.accessToken;
+          setGoogleUser(res.user);
+          setHasGoogleToken(true);
+        } catch {
+          // If cancelled or failed, continue with local sync
+        }
+      }
     }
 
     setIsSyncing(true);
@@ -258,7 +350,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
       const newEvents: CalendarEvent[] = activeSlots.map((slot, idx) => ({
         id: `ctg-workout-${Date.now()}-${idx}`,
         title: `💪 [CTG] ${slot.sessionTitle}`,
-        description: `Lộ trình CTG: ${activePhase.name} · Giai đoạn: ${activePhase.phaseType.toUpperCase()}\nBài tập: ${slot.prescriptionsSummary}\nĐược tự động lên lịch theo khung giờ rảnh tối ưu của bạn.`,
+        description: `Lộ trình CTG: ${resolvedPhase.name}\nBài tập: ${slot.prescriptionsSummary}\nĐược tự động lên lịch theo khung giờ rảnh tối ưu của bạn.`,
         startDate: slot.date,
         startTime: slot.startTime,
         endDate: slot.date,
@@ -277,9 +369,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
       }
 
       // 3. Push to Google Calendar API if token available
-      const token = await getAccessToken().catch(() => null);
       let gcalSyncedCount = 0;
-
       if (token) {
         for (let i = 0; i < newEvents.length; i++) {
           setSyncProgress({ current: i + 1, total: newEvents.length });
@@ -291,7 +381,9 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
       notifySuccess(
         'Đã đồng bộ Lịch tập thành công!',
         `Đã tạo ${newEvents.length} buổi tập lên Lịch Zenox${
-          token ? ` và ${gcalSyncedCount} buổi lên Google Calendar!` : '!'
+          token && gcalSyncedCount > 0
+            ? ` và ${gcalSyncedCount} buổi trực tiếp trên Google Calendar của bạn!`
+            : '!'
         }`
       );
 
@@ -317,18 +409,18 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
         {/* Header */}
         <div className="p-5 sm:p-6 border-b border-white/10 flex items-center justify-between shrink-0 bg-white/[0.02]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-600 to-rose-500 border border-rose-500/30 text-white flex items-center justify-center shrink-0 shadow-md">
               <Zap className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                  CTG Smart Sync
+                  Google Calendar Studio
                 </span>
-                <span className="text-xs text-white/50 font-mono">Giai đoạn: {activePhase.name}</span>
+                <span className="text-xs text-white/50 font-mono">{resolvedPhase.name}</span>
               </div>
               <h2 className="text-lg sm:text-xl font-black text-white mt-0.5">
-                Đồng Bộ Lịch Tập Vào Google Calendar
+                Lên Lịch Tập Tự Động Vào Google Calendar
               </h2>
             </div>
           </div>
@@ -344,11 +436,103 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="p-5 sm:p-6 space-y-6 overflow-y-auto flex-1">
+          {/* A. Live Google Calendar Status Card */}
+          {hasGoogleToken ? (
+            <div className="p-3.5 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-2">
+                    <span>Google Calendar: Đã kết nối</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  </div>
+                  <div className="text-[11px] text-emerald-300/80 font-mono">
+                    {googleUser?.email || 'Tài khoản Google đã xác thực OAuth'}
+                  </div>
+                </div>
+              </div>
+              <a
+                href="https://calendar.google.com/calendar/u/0/r"
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-semibold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer transition-colors"
+              >
+                <span>Mở Google Calendar</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          ) : (
+            <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-bold text-white text-sm">Chưa liên kết Google Calendar</div>
+                  <div className="text-[11px] text-white/60 mt-0.5">
+                    Đăng nhập tài khoản Google để tự động đồng bộ lịch tập sang ứng dụng Lịch trên điện thoại của bạn.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleConnectGoogle}
+                disabled={isConnectingGoogle}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shrink-0 cursor-pointer shadow-md flex items-center gap-2 transition-all self-start sm:self-auto"
+              >
+                {isConnectingGoogle ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang kết nối...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>Kết Nối Google Ngay</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* B. Clean Existing Scheduled Workouts (User requested control!) */}
+          {currentWorkoutEvents.length > 0 && (
+            <div className="p-3.5 rounded-2xl bg-rose-950/20 border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <Calendar className="w-4 h-4 text-rose-400 shrink-0" />
+                <div>
+                  <span className="text-white/80">
+                    Hiện có <strong className="text-rose-300 font-mono font-bold">{currentWorkoutEvents.length}</strong> buổi tập thể hình đã được lên lịch.
+                  </span>
+                  <div className="text-[11px] text-white/40">
+                    Nếu bạn chưa từng yêu cầu hoặc muốn làm mới lại lịch, bạn có thể gỡ sạch với 1 click.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleClearWorkouts}
+                disabled={isClearing}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/40 text-rose-200 border border-rose-500/40 text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+              >
+                {isClearing ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>Gỡ Bỏ {currentWorkoutEvents.length} Buổi Tập Này</span>
+              </button>
+            </div>
+          )}
+
           {/* 1. Chọn Khung Lịch Tập (Split) */}
           <div className="space-y-2.5">
             <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <Dumbbell className="w-3.5 h-3.5 text-rose-400" />
-              1. Lựa chọn Split Luyện Tập
+              1. Lựa chọn Phân Chia Lịch Tập (Split)
             </label>
 
             {plannedSessions.length > 0 && (
@@ -454,7 +638,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
                   Thuật toán Giờ Rảnh Thông Minh
                 </div>
                 <p>
-                  Hệ thống tự động rà soát lịch Google Calendar của bạn. Nếu có sự kiện trùng, buổi tập sẽ tự động dời sang khoảng trống gần nhất.
+                  Hệ thống tự động rà soát lịch của bạn. Nếu có sự kiện trùng, buổi tập sẽ tự động dời sang khoảng trống gần nhất.
                 </p>
               </div>
             </div>

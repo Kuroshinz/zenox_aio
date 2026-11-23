@@ -98,6 +98,7 @@ interface RoadmapTabProps {
   plannedSessions?: PlannedSession[];
   onBatchScheduleToCalendar?: (events: CalendarEvent[]) => Promise<void> | void;
   onScheduleSessionToCalendar?: (title: string, date: string, color: string) => void;
+  onClearWorkoutEventsFromCalendar?: () => Promise<number> | number | void;
 }
 
 export function parseVnDate(str: string): Date {
@@ -159,6 +160,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
   plannedSessions = [],
   onBatchScheduleToCalendar,
   onScheduleSessionToCalendar,
+  onClearWorkoutEventsFromCalendar,
 }) => {
   // Modal states
   const [showWizardModal, setShowWizardModal] = useState(false);
@@ -2219,6 +2221,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
           existingEvents={events}
           plannedSessions={plannedSessions}
           onBatchSchedule={onBatchScheduleToCalendar}
+          onClearWorkoutEvents={onClearWorkoutEventsFromCalendar}
           lang={lang}
         />
       )}
