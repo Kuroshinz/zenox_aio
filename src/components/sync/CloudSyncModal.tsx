@@ -67,7 +67,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
   if (!isOpen) return null;
 
-  const currentDomain = typeof window !== 'undefined' ? window.location.origin : 'https://vortexcal.vercel.app';
+  const currentDomain = typeof window !== 'undefined' ? window.location.origin : 'https://zenoxyz.vercel.app';
 
   const handleDirectGoogleLogin = async (overrideClientId?: string) => {
     setIsLoading(true);
@@ -80,23 +80,52 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       if (activeClientId) {
         localStorage.setItem('gcal_custom_client_id', activeClientId);
       }
-      
-      const res = await executeRealGoogleSync(activeClientId || undefined);
-      if (res?.user) {
+
+      let resUser: AppUser | null = null;
+      let resEvents: CalendarEvent[] = [];
+
+      // 1. If user didn't enter a custom client ID, attempt Firebase OAuth popup first (which routes via authDomain)
+      let handled = false;
+      if (!activeClientId) {
+        try {
+          const { googleSignIn } = await import('../../services/auth');
+          const fbRes = await googleSignIn();
+          if (fbRes?.user?.email && fbRes.accessToken) {
+            resUser = fbRes.user;
+            const { fetchGoogleCalendarEvents } = await import('../../services/googleCalendarSync');
+            resEvents = await fetchGoogleCalendarEvents(fbRes.accessToken);
+            handled = true;
+          }
+        } catch (fbErr: any) {
+          console.warn('Firebase popup encounter, falling back to GIS:', fbErr?.code || fbErr?.message);
+          if (fbErr?.code === 'auth/popup-closed-by-user' || fbErr?.message?.includes('closed-by-user')) {
+            throw new Error(lang === 'vi' ? 'Bạn đã đóng cửa sổ đăng nhập Google.' : 'Sign-in popup closed.');
+          }
+        }
+      }
+
+      // 2. Fallback to GIS Google Identity Services
+      if (!handled) {
+        const res = await executeRealGoogleSync(activeClientId || undefined);
+        resUser = res.user;
+        resEvents = res.events;
+      }
+
+      if (resUser) {
         playSuccessSound();
         notifySuccess(
           lang === 'vi' ? 'Đã kết nối Google Calendar!' : 'Google Calendar Connected!',
           lang === 'vi'
-            ? `Tài khoản ${res.user.email} đã đồng bộ thành công ${res.events?.length || 0} sự kiện.`
-            : `Synced ${res.events?.length || 0} events for ${res.user.email}.`
+            ? `Tài khoản ${resUser.email} đã đồng bộ thành công ${resEvents?.length || 0} sự kiện.`
+            : `Synced ${resEvents?.length || 0} events for ${resUser.email}.`
         );
-        if (res.events && res.events.length > 0) {
-          onImportEvents(res.events);
+        if (resEvents && resEvents.length > 0) {
+          onImportEvents(resEvents);
         }
         setSuccessMsg(
           lang === 'vi'
-            ? `Đã đăng nhập thành công tài khoản ${res.user.email || res.user.displayName} và đồng bộ ${res.events?.length || 0} sự kiện!`
-            : `Logged in as ${res.user.email} and synced ${res.events?.length || 0} events!`
+            ? `Đã đăng nhập thành công tài khoản ${resUser.email || resUser.displayName} và đồng bộ ${resEvents?.length || 0} sự kiện!`
+            : `Logged in as ${resUser.email} and synced ${resEvents?.length || 0} events!`
         );
         setTimeout(() => {
           onClose();
@@ -104,9 +133,13 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       }
     } catch (err: any) {
       console.error('Google Sign In failed:', err);
-      const msg = err?.message || String(err);
+      let msg = err?.message || String(err);
+      if (msg.includes('origin_mismatch') || msg.includes('400')) {
+        msg = lang === 'vi'
+          ? `Lỗi 400: origin_mismatch - Domain "${currentDomain}" chưa được thêm vào Authorized JavaScript origins trên Google Cloud Console.`
+          : `Error 400: origin_mismatch - Domain "${currentDomain}" is not in Authorized JavaScript origins.`;
+      }
       setErrorMsg(msg);
-      // Auto expand configuration so user can immediately paste Client ID
       setShowAdvanced(true);
     } finally {
       setIsLoading(false);
@@ -381,8 +414,18 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                       {lang === 'vi' ? (
                         <>
                           Kéo đến <b>Authorized JavaScript origins</b>, bấm <b>+ ADD URI</b> và dán:
-                          <div className="mt-1 p-1.5 bg-amber-100 dark:bg-amber-900 font-mono font-bold rounded select-all text-[11px] text-amber-900 dark:text-amber-100">
-                            {currentDomain}
+                          <div className="mt-1 flex items-center justify-between p-2 bg-amber-100 dark:bg-amber-900/60 rounded-xl font-mono text-[11px] text-amber-900 dark:text-amber-100 font-bold border border-amber-300 dark:border-amber-700">
+                            <span>{currentDomain}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(currentDomain);
+                                alert(lang === 'vi' ? `Đã sao chép: ${currentDomain}` : `Copied: ${currentDomain}`);
+                              }}
+                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer text-[10px]"
+                            >
+                              {lang === 'vi' ? 'Sao chép URI' : 'Copy URI'}
+                            </button>
                           </div>
                         </>
                       ) : (
@@ -430,8 +473,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     {lang === 'vi'
-                      ? 'Dán Client ID từ tab Google Cloud đã thêm domain vortexcal.vercel.app để đăng nhập ngay.'
-                      : 'Paste your Client ID with vortexcal.vercel.app whitelisted to login.'}
+                      ? `Dán Client ID từ tab Google Cloud đã thêm domain ${currentDomain} để đăng nhập ngay.`
+                      : `Paste your Client ID with ${currentDomain} whitelisted to login.`}
                   </p>
                 </div>
 

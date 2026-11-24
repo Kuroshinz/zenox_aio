@@ -31,7 +31,14 @@ export const DEFAULT_GOOGLE_CLIENT_ID =
  * launching a popup that ends on a Google error page.
  */
 export function hasOwnClientId(): boolean {
-  return true;
+  if (typeof window === 'undefined') return true;
+  const custom = localStorage.getItem('gcal_custom_client_id');
+  if (custom && custom.trim()) return true;
+  if (ENV_GOOGLE_CLIENT_ID && ENV_GOOGLE_CLIENT_ID.trim()) return true;
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return true;
+  }
+  return false;
 }
 
 /**
