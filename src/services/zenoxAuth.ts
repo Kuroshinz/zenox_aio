@@ -370,6 +370,7 @@ export async function loginWithGoogleAccount(): Promise<{
     localStorage.setItem(ACTIVE_USER_KEY, JSON.stringify(user));
     if (accessToken) {
       localStorage.setItem('gcal_real_access_token', accessToken);
+      localStorage.setItem('gcal_real_token_expires_at', String(Date.now() + 3500 * 1000));
     }
     sessionStorage.setItem(WORKSPACE_ENTERED_KEY, 'true');
 

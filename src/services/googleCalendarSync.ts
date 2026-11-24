@@ -1,4 +1,17 @@
+import { clearAccessToken } from './auth';
 import { CalendarEvent } from '../types/calendar';
+
+export class GoogleAuthExpiredError extends Error {
+  code = 'GOOGLE_AUTH_EXPIRED';
+  status = 401;
+  constructor(message?: string) {
+    super(
+      message ||
+        'Phiên xác thực Google Calendar đã hết hạn. Vui lòng kết nối lại để tiếp tục đồng bộ.'
+    );
+    this.name = 'GoogleAuthExpiredError';
+  }
+}
 
 export interface GoogleCalendarApiItem {
   id: string;
@@ -63,6 +76,17 @@ export async function fetchGoogleCalendarEvents(accessToken: string): Promise<Ca
         if (raw) detailMsg = raw;
       }
       console.error('Google Calendar fetch error:', detailMsg);
+
+      if (
+        res.status === 401 ||
+        detailMsg.toLowerCase().includes('invalid authentication credentials') ||
+        detailMsg.toLowerCase().includes('unauthenticated')
+      ) {
+        clearAccessToken();
+        throw new GoogleAuthExpiredError(
+          'Phiên xác thực Google Calendar đã hết hạn. Vui lòng kết nối lại để tiếp tục đồng bộ hai chiều.'
+        );
+      }
 
       if (res.status === 403 && detailMsg.toLowerCase().includes('has not been used')) {
         throw new Error(
@@ -184,6 +208,9 @@ export async function createGoogleCalendarEvent(
     });
 
     if (!res.ok) {
+      if (res.status === 401) {
+        clearAccessToken();
+      }
       throw new Error(`Failed to create event on Google Calendar: ${res.status}`);
     }
 
@@ -213,6 +240,9 @@ export async function deleteGoogleCalendarEvent(
         },
       }
     );
+    if (res.status === 401) {
+      clearAccessToken();
+    }
     return res.ok || res.status === 404;
   } catch (error) {
     console.error('Failed to delete event from Google Calendar:', error);

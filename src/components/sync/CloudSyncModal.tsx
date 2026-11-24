@@ -274,27 +274,43 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </p>
               )}
 
-              <div className="flex gap-3">
+              <div className="space-y-2.5">
                 <button
                   type="button"
-                  onClick={handleSyncNow}
+                  onClick={() => handleDirectGoogleLogin()}
                   disabled={isLoading}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-                  <span>{lang === 'vi' ? 'Làm mới lịch ngay' : 'Sync Calendar Now'}</span>
+                  <span>
+                    {isLoading
+                      ? (lang === 'vi' ? 'Đang cấp lại quyền...' : 'Re-authorizing...')
+                      : (lang === 'vi' ? 'Cấp Lại Quyền / Đăng Nhập Lại Google' : 'Re-Authorize Google Account')}
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await onGoogleSignOut();
-                    onClose();
-                  }}
-                  className="flex items-center justify-center gap-2 py-3 px-4 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 text-rose-600 dark:text-rose-400 text-xs font-bold rounded-xl transition-all cursor-pointer border border-rose-200 dark:border-rose-900/40"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>{lang === 'vi' ? 'Đăng xuất' : 'Sign Out'}</span>
-                </button>
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSyncNow}
+                    disabled={isLoading}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-white/10 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                    <span>{lang === 'vi' ? 'Làm mới lịch' : 'Sync Now'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await onGoogleSignOut();
+                      onClose();
+                    }}
+                    className="flex items-center justify-center gap-2 py-2.5 px-4 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 text-rose-600 dark:text-rose-400 text-xs font-bold rounded-xl transition-all cursor-pointer border border-rose-200 dark:border-rose-900/40"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{lang === 'vi' ? 'Đăng xuất' : 'Sign Out'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

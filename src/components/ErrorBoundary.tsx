@@ -34,6 +34,7 @@ export class ErrorBoundary extends Component<Props, State> {
       localStorage.removeItem('gcal_categories');
       localStorage.removeItem('gcal_active_user');
       localStorage.removeItem('gcal_real_access_token');
+      localStorage.removeItem('gcal_real_token_expires_at');
     } catch {}
     window.location.reload();
   };

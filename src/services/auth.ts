@@ -18,6 +18,7 @@ provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
 // Calendar & Profile scopes only
 
 const REAL_TOKEN_KEY = 'gcal_real_access_token';
+const TOKEN_EXPIRY_KEY = 'gcal_real_token_expires_at';
 
 let cachedAccessToken: string | null = null;
 
@@ -28,29 +29,86 @@ export interface AppUser {
   photoURL: string | null;
 }
 
+/** Check if the stored Google access token has passed its expiration time */
+export const isTokenExpired = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const expiryStr = localStorage.getItem(TOKEN_EXPIRY_KEY);
+  if (!expiryStr) return false;
+  const expiresAt = parseInt(expiryStr, 10);
+  if (Number.isNaN(expiresAt)) return false;
+  return Date.now() >= expiresAt;
+};
+
+/** Store a token obtained through Google Identity Services / OAuth with 2-minute safety buffer */
+export const setAccessToken = (token: string, expiresInSeconds: number = 3600) => {
+  cachedAccessToken = token;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(REAL_TOKEN_KEY, token);
+    const expiresAt = Date.now() + Math.max(60, expiresInSeconds - 120) * 1000;
+    localStorage.setItem(TOKEN_EXPIRY_KEY, String(expiresAt));
+  }
+};
+
+/** Clear cached token both from memory and localStorage without logging out user profile */
+export const clearAccessToken = () => {
+  cachedAccessToken = null;
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(REAL_TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+  }
+};
+
+/** Synchronously check for stored token, auto-clearing stale tokens */
+export const getStoredAccessTokenSync = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  if (isTokenExpired()) {
+    clearAccessToken();
+    return null;
+  }
+  if (cachedAccessToken) return cachedAccessToken;
+  const stored = localStorage.getItem(REAL_TOKEN_KEY);
+  cachedAccessToken = stored || null;
+  return cachedAccessToken;
+};
+
+/** Returns a real access token or null. Never returns an expired sentinel. */
+export const getAccessToken = async (): Promise<string | null> => {
+  return getStoredAccessTokenSync();
+};
+
+/** Check if there is currently an active, unexpired Google access token */
+export const hasValidGoogleToken = (): boolean => {
+  return Boolean(getStoredAccessTokenSync());
+};
+
 /**
- * Restore a previously authorized session. Only a *real* Google access token
- * counts as a session; there is no synthetic/offline user.
+ * Restore a previously authorized session. Preserves user profile locally even if
+ * the Google Calendar token has expired, avoiding jarring cold-start 401 errors.
  */
 export const initAuth = (
   onAuthSuccess?: (user: AppUser, token: string) => void,
   onAuthFailure?: () => void
 ) => {
   const savedUser = localStorage.getItem('gcal_active_user');
-  const savedToken = localStorage.getItem(REAL_TOKEN_KEY);
+  const savedToken = getStoredAccessTokenSync();
 
-  if (savedUser && savedToken) {
+  if (savedUser) {
     try {
       const parsed = JSON.parse(savedUser) as AppUser;
       if (parsed?.email) {
-        cachedAccessToken = savedToken;
-        if (onAuthSuccess) onAuthSuccess(parsed, savedToken);
+        if (savedToken) {
+          cachedAccessToken = savedToken;
+          if (onAuthSuccess) onAuthSuccess(parsed, savedToken);
+        } else {
+          // Token expired or not present, but user profile is safely remembered locally
+          if (onAuthSuccess) onAuthSuccess(parsed, '');
+        }
       } else {
         if (onAuthFailure) onAuthFailure();
       }
     } catch {
       localStorage.removeItem('gcal_active_user');
-      localStorage.removeItem(REAL_TOKEN_KEY);
+      clearAccessToken();
       if (onAuthFailure) onAuthFailure();
     }
   } else if (onAuthFailure) {
@@ -59,10 +117,7 @@ export const initAuth = (
 
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (!user) return;
-    // Firebase session alone carries no Calendar scope; keep it only when a real
-    // access token was already obtained through the OAuth popup.
-    const token = cachedAccessToken || localStorage.getItem(REAL_TOKEN_KEY);
-    if (!token) return;
+    const token = cachedAccessToken || getStoredAccessTokenSync();
 
     const appUser: AppUser = {
       uid: user.uid,
@@ -71,14 +126,12 @@ export const initAuth = (
       photoURL: user.photoURL,
     };
     localStorage.setItem('gcal_active_user', JSON.stringify(appUser));
-    if (onAuthSuccess) onAuthSuccess(appUser, token);
+    if (onAuthSuccess) onAuthSuccess(appUser, token || '');
   });
 };
 
 /**
- * Firebase Google popup sign-in. Throws on failure — the caller must fall back to
- * the real OAuth / access-token / iCal-URL flows in CloudSyncModal. A fake local
- * session is never fabricated.
+ * Firebase Google popup sign-in.
  */
 export const googleSignIn = async (): Promise<{ user: AppUser; accessToken: string }> => {
   provider.setCustomParameters({
@@ -94,7 +147,7 @@ export const googleSignIn = async (): Promise<{ user: AppUser; accessToken: stri
     );
   }
 
-  cachedAccessToken = accessToken;
+  setAccessToken(accessToken, 3600);
   const appUser: AppUser = {
     uid: result.user.uid,
     email: result.user.email,
@@ -103,42 +156,13 @@ export const googleSignIn = async (): Promise<{ user: AppUser; accessToken: stri
   };
 
   localStorage.setItem('gcal_active_user', JSON.stringify(appUser));
-  localStorage.setItem(REAL_TOKEN_KEY, accessToken);
   return { user: appUser, accessToken };
-};
-
-/** Store a token obtained through Google Identity Services / OAuth Playground. */
-export const setAccessToken = (token: string) => {
-  cachedAccessToken = token;
-  localStorage.setItem(REAL_TOKEN_KEY, token);
-};
-
-/** Clear cached token both from memory and localStorage without logging out user. */
-export const clearAccessToken = () => {
-  cachedAccessToken = null;
-  localStorage.removeItem(REAL_TOKEN_KEY);
-};
-
-/** Synchronously check for stored token */
-export const getStoredAccessTokenSync = (): string | null => {
-  if (cachedAccessToken) return cachedAccessToken;
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem(REAL_TOKEN_KEY);
-    cachedAccessToken = stored || null;
-  }
-  return cachedAccessToken;
-};
-
-/** Returns a real access token or null. Never returns a sentinel placeholder. */
-export const getAccessToken = async (): Promise<string | null> => {
-  return getStoredAccessTokenSync();
 };
 
 export const logout = async () => {
   try {
     await signOut(auth);
   } catch {}
-  cachedAccessToken = null;
+  clearAccessToken();
   localStorage.removeItem('gcal_active_user');
-  localStorage.removeItem(REAL_TOKEN_KEY);
 };

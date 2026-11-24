@@ -79,7 +79,7 @@ import { buildTaskEvents } from './utils/productivityUtils';
 import { buildWorkoutEvents, startOfWeek, tdee, calorieTarget, macroTargets } from './utils/fitnessMetrics';
 import { parseVnDate } from './components/productivity/fitness/RoadmapTab';
 import { User } from 'firebase/auth';
-import { initAuth, logout, getAccessToken, googleSignIn, AppUser } from './services/auth';
+import { initAuth, logout, getAccessToken, clearAccessToken, googleSignIn, AppUser } from './services/auth';
 import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './services/googleCalendarSync';
 import { fetchCalendarFromICalUrl } from './services/googleCalendarUrlSync';
 import { executeRealGoogleSync, hasOwnClientId } from './services/realGoogleAuth';
@@ -1015,7 +1015,7 @@ export default function App() {
       // Natural 1.2s processing delay to make state transitions graceful and avoid jitter
       await new Promise((resolve) => setTimeout(resolve, 1200));
 
-      // 1. Verify and ensure local vault storage integrity
+      // 1. Verify and ensure local vault storage integrity (100% safe)
       const currentEvents = accountStorage.getItem('gcal_events', user?.uid);
       if (currentEvents) {
         try {
@@ -1025,18 +1025,49 @@ export default function App() {
         }
       }
 
-      // 2. If Google Calendar access token exists, fetch & merge events
+      let syncNotice: string | null = null;
+
+      // 2. If Google Calendar access token exists, fetch & merge events safely
       const token = await getAccessToken();
       if (token) {
-        const gEvents = await fetchGoogleCalendarEvents(token);
-        if (gEvents && gEvents.length > 0) {
-          setEvents((prev) => {
-            const merged = mergeSyncedGoogleEvents(gEvents, prev);
-            try {
-              accountStorage.setItem('gcal_events', JSON.stringify(merged), user?.uid);
-            } catch {}
-            return merged;
-          });
+        try {
+          const gEvents = await fetchGoogleCalendarEvents(token);
+          if (gEvents && gEvents.length > 0) {
+            setEvents((prev) => {
+              const merged = mergeSyncedGoogleEvents(gEvents, prev);
+              try {
+                accountStorage.setItem('gcal_events', JSON.stringify(merged), user?.uid);
+              } catch {}
+              return merged;
+            });
+          }
+        } catch (gcalErr: any) {
+          console.warn('Google Calendar sync notice during Live Sync:', gcalErr);
+          const isAuthExpired =
+            gcalErr?.code === 'GOOGLE_AUTH_EXPIRED' ||
+            gcalErr?.name === 'GoogleAuthExpiredError' ||
+            gcalErr?.message?.toLowerCase().includes('hết hạn') ||
+            gcalErr?.message?.toLowerCase().includes('invalid authentication credentials') ||
+            gcalErr?.message?.includes('401');
+
+          if (isAuthExpired) {
+            clearAccessToken();
+            syncNotice =
+              lang === 'vi'
+                ? 'Phiên kết nối Google Calendar đã hết hạn. Dữ liệu đã lưu an toàn ở bộ nhớ máy.'
+                : 'Google Calendar session expired. Local data is safely preserved.';
+            if (isUserInitiated) {
+              setActiveAlert({
+                title:
+                  lang === 'vi'
+                    ? 'Phiên Google Calendar đã hết hạn. Vui lòng kết nối lại tài khoản.'
+                    : 'Google Calendar session expired. Please reconnect.',
+                time: new Date().toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US'),
+              });
+            }
+          } else {
+            syncNotice = gcalErr instanceof Error ? gcalErr.message : String(gcalErr);
+          }
         }
       }
 
@@ -1047,14 +1078,14 @@ export default function App() {
         second: '2-digit',
       });
       setLastSyncedTime(timeStr);
-      setLastSyncError(null);
+      setLastSyncError(syncNotice);
+      // Local vault and storage are 100% safe, keep state healthy and peaceful
       setSyncState('synced');
 
       // Only play subtle chime sound when explicitly initiated by user interaction
       if (isUserInitiated) {
         playLiveSyncChime();
       }
-      // Note: Automatic background sync is kept 100% quiet without spamming toast popups.
     } catch (err) {
       console.warn('Live Sync verification notice:', err);
       setLastSyncError(err instanceof Error ? err.message : String(err));
@@ -1149,13 +1180,30 @@ export default function App() {
         lang === 'vi' ? 'Đồng bộ Google Calendar thành công!' : 'Google Calendar Synced!',
         lang === 'vi' ? `Đã đồng bộ ${gEvents?.length || 0} sự kiện.` : `Synced ${gEvents?.length || 0} events.`
       );
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to sync Google Calendar:', err);
+      const isExpired =
+        err?.code === 'GOOGLE_AUTH_EXPIRED' ||
+        err?.name === 'GoogleAuthExpiredError' ||
+        err?.message?.toLowerCase().includes('hết hạn') ||
+        err?.message?.toLowerCase().includes('invalid authentication credentials') ||
+        err?.message?.includes('401');
+
+      if (isExpired) {
+        clearAccessToken();
+        setLastSyncError(
+          lang === 'vi'
+            ? 'Phiên kết nối Google Calendar đã hết hạn. Vui lòng cấp lại quyền.'
+            : 'Google Calendar session expired. Please reconnect.'
+        );
+        setIsCloudSyncOpen(true);
+      }
+
       setActiveAlert({
         title:
           lang === 'vi'
-            ? 'Đồng bộ Google Calendar thất bại — token có thể đã hết hạn, vui lòng kết nối lại.'
-            : 'Google Calendar sync failed — the token may have expired, please reconnect.',
+            ? 'Đồng bộ Google Calendar thất bại — phiên kết nối có thể đã hết hạn, vui lòng kết nối lại.'
+            : 'Google Calendar sync failed — session may have expired, please reconnect.',
         time: new Date().toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US'),
       });
     } finally {

@@ -1,5 +1,5 @@
 import { CalendarEvent } from '../types/calendar';
-import { AppUser } from './auth';
+import { AppUser, setAccessToken, clearAccessToken } from './auth';
 import { fetchGoogleCalendarEvents } from './googleCalendarSync';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -104,6 +104,8 @@ export function requestRealGoogleOAuthToken(customClientId?: string): Promise<st
             return;
           }
           if (response.access_token) {
+            const expiresIn = Number(response.expires_in) || 3600;
+            setAccessToken(response.access_token, expiresIn);
             resolve(response.access_token);
           } else {
             reject(new Error('Google không trả về Access Token. Vui lòng thử lại.'));
@@ -151,7 +153,7 @@ export async function executeRealGoogleSync(
 
   // 3. Persist session
   localStorage.setItem('gcal_active_user', JSON.stringify(user));
-  localStorage.setItem('gcal_real_access_token', token);
+  setAccessToken(token);
 
   return { user, accessToken: token, events };
 }

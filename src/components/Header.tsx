@@ -193,6 +193,27 @@ export const Header: React.FC<HeaderProps> = ({
 
     // 3. If real error occurred (network down or auth failure when user requested sync)
     if (syncState === 'error') {
+      const isAuthExpired =
+        lastSyncError?.toLowerCase().includes('hết hạn') ||
+        lastSyncError?.toLowerCase().includes('expired') ||
+        lastSyncError?.toLowerCase().includes('invalid authentication credentials');
+
+      if (isAuthExpired) {
+        return {
+          type: 'error' as const,
+          label: lang === 'vi' ? 'CẦN XÁC THỰC' : 'RE-AUTH NEEDED',
+          badgeClass: 'bg-amber-500/[0.08] dark:bg-amber-500/[0.1] border-amber-500/30 dark:border-amber-500/40 hover:border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.15)]',
+          dotClass: 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse',
+          textClass: 'text-amber-600 dark:text-amber-400',
+          hue: 45,
+          saturation: 1.2,
+          brightness: 1.0,
+          description: lang === 'vi'
+            ? 'Phiên đăng nhập Google Calendar đã hết hạn. Dữ liệu vẫn được lưu an toàn 100% trong bộ nhớ máy. Bấm vào đây để kết nối lại.'
+            : 'Google Calendar session expired. Local data is safely preserved. Click to reconnect.',
+        };
+      }
+
       return {
         type: 'error' as const,
         label: lang === 'vi' ? 'LỖI KẾT NỐI' : 'SYNC ERROR',
@@ -409,7 +430,9 @@ export const Header: React.FC<HeaderProps> = ({
                     : syncStatus.type === 'syncing'
                     ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-200'
                     : syncStatus.type === 'error'
-                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-800 dark:text-rose-200'
+                    ? (lastSyncError?.toLowerCase().includes('hết hạn') || lastSyncError?.toLowerCase().includes('expired')
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-200'
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-800 dark:text-rose-200')
                     : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-800 dark:text-cyan-200'
                 }`}>
                   <div className="flex items-center gap-2 font-bold text-[13px]">
@@ -418,7 +441,7 @@ export const Header: React.FC<HeaderProps> = ({
                     ) : syncStatus.type === 'syncing' ? (
                       <RefreshCw className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
                     ) : syncStatus.type === 'error' ? (
-                      <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                      <AlertTriangle className={`w-4 h-4 ${lastSyncError?.toLowerCase().includes('hết hạn') || lastSyncError?.toLowerCase().includes('expired') ? 'text-amber-500' : 'text-rose-500'} shrink-0`} />
                     ) : (
                       <ShieldCheck className="w-4 h-4 text-cyan-500 shrink-0" />
                     )}
@@ -428,7 +451,9 @@ export const Header: React.FC<HeaderProps> = ({
                         : syncStatus.type === 'syncing'
                         ? (lang === 'vi' ? 'Đang đồng bộ...' : 'Syncing...')
                         : syncStatus.type === 'error'
-                        ? (lang === 'vi' ? 'Lỗi kết nối máy chủ' : 'Connection Error')
+                        ? (lastSyncError?.toLowerCase().includes('hết hạn') || lastSyncError?.toLowerCase().includes('expired')
+                            ? (lang === 'vi' ? 'Phiên kết nối Google đã hết hạn' : 'Google Session Expired')
+                            : (lang === 'vi' ? 'Lỗi kết nối máy chủ' : 'Connection Error'))
                         : (lang === 'vi' ? 'Kho lưu trữ an toàn (Local Vault)' : 'Safe Local Vault')}
                     </span>
                   </div>
@@ -462,10 +487,16 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                     <span className={`font-mono text-[11px] font-bold truncate max-w-[140px] ${
                       isLoggedInGoogle
-                        ? 'text-emerald-600 dark:text-emerald-400'
+                        ? (lastSyncError?.toLowerCase().includes('hết hạn') || lastSyncError?.toLowerCase().includes('expired')
+                            ? 'text-amber-500 dark:text-amber-400'
+                            : 'text-emerald-600 dark:text-emerald-400')
                         : 'text-slate-400 dark:text-zinc-500'
                     }`}>
-                      {isLoggedInGoogle ? userEmail || 'Đã liên kết' : (lang === 'vi' ? 'Chưa liên kết' : 'Not linked')}
+                      {isLoggedInGoogle
+                        ? (lastSyncError?.toLowerCase().includes('hết hạn') || lastSyncError?.toLowerCase().includes('expired')
+                            ? (lang === 'vi' ? 'Cần kết nối lại' : 'Re-auth needed')
+                            : userEmail || 'Đã liên kết')
+                        : (lang === 'vi' ? 'Chưa liên kết' : 'Not linked')}
                     </span>
                   </div>
 
@@ -505,17 +536,27 @@ export const Header: React.FC<HeaderProps> = ({
                     </span>
                   </button>
 
-                  {!isLoggedInGoogle && onOpenCloudSync && (
+                  {onOpenCloudSync && (
                     <button
                       type="button"
                       onClick={() => {
                         setShowSyncDetailsPopup(false);
                         onOpenCloudSync();
                       }}
-                      className="w-full py-2 px-3 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-white/10 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                      className={`w-full py-2 px-3 rounded-xl font-bold text-xs border transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                        !isLoggedInGoogle || lastSyncError?.toLowerCase().includes('hết hạn') || lastSyncError?.toLowerCase().includes('expired')
+                          ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/30 shadow-xs'
+                          : 'bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10'
+                      }`}
                     >
                       <Cloud className="w-3.5 h-3.5 text-blue-500" />
-                      <span>{lang === 'vi' ? 'Đăng Nhập Google Để Sao Lưu Đám Mây' : 'Sign In With Google For Cloud Sync'}</span>
+                      <span>
+                        {!isLoggedInGoogle
+                          ? (lang === 'vi' ? 'Đăng Nhập Google Để Sao Lưu Đám Mây' : 'Sign In With Google For Cloud Sync')
+                          : (lastSyncError?.toLowerCase().includes('hết hạn') || lastSyncError?.toLowerCase().includes('expired'))
+                          ? (lang === 'vi' ? 'Đăng Nhập Lại Google Calendar' : 'Reconnect Google Calendar')
+                          : (lang === 'vi' ? 'Quản Lý Kết Nối Google' : 'Manage Google Sync')}
+                      </span>
                     </button>
                   )}
                 </div>
