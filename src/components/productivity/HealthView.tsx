@@ -528,7 +528,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
         <div className="p-1.5 rounded-full bg-white/[0.04] dark:bg-white/[0.04] backdrop-blur-2xl border border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.36),0_0_20px_rgba(255,255,255,0.03)] inline-flex items-center gap-1.5 overflow-x-auto max-w-full scrollbar-none">
           {[
             { id: 'overview', label: lang === 'vi' ? 'Tổng quan & Chỉ số' : 'Overview & Logs', icon: HeartPulse },
-            { id: 'roadmap', label: lang === 'vi' ? 'Lộ trình chu kỳ CTG' : 'CTG Periodized Roadmap', icon: Compass },
+            { id: 'roadmap', label: lang === 'vi' ? 'Lộ trình chu kỳ ZENOX' : 'ZENOX Periodized Roadmap', icon: Compass },
             { id: 'inbody', label: lang === 'vi' ? 'Tiến độ & Check Body' : 'Progress & Body Check', icon: Scale },
             { id: 'training', label: lang === 'vi' ? 'Giáo án & Buổi tập' : 'Workouts & Mesocycle', icon: Dumbbell },
             { id: 'nutrition', label: lang === 'vi' ? 'Dinh dưỡng & Món Việt' : 'Nutrition & Meals', icon: Utensils },
@@ -679,7 +679,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-extrabold  px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                        Lộ Trình CTG Đang Chạy
+                        Lộ Trình ZENOX Đang Chạy
                       </span>
                       <span className="text-xs text-white/50 font-mono">
                         {ctgActivePhase.startDate} – {ctgActivePhase.endDate}
@@ -749,7 +749,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
                 </div>
               </div>
 
-              {/* Tracked.gg Athlete Command Center Bar */}
+              {/* ZENOX Athlete Command Center Bar */}
               <div className="pt-3 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <div className="flex items-center gap-2">
@@ -817,7 +817,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
                   <Compass className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-white text-sm">Chưa kích hoạt đại lộ trình chu kỳ CTG</h4>
+                  <h4 className="font-bold text-white text-sm">Chưa kích hoạt đại lộ trình chu kỳ ZENOX</h4>
                   <p className="text-xs text-white/60 mt-0.5">
                     Tạo lộ trình phân kỳ nhiều giai đoạn (Bulk, Mini-cut, Cut) tối ưu hóa theo chiều cao và cân nặng cá nhân của bạn.
                   </p>
@@ -1009,7 +1009,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
               </button>
             </div>
 
-            {/* CTG Macro Ring Visualization */}
+            {/* ZENOX Macro Ring Visualization */}
             <div className="flex items-center gap-4 py-2 border-y border-slate-100 dark:border-white/[0.08]/80 mb-3">
               <div className="relative w-20 h-20 shrink-0">
                 <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
@@ -1133,7 +1133,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
             </div>
           </div>
 
-          {/* CTG Energy Balance (Cân bằng năng lượng & Thâm hụt calo) */}
+          {/* ZENOX Energy Balance (Cân bằng năng lượng & Thâm hụt calo) */}
           <div className="bg-white dark:bg-white/[0.03] backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-xs p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">

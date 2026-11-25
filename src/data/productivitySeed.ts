@@ -700,7 +700,7 @@ export const SEED_MEALS: MealLog[] = [
 
 export const SEED_CTG_PERIODIZED_ROADMAP: CtgPeriodizedRoadmap = {
   id: 'ctg-master-roadmap-1',
-  title: 'Lộ Trình Chu Kỳ Toàn Diện CTG 2026 – 2029 (17 Giai Đoạn)',
+  title: 'Lộ Trình Chu Kỳ Toàn Diện ZENOX 2026 – 2029 (17 Giai Đoạn)',
   createdAt: Date.now() - 30 * 864e5,
   activePhaseId: 'ctg-p2',
   phases: [

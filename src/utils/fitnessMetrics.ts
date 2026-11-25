@@ -1177,7 +1177,7 @@ export function generateCtgPeriodizedRoadmap(
   const targetFfmi = params.targetFfmi ? Math.min(24.5, Math.max(16, params.targetFfmi)) : (isFemale ? 19.5 : 22.0);
   const targetBfPct = params.targetBodyFatPct ? Math.min(35, Math.max(8, params.targetBodyFatPct)) : (isFemale ? 20.0 : 12.0);
 
-  // CTG Biological Constants
+  // ZENOX Biological Constants
   const rf = { male: 25, female: 21.2 };
   const Fje = { male: 15, female: 23 };
   const rl = [
@@ -1447,7 +1447,7 @@ export function generateCtgPeriodizedRoadmap(
     else break;
   }
 
-  // Phase Merging exactly like CTG
+  // Phase Merging ZENOX Wave Standard
   const O: RawPhase[] = [];
   for (const F of C) {
     const T = O[O.length - 1];
@@ -1524,7 +1524,7 @@ export function generateCtgPeriodizedRoadmap(
 
   return {
     id: `ctg-roadmap-${Date.now()}`,
-    title: `Lộ Trình Chu Kỳ CTG (${phases.length} Giai Đoạn)`,
+    title: `Lộ Trình Chu Kỳ ZENOX (${phases.length} Giai Đoạn)`,
     createdAt: Date.now(),
     activePhaseId,
     heightCm,
@@ -2395,7 +2395,7 @@ export function calculateDailyHealthScore(
 
 
 // ---------------------------------------------------------------------------
-// 12. Tracked.gg & CTG Adaptive Metabolism & World-Class Nutrition Analytics
+// 12. ZENOX Adaptive Metabolism & Nutrition Analytics
 // ---------------------------------------------------------------------------
 
 export interface AdaptiveTDEEResult {
@@ -2414,7 +2414,7 @@ export interface AdaptiveTDEEResult {
 
 /**
  * Calculates smoothed trend weights using Exponential Moving Average (EMA) with alpha = 0.15
- * (Filters out sodium, water retention, and glycogen noise exactly like Tracked.gg and MacroFactor).
+ * (Filters out sodium, water retention, and glycogen noise with ZENOX dynamic smoothing).
  */
 export function calculateTrendWeights(bodyPoints: BodyPoint[]): {
   currentRaw: number;
@@ -2461,7 +2461,7 @@ export function calculateTrendWeights(bodyPoints: BodyPoint[]): {
 }
 
 /**
- * Tracked.gg Adaptive Expenditure Engine:
+ * ZENOX Adaptive Expenditure Engine:
  * Dynamically recalibrates TDEE based on logged calorie intake vs real weight trend rate.
  */
 export function calculateAdaptiveTDEE(
@@ -2528,7 +2528,7 @@ export function calculateAdaptiveTDEE(
       : baselineTdee;
 
     analysisMessage = ctgPhaseTargetKcal
-      ? `Đang đồng bộ tiêu chuẩn theo lộ trình Giai đoạn CTG (${ctgPhaseTargetKcal.toLocaleString('vi-VN')} kcal). Cần thêm ít nhất 4-7 ngày ghi nhận bữa ăn đầy đủ để hệ thống tự động hiệu chỉnh chuyển hóa.`
+      ? `Đang đồng bộ tiêu chuẩn theo lộ trình Giai đoạn ZENOX (${ctgPhaseTargetKcal.toLocaleString('vi-VN')} kcal). Cần thêm ít nhất 4-7 ngày ghi nhận bữa ăn đầy đủ để hệ thống tự động hiệu chỉnh chuyển hóa.`
       : 'Chưa đủ dữ liệu ghi nhận bữa ăn liên tục (cần ít nhất 4-7 ngày). Hệ thống đang duy trì mức tiêu hao cơ sở chuẩn.';
   } else {
     // Sufficient data: calculate adaptive expenditure
@@ -2603,7 +2603,7 @@ export interface ProteinDistributionResult {
 }
 
 /**
- * CTG & Tracked.gg Muscle Protein Synthesis (MPS) & Leucine Threshold Distribution:
+ * ZENOX Muscle Protein Synthesis (MPS) & Leucine Threshold Distribution:
  * Analyzes whether protein intake is distributed optimally across 3-5 meals to hit leucine threshold.
  */
 export function calculateProteinDistribution(
@@ -2754,7 +2754,7 @@ export interface CarbCyclingTargets {
 }
 
 /**
- * CTG Carb Cycling Strategy:
+ * ZENOX Carb Cycling Strategy:
  * Splits daily calorie and carb budget between Training Days, Rest Days, and Refeed Days.
  */
 export function calculateCarbCyclingTargets(
@@ -2954,7 +2954,7 @@ export function calculateCronometerNutrientScores(
 }
 
 // ==========================================
-// CTG & RENAISSANCE PERIODIZATION VOLUME LANDMARKS
+// ZENOX PERFORMANCE VOLUME LANDMARKS
 // ==========================================
 
 export const VOLUME_LANDMARKS_CONFIG: Record<
@@ -3041,7 +3041,7 @@ export function calculateMuscleVolumeLandmarks(
 }
 
 // ==========================================
-// TRACKED.GG PROGRESSIVE OVERLOAD COMPARISON
+// ZENOX PROGRESSIVE OVERLOAD COMPARISON
 // ==========================================
 
 /**
@@ -3186,7 +3186,7 @@ export function compareProgressiveOverload(
 
 // ==========================================
 // KHOA HỌC THỂ THAO & CHU KỲ HÓA (EXERCISE SCIENCE & PERIODIZATION)
-// Nguồn tham chiếu: Renaissance Periodization (Dr. Mike Israetel),
+// Chuẩn tối ưu hóa: ZENOX Sports Science & Hypertrophy Lab,
 // Brad Schoenfeld (Hypertrophy Meta-analyses), ISSN Position Stands, Eric Helms (3DMJ)
 // ==========================================
 

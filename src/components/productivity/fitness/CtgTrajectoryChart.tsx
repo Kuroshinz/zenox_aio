@@ -218,7 +218,7 @@ export const CtgTrajectoryChart: React.FC<CtgTrajectoryChartProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-              Biểu Đồ Chu Kỳ Chuyển Hóa CTG
+              Biểu Đồ Chu Kỳ Chuyển Hóa ZENOX
             </span>
             <span className="text-xs font-mono text-white/50">
               ~{totalWeeks} Tuần · {phases.length} Giai đoạn

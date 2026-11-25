@@ -176,7 +176,7 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
         return {
           type: 'nutrition',
           title: `Bữa ${first.slot === 'breakfast' ? 'Sáng' : first.slot === 'lunch' ? 'Trưa' : first.slot === 'dinner' ? 'Tối' : 'Phụ'}: ${first.name} (${first.kcal} kcal · ${first.protein}P · ${first.carbs}C · ${first.fat}F)`,
-          badgeLabel: 'Dinh Dưỡng CTG',
+          badgeLabel: 'Dinh Dưỡng ZENOX',
           badgeColor: '#ff6025',
           icon: Utensils,
           data: { items: macroItems },

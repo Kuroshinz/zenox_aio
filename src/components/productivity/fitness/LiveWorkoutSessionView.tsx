@@ -263,7 +263,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
           </div>
         </div>
 
-        {/* Quick Exercise Jump Chips (Tracked.gg / Hevy style: Tap to jump smoothly to any exercise) */}
+        {/* Quick Exercise Jump Chips (ZENOX Quick Nav: Tap to jump smoothly to any exercise) */}
         <div className="flex items-center gap-1.5 overflow-x-auto pt-2 pb-0.5 scrollbar-none text-xs">
           <span className="text-[10px] font-mono font-bold text-white/40 uppercase tracking-wider shrink-0 mr-1 hidden sm:inline">
             Bài tập:
@@ -731,7 +731,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
         </button>
       </div>
 
-      {/* 5. FLOATING DYNAMIC REST TIMER ISLAND (Hevy / Tracked.gg style: only pops up when resting, out of the way at bottom!) */}
+      {/* 5. FLOATING DYNAMIC REST TIMER ISLAND (ZENOX Dynamic Rest Timer Island) */}
       {restSecondsLeft !== null && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-300 max-w-[92vw]">
           <div className="flex items-center gap-3.5 px-5 py-3 rounded-2xl bg-[#0e0712]/95 border border-cyan-500/50 backdrop-blur-2xl shadow-2xl shadow-cyan-950/80 text-white">
@@ -833,7 +833,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
             </div>
 
             <p className="text-xs text-white/60">
-              Chọn bài tập bổ sung cho buổi hôm nay (Tracked.gg Dynamic Exercise Swap):
+              Chọn bài tập bổ sung cho buổi hôm nay (ZENOX Dynamic Exercise Swap):
             </p>
 
             <select

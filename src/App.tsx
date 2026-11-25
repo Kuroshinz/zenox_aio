@@ -1267,7 +1267,7 @@ export default function App() {
     }
 
     return {
-      roadmapTitle: roadmap.title || 'Lộ trình CTG',
+      roadmapTitle: roadmap.title || 'Lộ trình ZENOX',
       phaseName: phase.name,
       remainingDays,
       startWeightKg: phase.startWeightKg,

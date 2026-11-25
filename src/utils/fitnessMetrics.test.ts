@@ -159,11 +159,11 @@ const healthScore = calculateDailyHealthScore(testDayLog, 8000, 2500, 2000, 140)
 assert(healthScore.score >= 90, `Expected score >= 90, got ${healthScore.score}`);
 assert(healthScore.status === 'excellent', `Expected excellent status, got ${healthScore.status}`);
 
-// 11. CTG 17-Phase Master Periodized Roadmap
+// 11. ZENOX 17-Phase Master Periodized Roadmap
 import { SEED_CTG_PERIODIZED_ROADMAP } from '../data/productivitySeed';
 import { parseVnDate, getPhaseStatus } from '../components/productivity/fitness/RoadmapTab';
 
-assert(SEED_CTG_PERIODIZED_ROADMAP.phases.length === 17, 'Should have exactly 17 CTG phases');
+assert(SEED_CTG_PERIODIZED_ROADMAP.phases.length === 17, 'Should have exactly 17 ZENOX phases');
 const p1 = SEED_CTG_PERIODIZED_ROADMAP.phases[0];
 assert(p1.name === 'Giảm mỡ' && p1.startWeightKg === 63.55 && p1.targetWeightKg === 61.35, 'Phase 1 checks');
 assert(p1.macros.protein === 141 && p1.targetKcal === 1606, 'Phase 1 nutrition checks');
@@ -192,7 +192,7 @@ assert(isNaN(parsedEmpty.getTime()), 'parseVnDate on empty should return invalid
 const phaseStatus = getPhaseStatus(p2, 'ctg-p2');
 assert(phaseStatus === 'current', 'Phase 2 should report current status');
 
-// 12. Dynamic CTG Roadmap Generation for Any Height, Weight, Body Fat & Sex
+// 12. Dynamic ZENOX Roadmap Generation for Any Height, Weight, Body Fat & Sex
 const customRoadmapMale = generateCtgPeriodizedRoadmap({
   sex: 'male',
   heightCm: 180,
@@ -232,7 +232,7 @@ assert(minicutNut.targetKcal < bulkNut.targetKcal, 'Minicut kcal should be signi
 assert(minicutNut.protein > bulkNut.protein, 'Minicut protein should be higher to spare muscle');
 
 
-// 13. Tracked.gg & CTG Adaptive Metabolism & Trend Weight Tests
+// 13. ZENOX Adaptive Metabolism & Trend Weight Tests
 import {
   calculateAdaptiveTDEE,
   calculateTrendWeights,

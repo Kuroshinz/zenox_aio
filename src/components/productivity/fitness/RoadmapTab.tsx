@@ -514,7 +514,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
   const handleCopyRoadmapSummary = async () => {
     if (!activeRoadmap) return;
     const lines = [
-      `🏋️ LỘ TRÌNH THỂ HÌNH CHU KỲ CTG: ${activeRoadmap.title}`,
+      `🏋️ LỘ TRÌNH THỂ HÌNH CHU KỲ ZENOX: ${activeRoadmap.title}`,
       `• Thể trạng xuất phát: Chiều cao ${profile.heightCm || 172}cm · Cân nặng ${firstPhase?.startWeightKg || currentWeight}kg · Mỡ ${firstPhase?.startBodyFatPct || currentBf}% (LBM: ${currentLbm}kg, FFMI: ${currentFfmi})`,
       `• Mục tiêu đích đến: ${lastPhase?.targetWeightKg}kg · ${lastPhase?.targetBodyFatPct}% Mỡ · FFMI ${lastPhase?.targetFfmi} (+${totalLbmGain}kg Cơ nạc)`,
       `• Tổng số giai đoạn: ${phases.length} giai đoạn chu kỳ sóng`,
@@ -528,7 +528,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
       await navigator.clipboard.writeText(lines.join('\n'));
       notifySuccess('Đã sao chép lộ trình!', 'Toàn bộ nội dung chu kỳ đã được lưu vào Clipboard.');
     } catch {
-      notifySuccess('Lộ trình chu kỳ CTG', 'Đã tóm tắt lộ trình thành công.');
+      notifySuccess('Lộ trình chu kỳ ZENOX', 'Đã tóm tắt lộ trình thành công.');
     }
   };
 
@@ -548,7 +548,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
     if (SEED_CTG_PERIODIZED_ROADMAP.phases[0]) {
       handleApplySinglePhase(SEED_CTG_PERIODIZED_ROADMAP.phases[0]);
     }
-    notifySuccess('Đã tải lộ trình mẫu!', 'Lộ trình mẫu chuẩn CTG (68kg → 74kg) đã sẵn sàng.');
+    notifySuccess('Đã tải lộ trình mẫu!', 'Lộ trình mẫu chuẩn ZENOX Pro (68kg → 74kg) đã sẵn sàng.');
   };
 
   // COMMON SPORTS LIST FOR WIZARD
@@ -643,7 +643,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
     setShowWizardModal(false);
     notifySuccess(
       'Kích hoạt lộ trình chu kỳ thành công!',
-      `Đã thiết lập ${newRoadmap.phases.length} giai đoạn chu kỳ sóng tối ưu theo khoa học CTG.`
+      `Đã thiết lập ${newRoadmap.phases.length} giai đoạn chu kỳ sóng tối ưu theo khoa học thể hình ZENOX.`
     );
   };
 
@@ -678,10 +678,10 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
           </div>
           <div className="max-w-lg mx-auto space-y-2">
             <h3 className="text-2xl font-black text-white tracking-tight">
-              Lộ Trình Thể Hình Chu Kỳ CTG
+              Lộ Trình Thể Hình Chu Kỳ ZENOX
             </h3>
             <p className="text-xs sm:text-sm text-white/60 leading-relaxed">
-              Hệ thống chu kỳ sóng Hypertrophy Waves, Mini-cut và Diet break khoa học chuẩn CTG Fitness giúp tối ưu xây dựng cơ nạc, kiểm soát mỡ thừa và bảo vệ trao đổi chất.
+              Hệ thống chu kỳ sóng Hypertrophy Waves, Mini-cut và Diet break khoa học chuẩn ZENOX Fitness giúp tối ưu xây dựng cơ nạc, kiểm soát mỡ thừa và bảo vệ trao đổi chất.
             </p>
           </div>
 
@@ -692,7 +692,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
               className="px-6 py-3.5 rounded-2xl bg-linear-to-r from-rose-600 via-rose-500 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-sm font-black transition-all cursor-pointer shadow-[0_4px_20px_rgba(244,63,94,0.4)] flex items-center gap-2"
             >
               <Sparkles className="w-4 h-4 text-white" />
-              <span>⚡ Lập Lộ Trình Chu Kỳ CTG Ngay (4 Bước)</span>
+              <span>⚡ Lập Lộ Trình Chu Kỳ ZENOX Ngay (4 Bước)</span>
             </button>
 
             <button
@@ -727,7 +727,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <span className="font-display font-black text-xl sm:text-2xl tracking-tight text-white">
-                    {activeRoadmap.title || 'Lộ Trình Chu Kỳ CTG'}
+                    {activeRoadmap.title || 'Lộ Trình Chu Kỳ ZENOX'}
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.25)]">
                     {phases.length} Giai Đoạn · {firstPhase?.startDate} – {lastPhase?.endDate}
@@ -937,7 +937,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
                     {/* Cột 3: Dinh Dưỡng Giai Đoạn */}
                     <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2.5">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-white/40 uppercase font-bold text-[10px]">Dinh Dưỡng Chuẩn CTG</span>
+                        <span className="text-white/40 uppercase font-bold text-[10px]">Dinh Dưỡng Chuẩn ZENOX</span>
                         <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/10 text-[9px] font-mono">
                           <button
                             type="button"
@@ -1387,7 +1387,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
         </div>
       )}
 
-      {/* MODAL 1: BỘ TẠO LỘ TRÌNH CHU KỲ CTG (WIZARD 4 BƯỚC) */}
+      {/* MODAL 1: BỘ TẠO LỘ TRÌNH CHU KỲ ZENOX (WIZARD 4 BƯỚC) */}
       {showWizardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fadeIn">
           <div className="bg-[#0b0307] border border-rose-500/30 w-full max-w-2xl rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 animate-scaleUp max-h-[90vh] overflow-y-auto">
@@ -1395,10 +1395,10 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                  CTG Periodization Engine
+                  ZENOX Periodization Engine
                 </span>
                 <h3 className="text-xl font-black text-white mt-1 tracking-tight">
-                  Lập Lộ Trình Chu Kỳ Thể Hình CTG
+                  Lập Lộ Trình Chu Kỳ Thể Hình ZENOX
                 </h3>
               </div>
               <button
@@ -1697,7 +1697,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
 
                 {/* TDEE Summary */}
                 <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-between font-mono">
-                  <span className="text-xs text-rose-300 font-sans font-semibold">TDEE Ước tính mô hình CTG:</span>
+                  <span className="text-xs text-rose-300 font-sans font-semibold">TDEE Ước tính mô hình ZENOX:</span>
                   <span className="text-xl font-black text-white">{wizComputed.tdeeCal.toLocaleString('vi-VN')} kcal/ngày</span>
                 </div>
 
@@ -1727,7 +1727,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-white uppercase text-[10px] tracking-wider">
-                      Kết Quả Mô Phỏng Chu Kỳ Sóng CTG
+                      Kết Quả Mô Phỏng Chu Kỳ Sóng ZENOX
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold">
                       {wizComputed.simulatedRoadmap.phases.length} Giai Đoạn · ~{wizComputed.totalWeeks} Tuần
@@ -2226,7 +2226,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
         />
       )}
 
-      {/* MODAL 7: XUẤT THẺ CHECK-IN TUẦN CHUẨN CTG (3:4 HD) */}
+      {/* MODAL 7: XUẤT THẺ CHECK-IN TUẦN CHUẨN ZENOX (3:4 HD) */}
       <CtgCheckinExportModal
         isOpen={isCheckinExportModalOpen}
         onClose={() => setIsCheckinExportModalOpen(false)}

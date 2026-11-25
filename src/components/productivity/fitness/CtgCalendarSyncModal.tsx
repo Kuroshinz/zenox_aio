@@ -103,7 +103,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
 }) => {
   // Safe phase fallback
   const resolvedPhase = activePhase || {
-    name: 'Giáo án thể hình CTG',
+    name: 'Giáo án thể hình ZENOX Pro',
     phaseType: 'maintain' as const,
   };
 
@@ -349,8 +349,8 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
       // 1. Prepare CalendarEvent objects
       const newEvents: CalendarEvent[] = activeSlots.map((slot, idx) => ({
         id: `ctg-workout-${Date.now()}-${idx}`,
-        title: `💪 [CTG] ${slot.sessionTitle}`,
-        description: `Lộ trình CTG: ${resolvedPhase.name}\nBài tập: ${slot.prescriptionsSummary}\nĐược tự động lên lịch theo khung giờ rảnh tối ưu của bạn.`,
+        title: `💪 [ZENOX] ${slot.sessionTitle}`,
+        description: `Lộ trình ZENOX: ${resolvedPhase.name}\nBài tập: ${slot.prescriptionsSummary}\nĐược tự động lên lịch tối ưu bởi ZENOX AI.`,
         startDate: slot.date,
         startTime: slot.startTime,
         endDate: slot.date,

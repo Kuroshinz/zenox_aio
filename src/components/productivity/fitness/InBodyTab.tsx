@@ -393,7 +393,7 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
             ...p.macros,
             carbs: newCarbs,
           },
-          note: `${p.note ? p.note + ' · ' : ''}Hiệu chỉnh CTG: ${recommendedAdjustment.kcalDelta > 0 ? '+' : ''}${recommendedAdjustment.kcalDelta} kcal carb theo xu hướng 7 ngày.`,
+          note: `${p.note ? p.note + ' · ' : ''}Hiệu chỉnh ZENOX: ${recommendedAdjustment.kcalDelta > 0 ? '+' : ''}${recommendedAdjustment.kcalDelta} kcal carb theo xu hướng 7 ngày.`,
         };
       }
       return p;
@@ -585,7 +585,7 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-white">
-                    Xu Hướng Cân Nặng Trung Bình 7 Ngày (Chuẩn Khoa Học CTG)
+                    Xu Hướng Cân Nặng Trung Bình 7 Ngày (Chuẩn Khoa Học ZENOX)
                   </h4>
                   <span className="text-[10px] font-mono font-semibold px-2 py-0.2 rounded-full bg-blue-500/20 text-blue-300">
                     {weeklyRollingStats.sampleCount} mốc đo
@@ -660,7 +660,7 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
             </div>
           )}
 
-          {/* Khuyến nghị & Cảnh báo thể trạng từ Huấn Luyện Viên CTG */}
+          {/* Khuyến nghị & Cảnh báo thể trạng từ Huấn Luyện Viên ZENOX Pro */}
           {recommendedAdjustment && !adjustedBanner && !dismissedRecommendation && (
             <div className="p-4 rounded-2xl bg-linear-to-r from-amber-500/15 via-orange-500/10 to-transparent border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
               <div className="flex items-start gap-3">
@@ -669,7 +669,7 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
                 </div>
                 <div>
                   <div className="font-bold text-white flex items-center gap-2">
-                    <span>Khuyến nghị thể trạng từ Huấn Luyện Viên CTG:</span>
+                    <span>Khuyến nghị thể trạng từ Huấn Luyện Viên ZENOX Pro:</span>
                     <span className="text-amber-300 font-mono font-extrabold">{recommendedAdjustment.label}</span>
                   </div>
                   <div className="text-[11px] text-white/70 mt-1 leading-relaxed">
@@ -681,7 +681,7 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    notifyWarning('Khuyến nghị thể trạng CTG', recommendedAdjustment.reason, {
+                    notifyWarning('Khuyến nghị thể trạng ZENOX', recommendedAdjustment.reason, {
                       category: 'fitness',
                       targetView: 'health',
                     });

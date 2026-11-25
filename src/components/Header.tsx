@@ -670,7 +670,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 font-bold text-rose-600 dark:text-rose-400">
                           <Compass className="w-4 h-4 shrink-0" />
-                          <span>Lộ trình CTG: {activeRoadmapSummary.phaseName}</span>
+                          <span>Lộ trình ZENOX: {activeRoadmapSummary.phaseName}</span>
                         </div>
                         <ArrowRight className="w-3.5 h-3.5 text-rose-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                       </div>

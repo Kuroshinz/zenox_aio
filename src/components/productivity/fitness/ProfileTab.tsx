@@ -65,7 +65,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
   onDeleteCtgRoadmap,
 }) => {
   const [editing, setEditing] = useState(false);
-  const effectiveName = currentUser?.displayName || profile.name || 'Người dùng CTG';
+  const effectiveName = currentUser?.displayName || profile.name || 'Vận động viên ZENOX';
   const effectiveEmail = currentUser?.email || profile.email;
 
   const [name, setName] = useState(effectiveName);
@@ -99,7 +99,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
     const diff = curBf - idealBf;
     if (diff <= 0) return { label: 'Mức mỡ lý tưởng', tone: 'text-emerald-400', desc: 'Độ nhạy insulin đỉnh cao, tối ưu hấp thụ dưỡng chất để tăng cơ.' };
     if (diff <= 4) return { label: 'Hơi cao hơn lý tưởng', tone: 'text-amber-400', desc: 'Có thể vào sóng tăng cơ hoặc siết nhẹ 3-4 tuần trước khi bulk.' };
-    return { label: 'Cao hơn mức lý tưởng', tone: 'text-rose-400', desc: 'Khuyến nghị ưu tiên giảm mỡ trước theo CTG để tăng độ nhạy insulin & tối ưu P-ratio.' };
+    return { label: 'Cao hơn mức lý tưởng', tone: 'text-rose-400', desc: 'Khuyến nghị ưu tiên giảm mỡ trước theo ZENOX để tăng độ nhạy insulin & tối ưu P-ratio.' };
   }, [curBf, idealBf]);
 
   const allRoadmaps = useMemo(() => {
@@ -165,7 +165,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
 
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-white/60">
                 {effectiveEmail && <span className="font-mono text-white/70">{effectiveEmail}</span>}
-                <span>Chi nhánh: <strong className="text-white/90">Cá nhân (CTG Pro)</strong></span>
+                <span>Chi nhánh: <strong className="text-white/90">Cá nhân (ZENOX Pro)</strong></span>
                 <span className="text-rose-400 font-semibold">• Toàn quyền sở hữu dữ liệu</span>
               </div>
             </div>
@@ -263,7 +263,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Compass className="w-5 h-5 text-rose-500" />
-              Lịch Sử và Phân Tích Lộ Trình CTG
+              Lịch Sử và Phân Tích Lộ Trình ZENOX
             </h2>
             <p className="text-xs text-white/50 mt-0.5">
               Định hướng chu kỳ sóng tăng cơ & mini-cut, hồ sơ tiến độ InBody và lịch sử tạo lộ trình.
@@ -283,7 +283,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
                 <Compass className="w-5 h-5" />
               </div>
               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-600/30 text-rose-300 border border-rose-500/40">
-                4 Bước Chuẩn CTG
+                4 Bước Chuẩn ZENOX
               </span>
             </div>
             <h3 className="text-sm font-bold text-white mt-3 group-hover:text-rose-400 transition-colors flex items-center gap-1.5">
@@ -314,7 +314,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
             </h3>
             <p className="text-xs text-white/60 mt-1 leading-relaxed">
               {ctgPeriodizedRoadmap ? (
-                <span>Đang áp dụng: <strong className="text-white/90">{ctgPeriodizedRoadmap.title || 'Lộ trình CTG'}</strong> ({ctgPeriodizedRoadmap.phases?.length || 0} chặng).</span>
+                <span>Đang áp dụng: <strong className="text-white/90">{ctgPeriodizedRoadmap.title || 'Lộ trình ZENOX'}</strong> ({ctgPeriodizedRoadmap.phases?.length || 0} chặng).</span>
               ) : (
                 'Xem lại các lộ trình đã tạo, chuyển đổi giáo án và mục tiêu dinh dưỡng bất cứ lúc nào.'
               )}
@@ -378,7 +378,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-white">{rm.title || 'Lộ trình CTG'}</span>
+                      <span className="font-bold text-sm text-white">{rm.title || 'Lộ trình ZENOX'}</span>
                       {isCurrent && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white">
                           <CheckCircle2 className="w-3 h-3" />
@@ -435,7 +435,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
               Thông Tin Sinh Trắc Học & Mục Tiêu Thể Hình
             </h3>
             <p className="text-xs text-white/50 mt-0.5">
-              Cơ sở để hệ thống CTG tính toán chính xác BMR Katch-McArdle, TDEE và mục tiêu Calo/Macro hàng ngày.
+              Cơ sở để hệ thống ZENOX tính toán chính xác BMR Katch-McArdle, TDEE và mục tiêu Calo/Macro hàng ngày.
             </p>
           </div>
 
@@ -604,7 +604,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-rose-500" />
             <h3 className="text-sm font-bold text-white">
-              Chiến Lược Thể Hình &amp; Dinh Dưỡng Khoa Học CTG ({GOAL_LABEL[profile.goal]})
+              Chiến Lược Thể Hình &amp; Dinh Dưỡng Khoa Học ZENOX ({GOAL_LABEL[profile.goal]})
             </h3>
           </div>
           <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-rose-600/20 text-rose-300 border border-rose-500/30">

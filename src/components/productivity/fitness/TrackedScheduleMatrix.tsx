@@ -118,7 +118,7 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
     };
   }, [weekDays]);
 
-  // 4. Muscle Recovery & Readiness Index (tracked.gg Signature)
+  // 4. Muscle Recovery & Readiness Index (ZENOX Signature)
   const muscleRecovery = useMemo(() => {
     const TRACKED_MUSCLES: MuscleGroup[] = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core'];
     const nowMs = Date.now();
@@ -206,7 +206,7 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                  Tracked.gg Split Matrix
+                  ZENOX Split Matrix
                 </span>
                 <span className="text-xs text-white/50 font-mono">
                   Lịch Tập Tuần Này
@@ -381,7 +381,7 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
           </div>
         )}
 
-        {/* 4. Muscle Recovery & Readiness Index (Tracked.gg Signature) */}
+        {/* 4. Muscle Recovery & Readiness Index (ZENOX Signature) */}
         <div className="pt-2 border-t border-white/5 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

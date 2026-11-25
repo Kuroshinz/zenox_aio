@@ -316,10 +316,10 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     } catch {}
     if (!visible) {
       notifyInfo(
-        lang === 'vi' ? 'Đã ẩn gợi ý giai đoạn' : 'CTG Guidance hidden',
+        lang === 'vi' ? 'Đã ẩn gợi ý giai đoạn' : 'ZENOX Guidance hidden',
         lang === 'vi'
-          ? 'Gợi ý đã được thu gọn để không làm phiền lịch tập của bạn. Bấm "Gợi ý CTG" để mở lại.'
-          : 'Guidance hidden to keep your routine clear. Click "CTG Guidance" to view anytime.'
+          ? 'Gợi ý đã được thu gọn để không làm phiền lịch tập của bạn. Bấm "Gợi ý ZENOX" để mở lại.'
+          : 'Guidance hidden to keep your routine clear. Click "ZENOX Guidance" to view anytime.'
       );
     }
   };
@@ -992,7 +992,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       MUSCLE_LABEL[e.muscle]?.toLowerCase().includes(exerciseSearch.toLowerCase())
   );
 
-  // Live Workout Workstation Full View (tracked.gg / Hevy style dedicated view)
+  // Live Workout Workstation Full View (ZENOX dedicated workstation view)
   if (activeSession && !isSessionMinimized) {
     return (
       <LiveWorkoutSessionView
@@ -1044,7 +1044,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                  Giai Đoạn CTG Hiện Tại
+                  Giai Đoạn ZENOX Hiện Tại
                 </span>
                 <span className="text-xs text-white/50 font-mono">
                   {ctgActivePhase.startDate} – {ctgActivePhase.endDate}
@@ -1140,10 +1140,10 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                   ? 'border-blue-400/40 bg-blue-50/70 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50'
                   : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
               }`}
-              title={showCtgGuidance ? (lang === 'vi' ? 'Thu gọn / Ẩn gợi ý chiến lược CTG' : 'Hide CTG guidance') : (lang === 'vi' ? 'Mở lại gợi ý chiến lược tập luyện theo giai đoạn CTG' : 'Show CTG guidance')}
+              title={showCtgGuidance ? (lang === 'vi' ? 'Thu gọn / Ẩn gợi ý chiến lược ZENOX' : 'Hide ZENOX guidance') : (lang === 'vi' ? 'Mở lại gợi ý chiến lược tập luyện theo giai đoạn ZENOX' : 'Show ZENOX guidance')}
             >
               <Compass className="w-4 h-4 text-blue-500" />
-              <span>{showCtgGuidance ? (lang === 'vi' ? 'Ẩn gợi ý CTG' : 'Hide CTG') : (lang === 'vi' ? `Gợi ý CTG (${ctgActivePhase.name})` : 'CTG Guidance')}</span>
+              <span>{showCtgGuidance ? (lang === 'vi' ? 'Ẩn gợi ý ZENOX' : 'Hide ZENOX') : (lang === 'vi' ? `Gợi ý ZENOX (${ctgActivePhase.name})` : 'ZENOX Guidance')}</span>
             </button>
           )}
           <button
@@ -1187,7 +1187,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         onApplyReadinessAdjustment={handleApplyReadinessAdjustment}
       />
 
-      {/* Tracked.gg 7-Day Split Matrix & Muscle Recovery Radar */}
+      {/* ZENOX 7-Day Split Matrix & Muscle Recovery Radar */}
       <TrackedScheduleMatrix
         plannedSessions={plannedSessions}
         workoutSessions={workoutSessions}
@@ -1205,7 +1205,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         lang={lang}
       />
 
-      {/* Tracked.gg Deload & Fatigue Management Advisor */}
+      {/* ZENOX Deload & Fatigue Management Advisor */}
       <CtgDeloadAdvisor
         workoutSessions={workoutSessions}
         activePhase={ctgActivePhase}
@@ -1473,7 +1473,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                 Thể Tích Tập Luyện Nhóm Cơ (MEV · MAV · MRV)
               </h3>
               <p className="text-[10px] text-gray-400 mt-0.5">
-                Chuẩn khoa học CTG & RP: MEV (ngưỡng kích hoạt) · MAV (tối ưu tăng cơ) · MRV (ngưỡng quá tải)
+                Chuẩn khoa học ZENOX Sports Science: MEV (ngưỡng kích hoạt) · MAV (tối ưu tăng cơ) · MRV (ngưỡng quá tải)
               </p>
             </div>
             <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shrink-0">

@@ -34,7 +34,7 @@ type CardTheme = 'rose' | 'gold' | 'emerald' | 'cyan';
 const THEMES: { id: CardTheme; nameVi: string; primary: string; secondary: string; bgGradient: [string, string] }[] = [
   {
     id: 'rose',
-    nameVi: 'CTG Neon Rose (Mặc định)',
+    nameVi: 'ZENOX Neon Rose (Mặc định)',
     primary: '#F43F5E',
     secondary: '#FB7185',
     bgGradient: ['#0d040a', '#180715'],
@@ -202,7 +202,7 @@ export const CtgCheckinExportModal: React.FC<CtgCheckinExportModalProps> = ({
 
     ctx.fillStyle = theme.secondary;
     ctx.font = 'bold 13px monospace';
-    ctx.fillText('⚡ CTG FITNESS · ATHLETE DOSSIER', 86, 92);
+    ctx.fillText('⚡ ZENOX FITNESS · ATHLETE DOSSIER', 86, 92);
 
     // Date & Timestamp
     const todayStr = latestPoint?.date || new Date().toISOString().slice(0, 10);
@@ -458,7 +458,7 @@ export const CtgCheckinExportModal: React.FC<CtgCheckinExportModalProps> = ({
 
     ctx.fillStyle = theme.primary;
     ctx.font = 'bold 12px monospace';
-    ctx.fillText('✦ NHẬN ĐỊNH CỐ VẤN THỂ HÌNH CTG (ALGORITHM VERDICT):', 95, curY + 34);
+    ctx.fillText('✦ NHẬN ĐỊNH CỐ VẤN THỂ HÌNH ZENOX (ALGORITHM VERDICT):', 95, curY + 34);
 
     let verdictMsg = 'Tiến độ đang bám sát Vùng Vàng sinh học. Tiếp tục duy trì mức tạ và calo hiện tại.';
     if (activePhase?.phaseType === 'bulk' && weightDelta > 0.45) {
@@ -497,13 +497,13 @@ export const CtgCheckinExportModal: React.FC<CtgCheckinExportModalProps> = ({
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.font = 'bold 11px monospace';
-    ctx.fillText('ID: CTG-INB-' + Date.now().toString().slice(-6), 70, height - 38);
+    ctx.fillText('ID: ZENOX-INB-' + Date.now().toString().slice(-6), 70, height - 38);
 
     // Right Footer Stamp
     ctx.textAlign = 'right';
     ctx.fillStyle = theme.secondary;
     ctx.font = 'bold 13px monospace';
-    ctx.fillText('ZENOX × CTG PERIODIZATION SYSTEM', width - 70, height - 68);
+    ctx.fillText('ZENOX MASTER PERIODIZATION SYSTEM', width - 70, height - 68);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.font = '500 11px monospace';
     ctx.fillText('VERIFIED ATHLETE PERFORMANCE METRICS', width - 70, height - 48);
@@ -531,7 +531,7 @@ export const CtgCheckinExportModal: React.FC<CtgCheckinExportModalProps> = ({
 
     try {
       const link = document.createElement('a');
-      const filename = `CTG-Checkin-${latestPoint?.date || 'Week'}-${weight.toFixed(1)}kg.png`;
+      const filename = `ZENOX-Checkin-${latestPoint?.date || 'Week'}-${weight.toFixed(1)}kg.png`;
       link.download = filename;
       link.href = canvas.toDataURL('image/png');
       link.click();
@@ -583,7 +583,7 @@ export const CtgCheckinExportModal: React.FC<CtgCheckinExportModalProps> = ({
                 <span className="text-xs text-white/50 font-mono">Độ phân giải: 1080 × 1440 HD</span>
               </div>
               <h2 className="text-lg sm:text-xl font-black text-white mt-0.5">
-                Xuất Thẻ Check-in Tuần Chuẩn CTG
+                Xuất Thẻ Check-in Tuần Chuẩn ZENOX Pro
               </h2>
             </div>
           </div>
@@ -661,7 +661,7 @@ export const CtgCheckinExportModal: React.FC<CtgCheckinExportModalProps> = ({
             <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs space-y-1.5 text-white/70">
               <div className="font-bold text-rose-300 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4" />
-                Thẻ Card Chuẩn Thể Thao CTG
+                Thẻ Card Chuẩn Thể Thao ZENOX Pro
               </div>
               <p className="text-[11px] leading-relaxed">
                 Thẻ ảnh tổng hợp toàn diện các chỉ số cân nặng, % mỡ, LBM và FFMI cùng phân tích của cố vấn thuật toán. Định dạng 3:4 tối ưu cho việc lưu giữ theo tuần hoặc đăng Story / khoe thành quả luyện tập.
@@ -679,7 +679,7 @@ export const CtgCheckinExportModal: React.FC<CtgCheckinExportModalProps> = ({
               {previewUrl ? (
                 <img
                   src={previewUrl}
-                  alt="CTG Checkin Card Preview"
+                  alt="ZENOX Checkin Card Preview"
                   className="w-full h-full object-contain"
                 />
               ) : (

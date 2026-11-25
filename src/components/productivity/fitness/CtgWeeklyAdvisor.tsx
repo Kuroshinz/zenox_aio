@@ -57,8 +57,8 @@ export const CtgWeeklyAdvisor: React.FC<CtgWeeklyAdvisorProps> = ({
         badgeColor: 'bg-white/10 text-white/70 border-white/10',
         title: 'Mục Tiêu Chuẩn Giai Đoạn Này',
         desc: isBulk
-          ? 'Nhịp tăng cơ chuẩn CTG là +0.20kg đến +0.35kg/tuần để tối ưu hóa xây nạc và hạn chế tích mỡ bụng. Hãy ghi nhận ít nhất 2 lần đo InBody cách nhau vài ngày để kích hoạt cố vấn tự động!'
-          : 'Nhịp giảm mỡ chuẩn CTG là -0.40kg đến -0.80kg/tuần để đốt mỡ tối đa và bảo toàn khối cơ nạc LBM. Hãy đo InBody định kỳ để theo dõi!',
+          ? 'Nhịp tăng cơ chuẩn ZENOX là +0.20kg đến +0.35kg/tuần để tối ưu hóa xây nạc và hạn chế tích mỡ bụng. Hãy ghi nhận ít nhất 2 lần đo InBody cách nhau vài ngày để kích hoạt cố vấn tự động!'
+          : 'Nhịp giảm mỡ chuẩn ZENOX là -0.40kg đến -0.80kg/tuần để đốt mỡ tối đa và bảo toàn khối cơ nạc LBM. Hãy đo InBody định kỳ để theo dõi!',
         suggestedCalDelta: 0,
         buttonText: null,
       };
@@ -79,10 +79,10 @@ export const CtgWeeklyAdvisor: React.FC<CtgWeeklyAdvisorProps> = ({
       if (weeklyRateKg >= 0.15 && weeklyRateKg <= 0.45) {
         return {
           status: 'optimal' as const,
-          badge: 'Vùng Vàng Tăng Nạc Chuẩn CTG ⭐',
+          badge: 'Vùng Vàng Tăng Nạc Chuẩn ZENOX ⭐',
           badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
           title: `Tốc độ tăng +${weeklyRateKg} kg/tuần (Hoàn hảo)`,
-          desc: 'Tốc độ tăng cân nằm chính xác trong Sweet Spot khoa học CTG! Tỷ lệ tổng hợp nạc/mỡ tối ưu nhất. Tiếp tục duy trì mức dinh dưỡng hiện tại và tập trung tăng tạ (Progressive Overload).',
+          desc: 'Tốc độ tăng cân nằm chính xác trong Sweet Spot khoa học ZENOX! Tỷ lệ tổng hợp nạc/mỡ tối ưu nhất. Tiếp tục duy trì mức dinh dưỡng hiện tại và tập trung tăng tạ (Progressive Overload).',
           suggestedCalDelta: 0,
           buttonText: null,
         };
@@ -162,7 +162,7 @@ export const CtgWeeklyAdvisor: React.FC<CtgWeeklyAdvisorProps> = ({
               )}
             </div>
             <h4 className="text-base font-black text-white mt-0.5 tracking-tight">
-              Cố Vấn Điều Chỉnh Tuần Tự Động (CTG Auto-Adjustment)
+              Cố Vấn Điều Chỉnh Tuần Tự Động (ZENOX Auto-Adjustment)
             </h4>
           </div>
         </div>

@@ -73,7 +73,7 @@ export const CtgDeloadAdvisor: React.FC<CtgDeloadAdvisorProps> = ({
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                   : 'bg-white/10 text-white/60 border-white/10'
               }`}>
-                {isDeloadRecommended ? 'CTG Fatigue Management · Khuyến Nghị Deload' : 'Mesocycle Fatigue Index'}
+                {isDeloadRecommended ? 'ZENOX Fatigue Management · Khuyến Nghị Deload' : 'Mesocycle Fatigue Index'}
               </span>
               <span className="text-xs text-white/50 font-mono">
                 Tuần {consecutiveWeeks || 1}/6 của chu kỳ

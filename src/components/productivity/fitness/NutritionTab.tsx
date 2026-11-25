@@ -299,7 +299,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
     return 'maintain';
   }, [ctgActivePhase, profile.goal]);
 
-  // Carb Cycling Strategy Mode (Chuẩn CTG)
+  // Carb Cycling Strategy Mode (Chuẩn ZENOX)
   const [carbCyclingMode, setCarbCyclingMode] = useState<'training' | 'rest' | 'refeed'>('training');
   const userTdee = tdee(profile, userWeightKg);
   const targetKcal = calorieTarget(userTdee, profile.goal, nutritionSettings.tdeeOffset);
@@ -317,7 +317,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
   }, [carbCyclingMode, cyclingTargets]);
   const isRefeedMode = carbCyclingMode === 'refeed';
 
-  // Adaptive Metabolic Expenditure & Trend Weight (Tracked.gg / MacroFactor signature)
+  // Adaptive Metabolic Expenditure & Trend Weight (ZENOX Sports Science signature)
   const trendWeights = useMemo(() => calculateTrendWeights(bodyPoints || []), [bodyPoints]);
   const latestTrend = trendWeights.trendPoints.length > 0 ? trendWeights.trendPoints[trendWeights.trendPoints.length - 1] : null;
 
@@ -457,7 +457,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
       setComboToast(`✓ Đã đồng bộ chuẩn dinh dưỡng theo Giai đoạn "${ctgActivePhase.name}" (${ctgActivePhase.targetKcal} kcal)!`);
       setTimeout(() => setComboToast(null), 4000);
       notifySuccess(
-        'Đã đồng bộ chuẩn CTG thành công!',
+        'Đã đồng bộ chuẩn ZENOX thành công!',
         `Mục tiêu calo đã chuyển sang ${ctgActivePhase.targetKcal.toLocaleString('vi-VN')} kcal theo Giai đoạn "${ctgActivePhase.name}" (${ctgActivePhase.macros.protein}g Đạm / ${ctgActivePhase.macros.carbs}g Carb / ${ctgActivePhase.macros.fat}g Fat).`
       );
       setTimeout(() => setJustSyncedCtg(false), 3500);
@@ -589,7 +589,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                  Giai Đoạn CTG Hiện Tại
+                  Giai Đoạn ZENOX Hiện Tại
                 </span>
                 <span className="text-xs text-white/50 font-mono">
                   {ctgActivePhase.startDate} – {ctgActivePhase.endDate}
@@ -628,7 +628,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
               <div className="flex items-center gap-2">
                 <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>✓ Đang khớp chuẩn CTG ({ctgActivePhase.targetKcal} kcal)</span>
+                  <span>✓ Đang khớp chuẩn ZENOX ({ctgActivePhase.targetKcal} kcal)</span>
                 </span>
                 <button
                   type="button"
@@ -647,14 +647,14 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs cursor-pointer shadow-md hover:shadow-rose-600/30 transition-all flex items-center gap-1.5"
               >
                 <Zap className="w-3.5 h-3.5 text-rose-200" />
-                <span>Đồng Bộ Chuẩn CTG</span>
+                <span>Đồng Bộ Chuẩn ZENOX</span>
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* Tracked.gg Adaptive Metabolic Expenditure & Smoothed Trend Weight Engine */}
+      {/* ZENOX Adaptive Metabolic Expenditure & Smoothed Trend Weight Engine */}
       <div className="bg-gradient-to-r from-rose-950/50 via-[#0a0306] to-[#050102] border border-rose-500/30 rounded-2xl p-4 md:p-5 shadow-lg space-y-4 text-white">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
           <div className="flex items-center gap-3">
@@ -664,7 +664,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-rose-600/30 text-rose-300 border border-rose-500/40">
-                  Tracked.gg Engine
+                  ZENOX Adaptive Engine
                 </span>
                 <span className="text-xs text-rose-400/90 font-semibold">
                   TDEE Thích Ứng & Cân Nặng Xu Hướng
@@ -753,7 +753,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
               {adaptiveExpenditure.recommendedCaloTarget.toLocaleString('vi-VN')} <span className="text-xs font-normal text-white/50">kcal</span>
             </div>
             <div className="text-[11px] text-white/50 mt-0.5">
-              {ctgActivePhase ? 'Khớp lộ trình Giai đoạn CTG' : 'Tối ưu cho mục tiêu cá nhân'}
+              {ctgActivePhase ? 'Khớp lộ trình Giai đoạn ZENOX' : 'Tối ưu cho mục tiêu cá nhân'}
             </div>
           </div>
 
@@ -802,7 +802,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
           <div>
             <h3 className="text-xs font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center gap-2">
               <Flame className="w-4 h-4 text-amber-500" />
-              Chiến Lược Carb Cycling (Chuẩn CTG Web)
+              Chiến Lược Carb Cycling (Chuẩn ZENOX Pro)
             </h3>
             <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
               Luân phiên tinh bột theo ngày tập và ngày nghỉ để tối đa hóa hiệu suất nâng tạ mà không bị tích mỡ thừa.
@@ -910,7 +910,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
         </div>
       </div>
 
-      {/* Protein Distribution & Leucine / MPS Threshold Tracker (CTG & Tracked.gg) */}
+      {/* Protein Distribution & Leucine / MPS Threshold Tracker (ZENOX Pro) */}
       <div className="bg-white dark:bg-white/[0.03] backdrop-blur-xl border border-slate-200 dark:border-white/[0.08] rounded-2xl p-4 md:p-5 shadow-xs space-y-3.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 dark:border-white/[0.08] pb-2.5">
           <div>
@@ -1038,7 +1038,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
         </div>
       </div>
 
-      {/* Quick Remaining Macro Pills (Chuẩn CTG Web) */}
+      {/* Quick Remaining Macro Pills (Chuẩn ZENOX Pro) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <div className={`p-3 rounded-2xl border transition-all ${
           remainingKcal >= 0 ? 'bg-white dark:bg-white/[0.03] backdrop-blur-xl border-slate-200 dark:border-white/[0.08]' : 'bg-rose-500/10 border-rose-500/30'
@@ -1191,7 +1191,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
         </div>
       </div>
 
-      {/* Tracked.gg Micronutrients & Hydration Dashboard */}
+      {/* ZENOX Micronutrients & Hydration Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         {/* Metric 1: Fiber */}
         <div className="bg-white dark:bg-white/[0.03] backdrop-blur-xl p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-xs flex flex-col justify-between">
