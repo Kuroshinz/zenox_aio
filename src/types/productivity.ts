@@ -388,7 +388,16 @@ export interface Exercise {
   isCustom?: boolean;
 }
 
-export type RoutineSplitTemplate = 'ppl' | 'upper_lower' | 'arnold' | 'fullbody' | 'glute_lower' | 'custom';
+export type RoutineSplitTemplate =
+  | 'ppl'
+  | 'upper_lower'
+  | 'arnold'
+  | 'fullbody'
+  | 'bro_split'
+  | 'ppl_arnold'
+  | 'calisthenics'
+  | 'glute_lower'
+  | 'custom';
 
 export type CtgPhaseType = 'cut' | 'bulk' | 'minicut' | 'maintain' | 'final_cut';
 

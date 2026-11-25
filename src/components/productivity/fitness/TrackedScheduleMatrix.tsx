@@ -34,6 +34,7 @@ export interface TrackedScheduleMatrixProps {
   onQuickLog?: (session: PlannedSession) => void;
   onSelectSplit?: (split: RoutineSplitTemplate) => void;
   currentSplit?: RoutineSplitTemplate;
+  onOpenSyncStudio?: () => void;
   lang?: 'vi' | 'en';
 }
 
@@ -56,6 +57,7 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
   onQuickLog,
   onSelectSplit,
   currentSplit,
+  onOpenSyncStudio,
   lang = 'vi',
 }) => {
   const today = todayString();
@@ -218,8 +220,19 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
             </div>
           </div>
 
-          {/* Adherence Badge */}
-          <div className="flex items-center gap-2 self-start sm:self-center">
+          {/* Adherence & Calendar Sync Actions */}
+          <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
+            {onOpenSyncStudio && (
+              <button
+                type="button"
+                onClick={onOpenSyncStudio}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white text-xs font-bold shadow-lg shadow-rose-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                title="Tự động đồng bộ lịch tập tuần này vào Google Calendar và Lịch Zenox"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                <span>⚡ Đồng Bộ Google Calendar</span>
+              </button>
+            )}
             <div className="px-3.5 py-1.5 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-2">
               <Trophy className="w-4 h-4 text-amber-400" />
               <div className="text-xs">

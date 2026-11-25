@@ -25,7 +25,7 @@ import { notifySuccess, notifyWarning, notifyError } from '../../../utils/notify
 export interface CtgCalendarSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
-  activePhase?: CtgRoadmapPhase;
+  activePhase?: CtgRoadmapPhase | null;
   existingEvents?: CalendarEvent[];
   plannedSessions?: PlannedSession[];
   onBatchSchedule?: (events: CalendarEvent[]) => Promise<void> | void;
@@ -49,7 +49,7 @@ const SPLIT_OPTIONS: { id: RoutineSplitTemplate; nameVi: string; descVi: string;
   {
     id: 'ppl',
     nameVi: 'Push / Pull / Legs (PPL)',
-    descVi: 'Phổ biến nhất · 5-6 buổi/tuần · Tối ưu phì đại cơ bắp và phục hồi khớp',
+    descVi: 'Phổ biến nhất · 5 buổi/tuần · Tối ưu phì đại cơ bắp và phục hồi khớp',
     daysPerWeek: 5,
   },
   {
@@ -59,16 +59,40 @@ const SPLIT_OPTIONS: { id: RoutineSplitTemplate; nameVi: string; descVi: string;
     daysPerWeek: 4,
   },
   {
-    id: 'fullbody',
-    nameVi: 'Full Body 3x (Toàn Thân)',
-    descVi: '3 buổi/tuần · Thích hợp người ít thời gian, kích thích tần suất cao',
-    daysPerWeek: 3,
+    id: 'bro_split',
+    nameVi: 'Bro Split Kinh Điển (Từng Nhóm Cơ / Ngày)',
+    descVi: '5 buổi/tuần · Ngực, Lưng, Vai, Chân, Tay & Bụng siêu pump',
+    daysPerWeek: 5,
+  },
+  {
+    id: 'ppl_arnold',
+    nameVi: 'PPL x Arnold Hybrid',
+    descVi: '6 buổi/tuần · Đỉnh cao thể hình Hypertrophy và tần suất kích thích cao',
+    daysPerWeek: 6,
   },
   {
     id: 'arnold',
     nameVi: 'Arnold Split (Ngực-Lưng / Vai-Tay / Chân)',
     descVi: '6 buổi/tuần · Pump cơ cực đại, tập trung thân trên và cánh tay',
     daysPerWeek: 6,
+  },
+  {
+    id: 'calisthenics',
+    nameVi: 'Calisthenics & Street Workout',
+    descVi: '4 buổi/tuần · Làm chủ trọng lượng cơ thể, sức mạnh xà đơn xà kép',
+    daysPerWeek: 4,
+  },
+  {
+    id: 'glute_lower',
+    nameVi: 'Glute & Lower Focus',
+    descVi: '4 buổi/tuần · Chuyên sâu săn chắc mông, đùi thon gọn và vòng eo',
+    daysPerWeek: 4,
+  },
+  {
+    id: 'fullbody',
+    nameVi: 'Full Body 3x (Toàn Thân)',
+    descVi: '3 buổi/tuần · Thích hợp người ít thời gian, kích thích tần suất cao',
+    daysPerWeek: 3,
   },
 ];
 

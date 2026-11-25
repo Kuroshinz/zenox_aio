@@ -867,14 +867,50 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     notifySuccess('Đã lưu buổi tập!', `Đã ghi nhận "${pastTitle.trim()}" cho ngày ${pastDate} (+${burnedKcal} kcal)!`);
   };
 
-  const handleSchedule = (session: PlannedSession) => {
-    const today = todayString();
-    if (onScheduleSessionToCalendar) {
-      onScheduleSessionToCalendar(session.title, today, '#2563EB');
+  const handleSchedule = async (session: PlannedSession) => {
+    const DAY_MAP: Record<string, number> = {
+      'Thứ 2': 0, 'Thứ 3': 1, 'Thứ 4': 2, 'Thứ 5': 3, 'Thứ 6': 4, 'Thứ 7': 5, 'Chủ Nhật': 6,
+    };
+    const dayIdx = session.dayIndex !== undefined ? session.dayIndex : (session.dayOfWeek ? (DAY_MAP[session.dayOfWeek] ?? 0) : 0);
+
+    const now = new Date();
+    const currentDay = now.getDay();
+    const diffToMonday = now.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
+    const monday = new Date(now);
+    monday.setDate(diffToMonday);
+
+    const targetDate = new Date(monday);
+    targetDate.setDate(monday.getDate() + dayIdx);
+    const y = targetDate.getFullYear();
+    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const d = String(targetDate.getDate()).padStart(2, '0');
+    const targetDateStr = `${y}-${m}-${d}`;
+
+    const newEvent: CalendarEvent = {
+      id: `scheduled-wo-${Date.now()}`,
+      title: `💪 [ZENOX] ${session.title}`,
+      description: `Giáo án ZENOX (${session.dayOfWeek || 'Buổi tập'}):\n${session.prescriptions.map((p) => `• ${p.exerciseId} (${p.sets}x${p.reps})`).join('\n')}\nĐã lên lịch tối ưu bởi ZENOX.`,
+      startDate: targetDateStr,
+      startTime: '17:30',
+      endDate: targetDateStr,
+      endTime: '18:45',
+      allDay: false,
+      calendarId: 'health',
+      color: '#E11D48',
+      type: 'event',
+      isCompleted: false,
+      createdAt: Date.now(),
+    };
+
+    if (onBatchScheduleToCalendar) {
+      await onBatchScheduleToCalendar([newEvent]);
+    } else if (onScheduleSessionToCalendar) {
+      onScheduleSessionToCalendar(session.title, targetDateStr, '#E11D48');
     }
-    setScheduledBanner(`Đã lên lịch "${session.title}" vào Google Calendar hôm nay (${today})!`);
+
+    setScheduledBanner(`Đã lên lịch "${session.title}" vào ngày ${targetDateStr} (17:30 - 18:45) và đồng bộ Google Calendar!`);
     setTimeout(() => setScheduledBanner(null), 4000);
-    notifySuccess('Đã lên lịch Google Calendar!', `Đã lên lịch "${session.title}" vào ngày ${today}.`);
+    notifySuccess('Đã lên lịch thành công!', `"${session.title}" vào ${session.dayOfWeek || 'Lịch'} (${targetDateStr}) 17:30 - 18:45.`);
   };
 
   const handleScheduleFullWeek = () => {
@@ -1191,10 +1227,11 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       <TrackedScheduleMatrix
         plannedSessions={plannedSessions}
         workoutSessions={workoutSessions}
-        activePhase={ctgActivePhase}
+        activePhase={ctgActivePhase || undefined}
         onStartSession={handleStartActiveSession}
         onScheduleToCalendar={handleSchedule}
         onQuickLog={handleQuickLog}
+        onOpenSyncStudio={() => setShowCalendarSyncModal(true)}
         onSelectSplit={(s) => {
           setCurrentSplit(s);
           onApplySplitTemplate?.(s);
@@ -1229,17 +1266,15 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            {onScheduleSessionToCalendar && (
-              <button
-                type="button"
-                onClick={handleScheduleFullWeek}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
-                title="Đồng bộ lịch các buổi tập tuần này vào Google Calendar"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Đồng bộ tuần lên Lịch</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowCalendarSyncModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+              title="Mở ZENOX Workout Sync Studio để tự động lên lịch thông minh và đồng bộ Google Calendar"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300 animate-pulse" />
+              <span>⚡ Lên Lịch & Tự Động Đồng Bộ Google Calendar</span>
+            </button>
             <button
               type="button"
               onClick={() => setShowAddExerciseModal(true)}
@@ -1256,9 +1291,12 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           {[
             { id: 'ppl' as const, label: 'PPL (Push - Pull - Legs)', desc: '5 buổi: Đẩy / Kéo / Chân' },
             { id: 'upper_lower' as const, label: 'Upper / Lower (UL)', desc: '4 buổi: Thân Trên / Thân Dưới' },
+            { id: 'bro_split' as const, label: 'Bro Split (5 Ngày)', desc: '5 buổi: Ngực / Lưng / Vai / Chân / Tay' },
+            { id: 'ppl_arnold' as const, label: 'PPL x Arnold (6 Ngày)', desc: '6 buổi: Hybrid Siêu Phì Đại' },
             { id: 'arnold' as const, label: 'Arnold Split', desc: '6 buổi: Ngực+Lưng / Vai+Tay / Chân' },
-            { id: 'fullbody' as const, label: 'Full Body', desc: '3 buổi: Toàn Thân A / B / C' },
+            { id: 'calisthenics' as const, label: 'Calisthenics (4 Ngày)', desc: '4 buổi: Bodyweight & Sức mạnh xà' },
             { id: 'glute_lower' as const, label: 'Glute & Lower Focus', desc: '4 buổi: Mông, Đùi Sau, Đùi Trước & Eo' },
+            { id: 'fullbody' as const, label: 'Full Body 3x', desc: '3 buổi: Toàn Thân A / B / C' },
           ].map((s) => (
             <button
               key={s.id}
@@ -2858,6 +2896,18 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* ZENOX Workout Google Calendar Sync Studio Modal */}
+      <CtgCalendarSyncModal
+        isOpen={showCalendarSyncModal}
+        onClose={() => setShowCalendarSyncModal(false)}
+        activePhase={ctgActivePhase}
+        existingEvents={events}
+        plannedSessions={plannedSessions}
+        onBatchSchedule={onBatchScheduleToCalendar}
+        onClearWorkoutEvents={onClearWorkoutEventsFromCalendar}
+        lang={lang}
+      />
     </div>
   );
 };
