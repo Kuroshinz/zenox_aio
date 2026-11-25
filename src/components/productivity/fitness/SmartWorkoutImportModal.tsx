@@ -17,6 +17,8 @@ import {
   Trophy,
   ArrowRight,
   RefreshCw,
+  Clock,
+  Layers,
 } from 'lucide-react';
 import {
   Exercise,
@@ -27,7 +29,7 @@ import {
   MUSCLE_COLOR,
 } from '../../../types/productivity';
 import {
-  parseWorkoutSnippet,
+  parseMultiRoutineSnippet,
   parseWorkoutCsv,
   workoutSnippetToWorkoutSession,
   workoutSnippetToPlannedSession,
@@ -51,8 +53,45 @@ export interface SmartWorkoutImportModalProps {
 
 const TEMPLATE_PRESETS = [
   {
+    id: 'upper_ab',
+    label: 'Upper A & Upper B (CSV Form)',
+    text: `Upper A
+Exercise,Sets,Reps,Rest,Video
+Pec Deck,2,8-12,90,
+Incline Press,2,6-10,150,
+Gymleco Shoulder Press,2,6-10,150,
+Top Half Pullovers,2,8-12,90,
+Lat Pulldown,3,8-12,120,
+Lat Row,1,8-12,120,
+Chest Supported T-Bar Row,2,8-12,120,
+Kelso Shrug,2,10-15,90,
+Single Arm Machine Lateral Raise,3,10-15,90,
+Tricep Pushdown,2,8-12,90,
+Overhead Rope Triceps Extension,1,10-15,90,
+Preacher Curl,2,8-12,90,
+Recline Curl,1,8-12,90,
+Hammer Curl,1,8-12,90,
+
+Upper B
+Exercise,Sets,Reps,Rest,Video
+Pec Deck,2,8-12,90,
+Incline Press,2,6-10,150,
+Gymleco Shoulder Press,2,6-10,150,
+Top Half Pullovers,2,8-12,90,
+Lat Pulldown,3,8-12,120,
+Lat Row,1,8-12,120,
+Chest Supported T-Bar Row,2,8-12,120,
+Kelso Shrug,2,10-15,90,
+Single Arm Machine Lateral Raise,3,10-15,90,
+Tricep Pushdown,2,8-12,90,
+Overhead Rope Triceps Extension,1,10-15,90,
+Preacher Curl,2,8-12,90,
+Recline Curl,1,8-12,90,
+Hammer Curl,1,8-12,90,`,
+  },
+  {
     id: 'push',
-    label: 'Push Day (Ngực & Tay sau)',
+    label: 'Push Day Hypertrophy',
     text: `Title: Push Day Hypertrophy
 Date: ${todayString()}
 
@@ -64,7 +103,7 @@ Hít đất 3x20 bodyweight`,
   },
   {
     id: 'pull',
-    label: 'Pull Day (Lưng Xô & Tay trước)',
+    label: 'Pull Day Sức Mạnh',
     text: `Title: Pull Day Sức Mạnh
 Date: ${todayString()}
 
@@ -76,7 +115,7 @@ Face Pull 3x15 20kg`,
   },
   {
     id: 'legs',
-    label: 'Leg Day (Đùi & Bắp chân)',
+    label: 'Leg Day Bùng Nổ',
     text: `Title: Leg Day Bùng Nổ
 Date: ${todayString()}
 
@@ -85,23 +124,6 @@ Leg Press 4x12 200kg RPE 8
 Romanian Deadlift 3x8 90kg RIR 2
 Leg Curl 3x12 45kg dropset
 Calf Raise 4x15 60kg`,
-  },
-  {
-    id: 'multiline',
-    label: 'Cú pháp Chi tiết (Từng Set)',
-    text: `Title: Bench & Squat Focus
-Date: ${todayString()}
-
-Bench Press:
-Set 1: 70kg x 10 reps warmup
-Set 2: 80kg x 8 reps rir 2
-Set 3: 85kg x 8 reps rir 1
-Set 4: 90kg x 6 reps failure
-
-Back Squat:
-100kg x 8 @8
-105kg x 8 @8.5
-110kg x 6 rir 1`,
   },
 ];
 
@@ -118,6 +140,7 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
 }) => {
   const [activeTab, setActiveTab] = useState<'text' | 'file'>('text');
   const [rawText, setRawText] = useState(TEMPLATE_PRESETS[0].text);
+  const [selectedRoutineIndex, setSelectedRoutineIndex] = useState<number>(0);
   const [targetDayOfWeek, setTargetDayOfWeek] = useState<string>('Thứ 2');
   const [sessionNotes, setSessionNotes] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -126,18 +149,36 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
-  // Live parsed result
-  const parsedResult: ParsedWorkoutSnippet = useMemo(() => {
+  // Live parsed routines (can be multiple: Upper A, Upper B...)
+  const parsedRoutines: ParsedWorkoutSnippet[] = useMemo(() => {
     if (!rawText.trim()) {
-      return parseWorkoutSnippet('', customExercises, userWeightKg);
+      return [
+        {
+          workoutTitle: 'Chưa có bài tập',
+          targetDate: todayString(),
+          exerciseGroups: [],
+          allSets: [],
+          totalSets: 0,
+          totalReps: 0,
+          totalVolumeKg: 0,
+          estimatedBurnedKcal: 0,
+          targetedMuscles: [],
+          unrecognizedLines: [],
+        },
+      ];
     }
-    return parseWorkoutSnippet(rawText, customExercises, userWeightKg);
+    return parseMultiRoutineSnippet(rawText, customExercises, userWeightKg);
   }, [rawText, customExercises, userWeightKg]);
+
+  // Keep selectedRoutineIndex within bounds
+  const safeRoutineIndex = Math.min(selectedRoutineIndex, Math.max(0, parsedRoutines.length - 1));
+  const activeSnippet = parsedRoutines[safeRoutineIndex] || parsedRoutines[0];
 
   if (!isOpen) return null;
 
   const handleApplyPreset = (text: string) => {
     setRawText(text);
+    setSelectedRoutineIndex(0);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -155,7 +196,6 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
       try {
         if (file.name.endsWith('.json')) {
           const parsedJson = JSON.parse(content);
-          // If JSON contains sets or exercises
           if (Array.isArray(parsedJson)) {
             const lines = parsedJson.map((item: any) => `${item.name || item.exercise} ${item.sets || 3}x${item.reps || 10} ${item.weight || 0}kg`).join('\n');
             setRawText(lines);
@@ -170,26 +210,10 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
             setActiveTab('text');
           }
         } else {
-          // CSV Parsing
-          const csvResult = parseWorkoutCsv(content, customExercises, userWeightKg);
-          if (csvResult.allSets.length > 0) {
-            // Convert to text view for instant editing
-            const reconstructed = [
-              `Title: ${csvResult.workoutTitle}`,
-              `Date: ${csvResult.targetDate}`,
-              '',
-              ...csvResult.exerciseGroups.map((g) => {
-                const avgReps = Math.round(g.sets.reduce((s, x) => s + x.reps, 0) / g.sets.length);
-                const avgWeight = Math.round(g.sets.reduce((s, x) => s + x.weightKg, 0) / g.sets.length);
-                return `${g.exerciseName} ${g.sets.length}x${avgReps} ${avgWeight}kg`;
-              }),
-            ].join('\n');
-            setRawText(reconstructed);
-            setActiveTab('text');
-            notifySuccess('Đã import file thành công!', `Đã nhận diện ${csvResult.allSets.length} hiệp từ file ${file.name}.`);
-          } else {
-            setFileError('Không thể phân tích dữ liệu bài tập từ file này. Vui lòng kiểm tra định dạng.');
-          }
+          // If CSV text, set directly to rawText and let multi-routine parser parse it!
+          setRawText(content);
+          setActiveTab('text');
+          notifySuccess('Đã nạp file thành công!', `Đã nạp nội dung từ ${file.name}.`);
         }
       } catch (err: any) {
         setFileError(`Lỗi đọc file: ${err?.message || 'Định dạng không hợp lệ'}`);
@@ -210,23 +234,23 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
     document.body.removeChild(link);
   };
 
-  // 1. Save as completed WorkoutSession
-  const handleSaveAsCompletedWorkout = () => {
-    if (parsedResult.allSets.length === 0) {
+  // 1. Save single active session as completed WorkoutSession
+  const handleSaveActiveCompletedWorkout = () => {
+    if (activeSnippet.allSets.length === 0) {
       notifyWarning('Chưa có bài tập nào', 'Vui lòng nhập ít nhất 1 bài tập hợp lệ.');
       return;
     }
 
     setIsProcessing(true);
     try {
-      const workoutSession = workoutSnippetToWorkoutSession(parsedResult, sessionNotes);
+      const workoutSession = workoutSnippetToWorkoutSession(activeSnippet, sessionNotes);
       if (onLogWorkoutSession) {
         onLogWorkoutSession(workoutSession);
       }
 
       notifySuccess(
         'Đã lưu buổi tập thành công!',
-        `Ghi nhận "${parsedResult.workoutTitle}" (${parsedResult.totalSets} hiệp · ${parsedResult.totalVolumeKg.toLocaleString()}kg volume · +${parsedResult.estimatedBurnedKcal} kcal)!`
+        `Ghi nhận "${activeSnippet.workoutTitle}" (${activeSnippet.totalSets} hiệp · ${activeSnippet.totalVolumeKg.toLocaleString()}kg volume · +${activeSnippet.estimatedBurnedKcal} kcal)!`
       );
       onClose();
     } catch (err: any) {
@@ -236,16 +260,16 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
     }
   };
 
-  // 2. Save as PlannedSession in Routine / Mesocycle
-  const handleSaveAsPlannedSession = () => {
-    if (parsedResult.exerciseGroups.length === 0) {
+  // 2. Save active session as PlannedSession
+  const handleSaveActivePlannedSession = () => {
+    if (activeSnippet.exerciseGroups.length === 0) {
       notifyWarning('Chưa có bài tập nào', 'Vui lòng nhập ít nhất 1 bài tập hợp lệ.');
       return;
     }
 
     setIsProcessing(true);
     try {
-      const planned = workoutSnippetToPlannedSession(parsedResult, targetDayOfWeek);
+      const planned = workoutSnippetToPlannedSession(activeSnippet, targetDayOfWeek);
       if (onAddPlannedSession) {
         onAddPlannedSession(planned);
       }
@@ -262,9 +286,42 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
     }
   };
 
+  // 3. Save ALL routines into PlannedSessions (e.g. Upper A into Thứ 2, Upper B into Thứ 5)
+  const handleSaveAllRoutinesToPlan = () => {
+    if (parsedRoutines.length === 0 || parsedRoutines.every((r) => r.exerciseGroups.length === 0)) {
+      notifyWarning('Chưa có bài tập nào', 'Vui lòng kiểm tra lại dữ liệu bài tập.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const DAYS_SEQUENCE = ['Thứ 2', 'Thứ 5', 'Thứ 3', 'Thứ 6', 'Thứ 4', 'Thứ 7', 'Chủ Nhật'];
+      let addedCount = 0;
+
+      parsedRoutines.forEach((routine, idx) => {
+        if (routine.exerciseGroups.length > 0) {
+          const day = DAYS_SEQUENCE[idx % DAYS_SEQUENCE.length];
+          const planned = workoutSnippetToPlannedSession(routine, day);
+          onAddPlannedSession?.(planned);
+          addedCount++;
+        }
+      });
+
+      notifySuccess(
+        'Đã nạp toàn bộ giáo án tuần!',
+        `Đã thêm thành công cả ${addedCount} buổi tập (${parsedRoutines.map((r) => r.workoutTitle).join(', ')}) vào lịch tuần! Sẵn sàng đồng bộ Google Calendar.`
+      );
+      onClose();
+    } catch (err: any) {
+      console.error('Lỗi khi lưu các giáo án:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-[#0f0b15] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative">
+      <div className="bg-[#0f0b15] border border-white/10 rounded-3xl w-full max-w-5xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden relative">
         {/* Glow */}
         <div className="absolute top-0 right-1/4 w-80 h-40 bg-violet-600/15 rounded-full blur-3xl pointer-events-none" />
 
@@ -279,10 +336,10 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">
                   ZENOX Smart Workout Studio
                 </span>
-                <span className="text-xs text-white/40 hidden sm:inline">Tracked.gg Engine</span>
+                <span className="text-xs text-white/40 hidden sm:inline">Hỗ trợ định dạng CSV Upper A / B &amp; Smart Text</span>
               </div>
               <h2 className="text-base sm:text-lg font-black text-white mt-0.5">
-                Nhập Bài Tập Bằng Cú Pháp Text Thông Minh Hoặc File
+                Nhập Giáo Án &amp; Buổi Tập (Text / CSV / File)
               </h2>
             </div>
           </div>
@@ -309,7 +366,7 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>✍️ Nhập Text Thông Minh (Smart Syntax / NLP)</span>
+              <span>✍️ Nhập Text / Cú Pháp CSV</span>
             </button>
             <button
               type="button"
@@ -321,20 +378,18 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
               }`}
             >
               <Upload className="w-4 h-4" />
-              <span>📁 Import File (CSV / JSON / Strong / Hevy)</span>
+              <span>📁 Tải File Lên (CSV / JSON)</span>
             </button>
           </div>
 
-          {activeTab === 'file' && (
-            <button
-              type="button"
-              onClick={handleDownloadTemplate}
-              className="hidden sm:flex items-center gap-1.5 text-xs text-violet-300 hover:text-white font-semibold cursor-pointer pb-2"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Tải file CSV mẫu</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="hidden sm:flex items-center gap-1.5 text-xs text-violet-300 hover:text-white font-semibold cursor-pointer pb-2"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Tải file CSV mẫu (Upper A)</span>
+          </button>
         </div>
 
         {/* Modal Body */}
@@ -342,12 +397,12 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
           {activeTab === 'text' ? (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               {/* Left Column: Text Input & Presets */}
-              <div className="lg:col-span-6 space-y-3">
+              <div className="lg:col-span-5 space-y-3">
                 {/* Syntax Presets */}
                 <div>
                   <div className="text-[10px] font-bold uppercase tracking-wider text-white/40 mb-1.5 flex items-center justify-between">
                     <span>Mẫu Cú Pháp Nhanh (Click để nạp)</span>
-                    <span className="text-[10px] text-violet-400 font-mono">Tự động nhận diện RIR / RPE</span>
+                    <span className="text-[10px] text-violet-400 font-mono">Tự động nhận diện Sets/Reps/Rest</span>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {TEMPLATE_PRESETS.map((p) => (
@@ -355,7 +410,11 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                         key={p.id}
                         type="button"
                         onClick={() => handleApplyPreset(p.text)}
-                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-violet-600/30 border border-white/10 hover:border-violet-500/50 text-[11px] text-white/80 hover:text-white transition-all cursor-pointer"
+                        className={`px-2.5 py-1 rounded-lg border text-[11px] transition-all cursor-pointer ${
+                          p.id === 'upper_ab'
+                            ? 'bg-violet-600/30 border-violet-500 text-white font-bold'
+                            : 'bg-white/5 hover:bg-violet-600/20 border-white/10 text-white/80'
+                        }`}
                       >
                         {p.label}
                       </button>
@@ -366,63 +425,94 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                 {/* Textarea */}
                 <div className="relative">
                   <textarea
-                    rows={12}
+                    rows={14}
                     value={rawText}
                     onChange={(e) => setRawText(e.target.value)}
-                    placeholder={`Nhập bài tập, ví dụ:\nBench Press 4x8 80kg RIR 2\nIncline DB Press 3x10 28kg RPE 8.5\nSquat 4x8 100kg\nLateral Raise 4x15 10kg failure\n...\n\nHoặc cú pháp dạng:\nBench Press:\nSet 1: 80kg x 8 reps rir 2\nSet 2: 85kg x 6 reps failure`}
+                    placeholder={`Paste form bài tập dạng:\nUpper A\nExercise,Sets,Reps,Rest,Video\nPec Deck,2,8-12,90,\nIncline Press,2,6-10,150,\n...\n\nUpper B\nExercise,Sets,Reps,Rest,Video\n...`}
                     className="w-full text-xs font-mono p-3.5 rounded-2xl bg-black/40 border border-white/10 text-white placeholder-white/20 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500/50 resize-y leading-relaxed"
                   />
-                  <div className="text-[10px] text-white/30 flex items-center justify-between px-1 mt-1">
-                    <span>Hỗ trợ cả tên Tiếng Việt (hít đất, gánh tạ, kéo xô...) và Tiếng Anh</span>
+                  <div className="text-[10px] text-white/40 flex items-center justify-between px-1 mt-1">
+                    <span>Hỗ trợ cả CSV dạng: Exercise,Sets,Reps,Rest,Video</span>
                     <span>{rawText.split('\n').filter(Boolean).length} dòng</span>
                   </div>
                 </div>
 
                 {/* Unrecognized Lines Warning */}
-                {parsedResult.unrecognizedLines.length > 0 && (
+                {activeSnippet.unrecognizedLines.length > 0 && (
                   <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                     <div>
-                      <div className="font-bold">Dòng chưa nhận diện ({parsedResult.unrecognizedLines.length}):</div>
+                      <div className="font-bold">Dòng chưa nhận diện ({activeSnippet.unrecognizedLines.length}):</div>
                       <div className="text-[11px] opacity-80 mt-0.5 font-mono">
-                        {parsedResult.unrecognizedLines.slice(0, 3).join(' · ')}
+                        {activeSnippet.unrecognizedLines.slice(0, 3).join(' · ')}
                       </div>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Right Column: Live Parsed Preview & Metrics */}
-              <div className="lg:col-span-6 space-y-3">
-                {/* Metrics Banner */}
+              {/* Right Column: Multi-Routine Preview & Metrics */}
+              <div className="lg:col-span-7 space-y-3">
+                {/* Multi-Routine Switcher Bar (if more than 1 routine detected) */}
+                {parsedRoutines.length > 1 && (
+                  <div className="p-2.5 rounded-2xl bg-violet-950/30 border border-violet-500/30 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-violet-400 shrink-0" />
+                      <span className="text-[11px] font-mono font-bold text-violet-300 uppercase">
+                        {parsedRoutines.length} Buổi Tập Được Nhận Diện:
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 overflow-x-auto">
+                      {parsedRoutines.map((r, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setSelectedRoutineIndex(idx)}
+                          className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                            safeRoutineIndex === idx
+                              ? 'bg-violet-600 text-white shadow-md shadow-violet-900/40 scale-105'
+                              : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          {r.workoutTitle} ({r.exerciseGroups.length} bài)
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Metrics Banner for Active Routine */}
                 <div className="grid grid-cols-3 gap-2">
                   <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10">
-                    <div className="text-[10px] text-white/40 uppercase font-mono">Tổng Hiệp / Reps</div>
+                    <div className="text-[10px] text-white/40 uppercase font-mono">
+                      {activeSnippet.workoutTitle}
+                    </div>
                     <div className="text-base font-black text-white mt-0.5 font-mono">
-                      {parsedResult.totalSets} <span className="text-xs text-white/50 font-normal">hiệp ({parsedResult.totalReps}r)</span>
+                      {activeSnippet.exerciseGroups.length} bài <span className="text-xs text-white/50 font-normal">({activeSnippet.totalSets}s)</span>
                     </div>
                   </div>
                   <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10">
-                    <div className="text-[10px] text-white/40 uppercase font-mono">Volume Tonnage</div>
+                    <div className="text-[10px] text-white/40 uppercase font-mono">Volume / Reps</div>
                     <div className="text-base font-black text-amber-400 mt-0.5 font-mono flex items-center gap-1">
                       <Flame className="w-3.5 h-3.5" />
-                      <span>{parsedResult.totalVolumeKg.toLocaleString()}</span>
-                      <span className="text-[10px] text-white/50 font-normal">kg</span>
+                      <span>{activeSnippet.totalReps}</span>
+                      <span className="text-[10px] text-white/50 font-normal">tổng reps</span>
                     </div>
                   </div>
                   <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10">
                     <div className="text-[10px] text-white/40 uppercase font-mono">Calo Tiêu Hao</div>
                     <div className="text-base font-black text-emerald-400 mt-0.5 font-mono">
-                      +{parsedResult.estimatedBurnedKcal} <span className="text-[10px] text-white/50 font-normal">kcal</span>
+                      +{activeSnippet.estimatedBurnedKcal} <span className="text-[10px] text-white/50 font-normal">kcal</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Muscle Breakdown Pills */}
-                {parsedResult.targetedMuscles.length > 0 && (
+                {activeSnippet.targetedMuscles.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] text-white/40 font-mono uppercase">Nhóm cơ:</span>
-                    {parsedResult.targetedMuscles.map((m) => (
+                    {activeSnippet.targetedMuscles.map((m) => (
                       <span
                         key={m.muscle}
                         className="text-[10px] px-2 py-0.5 rounded-full font-bold border"
@@ -439,18 +529,17 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                 )}
 
                 {/* Parsed Exercise Cards List */}
-                <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
-                  {parsedResult.exerciseGroups.length === 0 ? (
+                <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                  {activeSnippet.exerciseGroups.length === 0 ? (
                     <div className="p-8 text-center text-white/30 text-xs border border-dashed border-white/10 rounded-2xl">
                       Chưa có bài tập nào. Hãy nhập văn bản hoặc chọn mẫu bên trái.
                     </div>
                   ) : (
-                    parsedResult.exerciseGroups.map((group, gIdx) => {
-                      const curPr = prs[group.exerciseId];
+                    activeSnippet.exerciseGroups.map((group, gIdx) => {
                       return (
                         <div
                           key={gIdx}
-                          className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2"
+                          className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 space-y-1.5"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -467,58 +556,18 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                                 {group.exerciseName}
                               </span>
                             </div>
-                            <span className="text-[10px] font-mono text-white/50">
-                              {group.sets.length} hiệp · {group.totalTonnageKg.toLocaleString()}kg
-                            </span>
-                          </div>
 
-                          {/* Sets Grid */}
-                          <div className="space-y-1">
-                            {group.sets.map((s, sIdx) => {
-                              const isGreenPr = curPr && (s.weightKg > curPr.weightKg || (s.weightKg === curPr.weightKg && s.reps > curPr.reps));
-
-                              return (
-                                <div
-                                  key={sIdx}
-                                  className={`px-2.5 py-1.5 rounded-xl border flex items-center justify-between text-xs font-mono ${
-                                    isGreenPr
-                                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
-                                      : 'bg-black/30 border-white/5 text-white/80'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-white/40">#{sIdx + 1}</span>
-                                    <span className="font-bold text-white">
-                                      {s.weightKg > 0 ? `${s.weightKg}kg` : 'Bodyweight'} × {s.reps} reps
-                                    </span>
-                                    {isGreenPr && (
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500 text-black font-black uppercase tracking-wider flex items-center gap-0.5">
-                                        <Trophy className="w-2.5 h-2.5" />
-                                        <span>PR</span>
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center gap-2 text-[10px]">
-                                    {s.rir !== undefined && (
-                                      <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300">
-                                        RIR {s.rir}
-                                      </span>
-                                    )}
-                                    {s.rpe !== undefined && (
-                                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
-                                        RPE {s.rpe}
-                                      </span>
-                                    )}
-                                    {s.setType !== 'normal' && (
-                                      <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 uppercase font-bold text-[9px]">
-                                        {s.setType}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                            <div className="flex items-center gap-2 text-[10px] font-mono text-white/60">
+                              <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white font-bold">
+                                {group.sets.length} sets × {group.prescribedReps || '10'} reps
+                              </span>
+                              {group.restSeconds && (
+                                <span className="flex items-center gap-0.5 text-amber-300">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{group.restSeconds}s</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -536,7 +585,7 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                 </div>
                 <h3 className="text-sm font-bold text-white">Kéo thả hoặc tải lên file dữ liệu tập luyện</h3>
                 <p className="text-xs text-white/50 mt-1 max-w-md">
-                  Hỗ trợ định dạng CSV từ <strong>Strong app</strong>, <strong>Hevy app</strong>, <strong>Liftoff</strong> hoặc file CSV/JSON chuẩn ZENOX.
+                  Hỗ trợ định dạng CSV từ <strong>Strong app</strong>, <strong>Hevy app</strong>, hoặc bảng CSV Upper/Lower như mẫu bạn cung cấp.
                 </p>
 
                 <label className="mt-4 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-900/30 cursor-pointer transition-all hover:scale-105">
@@ -568,10 +617,10 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
               <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2">
                 <div className="text-xs font-bold text-white flex items-center gap-1.5">
                   <Info className="w-4 h-4 text-violet-400" />
-                  <span>Các cột được hỗ trợ tự động:</span>
+                  <span>Cấu trúc bảng CSV được hỗ trợ tự động:</span>
                 </div>
                 <div className="text-[11px] font-mono text-white/60">
-                  <code className="text-violet-300">Date, Workout Name, Exercise Name, Set Order, Weight, Reps, RPE, Notes</code>
+                  <code className="text-violet-300">Exercise,Sets,Reps,Rest,Video</code>
                 </div>
               </div>
             </div>
@@ -587,13 +636,13 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                 type="text"
                 value={sessionNotes}
                 onChange={(e) => setSessionNotes(e.target.value)}
-                placeholder="VD: Cảm giác pump tốt, tăng tạ ở bài bench..."
+                placeholder="VD: Cảm giác pump tốt, nghỉ chuẩn theo timer..."
                 className="w-full text-xs px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-white placeholder-white/20 focus:outline-none focus:border-violet-500"
               />
             </div>
             <div>
               <label className="text-[10px] font-bold uppercase tracking-wider text-white/40 block mb-1">
-                Lên lịch vào Thứ mấy (khi lưu thành Giáo án)
+                Lên lịch vào Thứ mấy (khi lưu buổi đang chọn)
               </label>
               <select
                 value={targetDayOfWeek}
@@ -613,9 +662,9 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
         {/* Modal Footer Actions */}
         <div className="p-4 sm:p-5 border-t border-white/10 bg-white/[0.01] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-white/40 hidden sm:block">
-            {parsedResult.totalSets > 0 ? (
+            {activeSnippet.totalSets > 0 ? (
               <span>
-                Sẵn sàng: <strong className="text-white">{parsedResult.totalSets} hiệp</strong> · {parsedResult.totalVolumeKg.toLocaleString()}kg
+                Đang chọn: <strong className="text-white">{activeSnippet.workoutTitle}</strong> ({activeSnippet.exerciseGroups.length} bài · {activeSnippet.totalSets} hiệp)
               </span>
             ) : (
               <span>Chưa có dữ liệu bài tập</span>
@@ -631,29 +680,42 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
               Hủy
             </button>
 
-            {/* Option A: Save as completed WorkoutSession */}
+            {/* Option A: Save single completed workout */}
             <button
               type="button"
-              disabled={isProcessing || parsedResult.allSets.length === 0}
-              onClick={handleSaveAsCompletedWorkout}
+              disabled={isProcessing || activeSnippet.allSets.length === 0}
+              onClick={handleSaveActiveCompletedWorkout}
               className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 text-white text-xs font-bold shadow-md shadow-emerald-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
-              title="Ghi nhận ngay buổi tập này vào Lịch sử tập luyện và tính Volume/Streak"
+              title="Ghi nhận ngay buổi tập đang chọn vào Lịch sử tập luyện"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>💾 Lưu Buổi Tập Đã Hoàn Thành</span>
+              <span>💾 Lưu "{activeSnippet.workoutTitle}" Đã Hoàn Thành</span>
             </button>
 
-            {/* Option B: Save as Routine PlannedSession */}
-            <button
-              type="button"
-              disabled={isProcessing || parsedResult.exerciseGroups.length === 0}
-              onClick={handleSaveAsPlannedSession}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 text-white text-xs font-bold shadow-md shadow-violet-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
-              title="Lưu các bài tập này thành Giáo án mẫu để áp dụng hàng tuần và đồng bộ Google Calendar"
-            >
-              <Calendar className="w-3.5 h-3.5 text-amber-300" />
-              <span>📋 Lưu Thành Giáo Án Mới</span>
-            </button>
+            {/* Option B: If multiple routines, Save ALL routines to Mesocycle */}
+            {parsedRoutines.length > 1 ? (
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={handleSaveAllRoutinesToPlan}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 text-white text-xs font-bold shadow-md shadow-violet-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                title="Lưu cả Upper A (Thứ 2) và Upper B (Thứ 5) vào giáo án tuần để đồng bộ Google Calendar"
+              >
+                <Calendar className="w-3.5 h-3.5 text-amber-300" />
+                <span>📋 Lưu CẢ {parsedRoutines.length} Buổi Vào Giáo Án Tuần</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={isProcessing || activeSnippet.exerciseGroups.length === 0}
+                onClick={handleSaveActivePlannedSession}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 text-white text-xs font-bold shadow-md shadow-violet-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                title="Lưu các bài tập này thành Giáo án mẫu để áp dụng hàng tuần và đồng bộ Google Calendar"
+              >
+                <Calendar className="w-3.5 h-3.5 text-amber-300" />
+                <span>📋 Lưu Thành Giáo Án Mới</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

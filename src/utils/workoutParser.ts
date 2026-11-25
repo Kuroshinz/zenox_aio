@@ -17,9 +17,12 @@ export interface ParsedSetItem {
   setIndex: number;
   weightKg: number;
   reps: number;
+  repsRange?: string; // e.g. "8-12", "6-10"
   rpe?: number;
   rir?: number;
   setType: 'normal' | 'warmup' | 'dropset' | 'failure';
+  restSeconds?: number;
+  videoUrl?: string;
   rawLine: string;
 }
 
@@ -29,6 +32,9 @@ export interface ParsedExerciseGroup {
   muscle: MuscleGroup;
   sets: ParsedSetItem[];
   totalTonnageKg: number;
+  restSeconds?: number;
+  prescribedReps?: string;
+  videoUrl?: string;
 }
 
 export interface ParsedWorkoutSnippet {
@@ -44,9 +50,25 @@ export interface ParsedWorkoutSnippet {
   unrecognizedLines: string[];
 }
 
+// Helper to calculate average numeric reps from range like "8-12" or "6-10"
+export function parseRangeToAvgReps(repsStr: string): number {
+  if (!repsStr) return 10;
+  if (repsStr.includes('-')) {
+    const parts = repsStr.split('-').map((s) => parseFloat(s.trim()));
+    if (!isNaN(parts[0]) && !isNaN(parts[1])) {
+      return Math.round((parts[0] + parts[1]) / 2);
+    }
+  }
+  const val = parseInt(repsStr, 10);
+  return isNaN(val) ? 10 : val;
+}
+
 // Comprehensive English & Vietnamese exercise synonyms
 const SYNONYM_MAP: Record<string, string> = {
   // Chest
+  'pec deck': 'pec-deck',
+  'pec deck fly': 'pec-deck',
+  'pec deck machine fly': 'pec-deck',
   'bench press': 'bench-press',
   'bench': 'bench-press',
   'đẩy ngực ngang': 'bench-press',
@@ -54,6 +76,7 @@ const SYNONYM_MAP: Record<string, string> = {
   'đẩy ngực': 'bench-press',
   'barbell bench press': 'bench-press',
   'flat bench press': 'bench-press',
+  'incline press': 'incline-db-press',
   'incline barbell press': 'incline-barbell-press',
   'incline bench press': 'incline-barbell-press',
   'incline bench': 'incline-barbell-press',
@@ -78,10 +101,18 @@ const SYNONYM_MAP: Record<string, string> = {
   'diamond push-up': 'diamond-push-up',
 
   // Back
+  'top half pullovers': 'pullover',
+  'top half pullover': 'pullover',
+  'pullover': 'pullover',
+  'pullovers': 'pullover',
   'lat pulldown': 'lat-pulldown',
   'pulldown': 'lat-pulldown',
   'kéo xô': 'lat-pulldown',
   'kéo lưng': 'lat-pulldown',
+  'lat row': 'seated-cable-row',
+  'chest supported t-bar row': 't-bar-row',
+  't-bar row': 't-bar-row',
+  't bar row': 't-bar-row',
   'pull up': 'pull-up',
   'pullup': 'pull-up',
   'pull-up': 'pull-up',
@@ -105,6 +136,58 @@ const SYNONYM_MAP: Record<string, string> = {
   'deadlift': 'deadlift',
   'kéo deadlift': 'deadlift',
   'conventional deadlift': 'deadlift',
+
+  // Shoulders
+  'gymleco shoulder press': 'machine-shoulder-press',
+  'machine shoulder press': 'machine-shoulder-press',
+  'ohp': 'ohp',
+  'overhead press': 'ohp',
+  'đẩy vai': 'ohp',
+  'military press': 'ohp',
+  'shoulder press': 'ohp',
+  'single arm machine lateral raise': 'cable-lateral-raise',
+  'machine lateral raise': 'cable-lateral-raise',
+  'lateral raise': 'lateral-raise',
+  'bay vai': 'lateral-raise',
+  'dang tạ vai': 'lateral-raise',
+  'vai ngang': 'lateral-raise',
+  'side lateral raise': 'lateral-raise',
+  'cable lateral raise': 'cable-lateral-raise',
+  'bay vai cáp': 'cable-lateral-raise',
+  'face pull': 'face-pull',
+  'kéo mặt': 'face-pull',
+  'rear delt fly': 'rear-delt-fly',
+  'vai sau': 'rear-delt-fly',
+  'pike pushup': 'pike-push-up',
+  'pike push-up': 'pike-push-up',
+  'kelso shrug': 'shrugs',
+  'kelso shrugs': 'shrugs',
+  'shrugs': 'shrugs',
+  'cầu vai': 'shrugs',
+  'dumbbell shrugs': 'shrugs',
+
+  // Arms
+  'tricep pushdown': 'triceps-pushdown',
+  'triceps pushdown': 'triceps-pushdown',
+  'pushdown': 'triceps-pushdown',
+  'kéo tay sau': 'triceps-pushdown',
+  'tay sau': 'triceps-pushdown',
+  'overhead rope triceps extension': 'overhead-triceps-ext',
+  'overhead triceps extension': 'overhead-triceps-ext',
+  'rope triceps extension': 'overhead-triceps-ext',
+  'skull crusher': 'skull-crusher',
+  'triceps extension': 'skull-crusher',
+  'preacher curl': 'preacher-curl',
+  'recline curl': 'incline-db-curl',
+  'reclined curl': 'incline-db-curl',
+  'incline curl': 'incline-db-curl',
+  'incline db curl': 'incline-db-curl',
+  'barbell curl': 'barbell-curl',
+  'bicep curl': 'barbell-curl',
+  'cuốn tay trước': 'barbell-curl',
+  'tay trước': 'barbell-curl',
+  'hammer curl': 'hammer-curl',
+  'cuốn búa': 'hammer-curl',
 
   // Legs
   'back squat': 'back-squat',
@@ -138,45 +221,6 @@ const SYNONYM_MAP: Record<string, string> = {
   'abductor': 'abductor-machine',
   'hip abduction': 'abductor-machine',
 
-  // Shoulders
-  'ohp': 'ohp',
-  'overhead press': 'ohp',
-  'đẩy vai': 'ohp',
-  'military press': 'ohp',
-  'shoulder press': 'ohp',
-  'lateral raise': 'lateral-raise',
-  'bay vai': 'lateral-raise',
-  'dang tạ vai': 'lateral-raise',
-  'vai ngang': 'lateral-raise',
-  'side lateral raise': 'lateral-raise',
-  'cable lateral raise': 'cable-lateral-raise',
-  'bay vai cáp': 'cable-lateral-raise',
-  'face pull': 'face-pull',
-  'kéo mặt': 'face-pull',
-  'rear delt fly': 'rear-delt-fly',
-  'vai sau': 'rear-delt-fly',
-  'pike pushup': 'pike-push-up',
-  'pike push-up': 'pike-push-up',
-  'shrugs': 'shrugs',
-  'cầu vai': 'shrugs',
-  'dumbbell shrugs': 'shrugs',
-
-  // Arms
-  'barbell curl': 'barbell-curl',
-  'bicep curl': 'barbell-curl',
-  'cuốn tay trước': 'barbell-curl',
-  'tay trước': 'barbell-curl',
-  'hammer curl': 'hammer-curl',
-  'cuốn búa': 'hammer-curl',
-  'incline db curl': 'incline-db-curl',
-  'incline curl': 'incline-db-curl',
-  'triceps pushdown': 'triceps-pushdown',
-  'pushdown': 'triceps-pushdown',
-  'kéo tay sau': 'triceps-pushdown',
-  'tay sau': 'triceps-pushdown',
-  'skull crusher': 'skull-crusher',
-  'triceps extension': 'skull-crusher',
-
   // Core & Cardio
   'cable crunch': 'cable-crunch',
   'gập bụng': 'cable-crunch',
@@ -184,7 +228,6 @@ const SYNONYM_MAP: Record<string, string> = {
   'treo người nâng chân': 'hanging-leg-raise',
   'bụng dưới': 'hanging-leg-raise',
   'plank': 'plank',
-  'hít thở plank': 'plank',
   'treadmill': 'treadmill',
   'chạy bộ': 'treadmill',
 };
@@ -211,7 +254,6 @@ export function normalizeExerciseName(
     if (ex) return { id: ex.id, name: ex.name, muscle: ex.muscle, isCustom: false };
   }
 
-  // Partial matches in synonym dictionary
   for (const [key, targetId] of Object.entries(SYNONYM_MAP)) {
     if (clean.includes(key) || key.includes(clean)) {
       const ex = exerciseById(targetId, customList);
@@ -228,11 +270,11 @@ export function normalizeExerciseName(
 
   // 4. Infer muscle group from text
   let inferredMuscle: MuscleGroup = 'core';
-  if (/ngực|chest|pecs/i.test(clean)) inferredMuscle = 'chest';
-  else if (/lưng|xô|back|lat|row/i.test(clean)) inferredMuscle = 'back';
+  if (/ngực|chest|pec|bench|press/i.test(clean)) inferredMuscle = 'chest';
+  else if (/lưng|xô|back|lat|row|pullover/i.test(clean)) inferredMuscle = 'back';
   else if (/chân|đùi|mông|leg|squat|glute|calf|quad/i.test(clean)) inferredMuscle = 'legs';
-  else if (/vai|shoulder|delt/i.test(clean)) inferredMuscle = 'shoulders';
-  else if (/tay|bicep|tricep|arm|curl/i.test(clean)) inferredMuscle = 'arms';
+  else if (/vai|shoulder|delt|shrug/i.test(clean)) inferredMuscle = 'shoulders';
+  else if (/tay|bicep|tricep|arm|curl|pushdown/i.test(clean)) inferredMuscle = 'arms';
   else if (/bụng|core|abs|plank/i.test(clean)) inferredMuscle = 'core';
   else if (/chạy|cardio|run|treadmill|bơi/i.test(clean)) inferredMuscle = 'cardio';
 
@@ -255,7 +297,6 @@ function extractIntensityAndSetType(text: string): {
 
   const lower = text.toLowerCase();
 
-  // Set type detection
   if (lower.includes('warmup') || lower.includes('khởi động') || lower.includes('w/u')) {
     setType = 'warmup';
   } else if (lower.includes('drop') || lower.includes('dropset')) {
@@ -264,7 +305,6 @@ function extractIntensityAndSetType(text: string): {
     setType = 'failure';
   }
 
-  // RIR detection: "rir 2", "rir: 1", "2 rir", "rir2"
   const rirMatch = lower.match(/(?:rir\s*[:=]?\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*rir)/);
   if (rirMatch) {
     const val = parseFloat(rirMatch[1] || rirMatch[2]);
@@ -274,7 +314,6 @@ function extractIntensityAndSetType(text: string): {
     }
   }
 
-  // RPE detection: "rpe 8", "rpe: 8.5", "@8", "@ 8.5"
   const rpeMatch = lower.match(/(?:rpe\s*[:=]?\s*(\d+(?:\.\d+)?)|@\s*(\d+(?:\.\d+)?))/);
   if (rpeMatch) {
     const val = parseFloat(rpeMatch[1] || rpeMatch[2]);
@@ -292,7 +331,7 @@ function extractIntensityAndSetType(text: string): {
 }
 
 /**
- * Parses a single line representing sets or a full exercise line
+ * Parses a single section of text into a ParsedWorkoutSnippet
  */
 export function parseWorkoutSnippet(
   text: string,
@@ -308,26 +347,93 @@ export function parseWorkoutSnippet(
   let targetDate = todayString();
 
   const allSets: ParsedSetItem[] = [];
+  const exerciseGroupsMap = new Map<string, ParsedExerciseGroup>();
   const unrecognizedLines: string[] = [];
 
   let currentExercise: { id: string; name: string; muscle: MuscleGroup } | null = null;
   let currentExerciseSetIndex = 0;
 
   for (const line of lines) {
-    // 1. Check title/date directive: "Title: Push Day" or "Date: 2026-11-25"
-    const titleMatch = line.match(/^(?:title|tiêu đề|buổi tập|tên)[:=]\s*(.+)$/i);
-    if (titleMatch) {
+    // Ignore CSV table headers
+    if (/^exercise\s*,\s*sets?\s*,/i.test(line)) {
+      continue;
+    }
+
+    // 1. Title/date directives
+    const titleMatch = line.match(/^(?:title|tiêu đề|buổi tập|tên)[:=]?\s*(.+)$/i);
+    if (titleMatch && !line.includes(',')) {
       workoutTitle = titleMatch[1].trim();
       continue;
     }
+    // Or single header line without comma: "Upper A" or "Day 1 - Push"
+    if (!line.includes(',') && !line.includes(':') && /^(upper|lower|push|pull|legs?|day|buổi|session)/i.test(line)) {
+      workoutTitle = line.trim();
+      continue;
+    }
+
     const dateMatch = line.match(/^(?:date|ngày)[:=]\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
     if (dateMatch) {
       targetDate = dateMatch[1].trim();
       continue;
     }
 
-    // 2. Pattern A: Compact single line per exercise:
-    // e.g. "Bench Press 4x8 80kg RIR 2" or "Squat 3 x 10 100kg @8" or "Hít đất 4x15 bodyweight"
+    // 2. Pattern: CSV Row with columns: Exercise,Sets,Reps,Rest,Video
+    // e.g. "Pec Deck,2,8-12,90," or "Incline Press,2,6-10,150,https://..."
+    if (line.includes(',')) {
+      const parts = line.split(',').map((p) => p.replace(/^["']|["']$/g, '').trim());
+      if (parts.length >= 3) {
+        const rawName = parts[0];
+        const numSets = parseInt(parts[1], 10);
+        const repsRaw = parts[2];
+        const restSec = parts[3] ? parseInt(parts[3], 10) : 90;
+        const videoUrl = parts[4] || undefined;
+
+        if (rawName && !isNaN(numSets) && numSets > 0) {
+          const exInfo = normalizeExerciseName(rawName, customList);
+          const avgReps = parseRangeToAvgReps(repsRaw);
+
+          let group = exerciseGroupsMap.get(exInfo.id);
+          if (!group) {
+            group = {
+              exerciseId: exInfo.id,
+              exerciseName: exInfo.name,
+              muscle: exInfo.muscle,
+              sets: [],
+              totalTonnageKg: 0,
+              restSeconds: !isNaN(restSec) ? restSec : 90,
+              prescribedReps: repsRaw || '10',
+              videoUrl,
+            };
+            exerciseGroupsMap.set(exInfo.id, group);
+          }
+
+          for (let s = 0; s < numSets; s++) {
+            const item: ParsedSetItem = {
+              id: `set-${Date.now()}-${allSets.length}`,
+              exerciseId: exInfo.id,
+              exerciseName: exInfo.name,
+              muscle: exInfo.muscle,
+              setIndex: s,
+              weightKg: 0, // Bodyweight or open weight
+              reps: avgReps,
+              repsRange: repsRaw,
+              setType: 'normal',
+              restSeconds: !isNaN(restSec) ? restSec : 90,
+              videoUrl,
+              rawLine: line,
+            };
+            allSets.push(item);
+            group.sets.push(item);
+          }
+          currentExercise = exInfo;
+          currentExerciseSetIndex = numSets;
+          continue;
+        }
+      }
+    }
+
+    // 3. Pattern A: Compact single line per exercise:
+    // e.g. "Bench Press 4x8 80kg RIR 2" or "Squat 3 x 10 100kg @8"
     const compactMatch = line.match(
       /^([A-Za-zÀ-ỹ0-9\s\(\)\-\+\/]+?)\s+(\d+)\s*(?:x|×)\s*(\d+)(?:\s*(?:reps?|r))?(?:\s+(\d+(?:\.\d+)?)\s*(?:kg|k|kgs|lbs?)?)?(.*)$/i
     );
@@ -342,8 +448,22 @@ export function parseWorkoutSnippet(
       const exInfo = normalizeExerciseName(rawExName, customList);
       const { rpe, rir, setType } = extractIntensityAndSetType(tail);
 
+      let group = exerciseGroupsMap.get(exInfo.id);
+      if (!group) {
+        group = {
+          exerciseId: exInfo.id,
+          exerciseName: exInfo.name,
+          muscle: exInfo.muscle,
+          sets: [],
+          totalTonnageKg: 0,
+          prescribedReps: String(reps),
+          restSeconds: 90,
+        };
+        exerciseGroupsMap.set(exInfo.id, group);
+      }
+
       for (let s = 0; s < numSets; s++) {
-        allSets.push({
+        const item: ParsedSetItem = {
           id: `set-${Date.now()}-${allSets.length}`,
           exerciseId: exInfo.id,
           exerciseName: exInfo.name,
@@ -355,15 +475,18 @@ export function parseWorkoutSnippet(
           rir,
           setType,
           rawLine: line,
-        });
+        };
+        allSets.push(item);
+        group.sets.push(item);
+        group.totalTonnageKg += weightKg * reps;
       }
       currentExercise = exInfo;
       currentExerciseSetIndex = numSets;
       continue;
     }
 
-    // 3. Pattern B: Exercise Header line followed by sets:
-    // e.g. "Bench Press:" or "--- Barbell Squat ---"
+    // 4. Pattern B: Exercise Header line followed by sets:
+    // e.g. "Bench Press:"
     const headerMatch = line.match(/^([A-Za-zÀ-ỹ0-9\s\(\)\-\+\/]+):$/i);
     if (headerMatch) {
       currentExercise = normalizeExerciseName(headerMatch[1].trim(), customList);
@@ -371,8 +494,8 @@ export function parseWorkoutSnippet(
       continue;
     }
 
-    // 4. Pattern C: Sub-set line under current exercise:
-    // e.g. "Set 1: 80kg x 8 reps rir 2" or "80kg x 8 @8" or "100kg x 6"
+    // 5. Pattern C: Sub-set line under current exercise:
+    // e.g. "Set 1: 80kg x 8 reps rir 2" or "80kg x 8 @8"
     if (currentExercise) {
       const subSetMatch = line.match(
         /^(?:set\s*\d+\s*[:=]?\s*)?(\d+(?:\.\d+)?)\s*(?:kg|k|kgs|lbs?)?\s*(?:x|×)\s*(\d+)(?:\s*(?:reps?|r))?(.*)$/i
@@ -383,7 +506,21 @@ export function parseWorkoutSnippet(
         const tail = subSetMatch[3] || '';
         const { rpe, rir, setType } = extractIntensityAndSetType(tail);
 
-        allSets.push({
+        let group = exerciseGroupsMap.get(currentExercise.id);
+        if (!group) {
+          group = {
+            exerciseId: currentExercise.id,
+            exerciseName: currentExercise.name,
+            muscle: currentExercise.muscle,
+            sets: [],
+            totalTonnageKg: 0,
+            prescribedReps: String(reps),
+            restSeconds: 90,
+          };
+          exerciseGroupsMap.set(currentExercise.id, group);
+        }
+
+        const item: ParsedSetItem = {
           id: `set-${Date.now()}-${allSets.length}`,
           exerciseId: currentExercise.id,
           exerciseName: currentExercise.name,
@@ -395,68 +532,10 @@ export function parseWorkoutSnippet(
           rir,
           setType,
           rawLine: line,
-        });
-        continue;
-      }
-    }
-
-    // 5. Pattern D: Comma-separated weights line:
-    // e.g. "Bench Press: 80kg x 8, 85kg x 8, 90kg x 6"
-    if (line.includes(':') && line.includes(',')) {
-      const [exPart, setsPart] = line.split(':');
-      const exInfo = normalizeExerciseName(exPart.trim(), customList);
-      const parts = setsPart.split(',');
-      let sIdx = 0;
-
-      for (const p of parts) {
-        const itemMatch = p.trim().match(/(\d+(?:\.\d+)?)\s*(?:kg|k)?\s*(?:x|×)\s*(\d+)(?:\s*(?:reps?|r))?(.*)/i);
-        if (itemMatch) {
-          const weightKg = parseFloat(itemMatch[1]);
-          const reps = parseInt(itemMatch[2], 10);
-          const { rpe, rir, setType } = extractIntensityAndSetType(itemMatch[3] || '');
-          allSets.push({
-            id: `set-${Date.now()}-${allSets.length}`,
-            exerciseId: exInfo.id,
-            exerciseName: exInfo.name,
-            muscle: exInfo.muscle,
-            setIndex: sIdx++,
-            weightKg,
-            reps,
-            rpe,
-            rir,
-            setType,
-            rawLine: p.trim(),
-          });
-        }
-      }
-      if (sIdx > 0) continue;
-    }
-
-    // 6. Pattern E: Pipe delimited row:
-    // e.g. "Bench Press | 80kg | 8 reps | RIR 2"
-    if (line.includes('|')) {
-      const cols = line.split('|').map((c) => c.trim());
-      if (cols.length >= 2) {
-        const exInfo = normalizeExerciseName(cols[0], customList);
-        const weightMatch = cols.find((c) => /\d+\s*(?:kg|k)/i.test(c)) || '0';
-        const repsMatch = cols.find((c) => /\d+\s*(?:reps?|r)/i.test(c)) || '10';
-        const weightKg = parseFloat(weightMatch.replace(/[^0-9.]/g, '')) || 0;
-        const reps = parseInt(repsMatch.replace(/[^0-9]/g, ''), 10) || 10;
-        const { rpe, rir, setType } = extractIntensityAndSetType(line);
-
-        allSets.push({
-          id: `set-${Date.now()}-${allSets.length}`,
-          exerciseId: exInfo.id,
-          exerciseName: exInfo.name,
-          muscle: exInfo.muscle,
-          setIndex: 0,
-          weightKg,
-          reps,
-          rpe,
-          rir,
-          setType,
-          rawLine: line,
-        });
+        };
+        allSets.push(item);
+        group.sets.push(item);
+        group.totalTonnageKg += weightKg * reps;
         continue;
       }
     }
@@ -465,30 +544,11 @@ export function parseWorkoutSnippet(
     unrecognizedLines.push(line);
   }
 
-  // Group by exercise
-  const groupMap = new Map<string, ParsedExerciseGroup>();
-  for (const set of allSets) {
-    let group = groupMap.get(set.exerciseId);
-    if (!group) {
-      group = {
-        exerciseId: set.exerciseId,
-        exerciseName: set.exerciseName,
-        muscle: set.muscle,
-        sets: [],
-        totalTonnageKg: 0,
-      };
-      groupMap.set(set.exerciseId, group);
-    }
-    group.sets.push(set);
-    group.totalTonnageKg += set.weightKg * set.reps;
-  }
-  const exerciseGroups = Array.from(groupMap.values());
-
+  const exerciseGroups = Array.from(exerciseGroupsMap.values());
   const totalSets = allSets.length;
   const totalReps = allSets.reduce((sum, s) => sum + s.reps, 0);
   const totalVolumeKg = allSets.reduce((sum, s) => sum + s.weightKg * s.reps, 0);
 
-  // Convert ParsedSetItem to SetLog format for calories
   const setLogsForCal: SetLog[] = allSets.map((s, idx) => ({
     id: s.id,
     exerciseId: s.exerciseId,
@@ -500,9 +560,8 @@ export function parseWorkoutSnippet(
     setType: s.setType,
   }));
 
-  const estimatedBurnedKcal = gymCalories(setLogsForCal, userWeightKg);
+  const estimatedBurnedKcal = gymCalories(setLogsForCal, userWeightKg) || Math.round(totalSets * 18);
 
-  // Targeted muscles breakdown
   const muscleCount: Record<string, number> = {};
   for (const s of allSets) {
     muscleCount[s.muscle] = (muscleCount[s.muscle] || 0) + 1;
@@ -529,6 +588,57 @@ export function parseWorkoutSnippet(
 }
 
 /**
+ * Splits multi-session routine text (e.g. Upper A and Upper B) into individual ParsedWorkoutSnippet
+ */
+export function parseMultiRoutineSnippet(
+  text: string,
+  customList: Exercise[] = [],
+  userWeightKg: number = 70
+): ParsedWorkoutSnippet[] {
+  const lines = text.split('\n');
+  const sections: { title: string; lines: string[] }[] = [];
+  let currentTitle = 'Buổi Tập';
+  let currentLines: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Detect routine section header: "Upper A", "Upper B", "Day 1 - Push", "Session 1"
+    const isHeader =
+      !line.includes(',') &&
+      !line.includes(':') &&
+      /^(upper|lower|push|pull|legs?|day|buổi|session)/i.test(line) &&
+      !line.toLowerCase().includes('exercise');
+
+    if (isHeader) {
+      if (currentLines.length > 0) {
+        sections.push({ title: currentTitle, lines: currentLines });
+      }
+      currentTitle = line;
+      currentLines = [];
+    } else {
+      currentLines.push(line);
+    }
+  }
+
+  if (currentLines.length > 0) {
+    sections.push({ title: currentTitle, lines: currentLines });
+  }
+
+  if (sections.length === 0) {
+    return [parseWorkoutSnippet(text, customList, userWeightKg)];
+  }
+
+  return sections.map((sec) => {
+    const joined = [`Title: ${sec.title}`, ...sec.lines].join('\n');
+    const parsed = parseWorkoutSnippet(joined, customList, userWeightKg);
+    parsed.workoutTitle = sec.title;
+    return parsed;
+  });
+}
+
+/**
  * Parses CSV export from Strong, Hevy, or generic ZENOX CSV template
  */
 export function parseWorkoutCsv(
@@ -536,132 +646,7 @@ export function parseWorkoutCsv(
   customList: Exercise[] = [],
   userWeightKg: number = 70
 ): ParsedWorkoutSnippet {
-  const lines = csvText.split('\n').map((l) => l.trim()).filter(Boolean);
-  if (lines.length === 0) {
-    return parseWorkoutSnippet('', customList, userWeightKg);
-  }
-
-  const header = lines[0].toLowerCase();
-  const allSets: ParsedSetItem[] = [];
-  let workoutTitle = 'CSV Workout Import';
-  let targetDate = todayString();
-
-  // Strong: Date, Workout Name, Exercise Name, Set Order, Weight, Reps, RPE, Notes
-  // Hevy: Date, Workout Name, Exercise Name, Set Type, Weight (kg), Reps, RPE
-  const isStrongOrHevy = header.includes('exercise') || header.includes('workout');
-
-  for (let i = 1; i < lines.length; i++) {
-    const row = lines[i];
-    // CSV split handling simple commas or quotes
-    const cols = row.split(',').map((c) => c.replace(/^["']|["']$/g, '').trim());
-    if (cols.length < 3) continue;
-
-    let exName = '';
-    let weightKg = 0;
-    let reps = 10;
-    let rpe: number | undefined;
-    let rir: number | undefined;
-    let setType: 'normal' | 'warmup' | 'dropset' | 'failure' = 'normal';
-
-    if (isStrongOrHevy && cols.length >= 6) {
-      if (cols[0] && cols[0].length >= 10) targetDate = cols[0].slice(0, 10);
-      if (cols[1]) workoutTitle = cols[1];
-      exName = cols[2];
-      weightKg = parseFloat(cols[4]) || 0;
-      reps = parseInt(cols[5], 10) || 10;
-      if (cols[6]) {
-        const rpeVal = parseFloat(cols[6]);
-        if (!isNaN(rpeVal)) {
-          rpe = rpeVal;
-          rir = Math.max(0, 10 - rpeVal);
-        }
-      }
-    } else {
-      // Generic CSV: Exercise, Sets/Weight, Reps...
-      exName = cols[0];
-      weightKg = parseFloat(cols[1]) || 0;
-      reps = parseInt(cols[2], 10) || 10;
-      if (cols[3]) {
-        const val = parseFloat(cols[3]);
-        if (!isNaN(val)) rir = val;
-      }
-    }
-
-    const exInfo = normalizeExerciseName(exName, customList);
-    allSets.push({
-      id: `csv-set-${Date.now()}-${i}`,
-      exerciseId: exInfo.id,
-      exerciseName: exInfo.name,
-      muscle: exInfo.muscle,
-      setIndex: allSets.filter((s) => s.exerciseId === exInfo.id).length,
-      weightKg,
-      reps,
-      rpe,
-      rir,
-      setType,
-      rawLine: row,
-    });
-  }
-
-  // Group by exercise
-  const groupMap = new Map<string, ParsedExerciseGroup>();
-  for (const set of allSets) {
-    let group = groupMap.get(set.exerciseId);
-    if (!group) {
-      group = {
-        exerciseId: set.exerciseId,
-        exerciseName: set.exerciseName,
-        muscle: set.muscle,
-        sets: [],
-        totalTonnageKg: 0,
-      };
-      groupMap.set(set.exerciseId, group);
-    }
-    group.sets.push(set);
-    group.totalTonnageKg += set.weightKg * set.reps;
-  }
-  const exerciseGroups = Array.from(groupMap.values());
-
-  const totalSets = allSets.length;
-  const totalReps = allSets.reduce((sum, s) => sum + s.reps, 0);
-  const totalVolumeKg = allSets.reduce((sum, s) => sum + s.weightKg * s.reps, 0);
-
-  const setLogsForCal: SetLog[] = allSets.map((s, idx) => ({
-    id: s.id,
-    exerciseId: s.exerciseId,
-    setIndex: idx,
-    weightKg: s.weightKg,
-    reps: s.reps,
-    rpe: s.rpe,
-    rir: s.rir,
-    setType: s.setType,
-  }));
-
-  const estimatedBurnedKcal = gymCalories(setLogsForCal, userWeightKg);
-
-  const muscleCount: Record<string, number> = {};
-  for (const s of allSets) {
-    muscleCount[s.muscle] = (muscleCount[s.muscle] || 0) + 1;
-  }
-  const targetedMuscles = Object.entries(muscleCount).map(([m, count]) => ({
-    muscle: m as MuscleGroup,
-    label: MUSCLE_LABEL[m as MuscleGroup] || m,
-    setCount: count,
-    percentage: totalSets > 0 ? Math.round((count / totalSets) * 100) : 0,
-  }));
-
-  return {
-    workoutTitle,
-    targetDate,
-    exerciseGroups,
-    allSets,
-    totalSets,
-    totalReps,
-    totalVolumeKg,
-    estimatedBurnedKcal,
-    targetedMuscles,
-    unrecognizedLines: [],
-  };
+  return parseWorkoutSnippet(csvText, customList, userWeightKg);
 }
 
 /**
@@ -686,7 +671,7 @@ export function workoutSnippetToWorkoutSession(
   return {
     date: parsed.targetDate || todayString(),
     title: parsed.workoutTitle || 'Buổi tập ghi nhanh',
-    startedAt: now - (parsed.totalSets * 150 * 1000), // ~2.5 mins per set
+    startedAt: now - (parsed.totalSets * 150 * 1000),
     finishedAt: now,
     sets,
     note: note.trim() || `Nhập nhanh qua ZENOX Smart Parser (${parsed.totalSets} hiệp · ${parsed.totalVolumeKg.toLocaleString()}kg volume)`,
@@ -711,15 +696,15 @@ export function workoutSnippetToPlannedSession(
 
     return {
       exerciseId: g.exerciseId,
-      sets: numSets || 3,
-      reps: String(avgReps || 10),
+      sets: numSets || 2,
+      reps: g.prescribedReps || String(avgReps || 10),
       rpe: avgRpe,
-      restSeconds: 90,
+      restSeconds: g.restSeconds || 90,
     };
   });
 
   return {
-    id: `custom-plan-${Date.now()}`,
+    id: `custom-plan-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     weekIndex: 0,
     dayIndex: DAY_MAP[dayOfWeek] ?? 0,
     title: parsed.workoutTitle || 'Giáo án mới',
@@ -733,13 +718,21 @@ export function workoutSnippetToPlannedSession(
  */
 export function generateWorkoutCsvTemplate(): string {
   return [
-    'Date,Workout Name,Exercise Name,Set Order,Weight,Reps,RPE,Notes',
-    '2026-11-25,Push Day,Bench Press,1,80,8,8,Warmup tốt',
-    '2026-11-25,Push Day,Bench Press,2,85,8,8.5,Form chuẩn',
-    '2026-11-25,Push Day,Bench Press,3,90,6,9,Failure rep cuối',
-    '2026-11-25,Push Day,Incline Dumbbell Press,1,28,10,8,',
-    '2026-11-25,Push Day,Incline Dumbbell Press,2,28,10,8.5,',
-    '2026-11-25,Push Day,Lateral Raise,1,10,15,9,',
-    '2026-11-25,Push Day,Triceps Pushdown,1,25,12,9,Dropset',
+    'Upper A',
+    'Exercise,Sets,Reps,Rest,Video',
+    'Pec Deck,2,8-12,90,',
+    'Incline Press,2,6-10,150,',
+    'Gymleco Shoulder Press,2,6-10,150,',
+    'Top Half Pullovers,2,8-12,90,',
+    'Lat Pulldown,3,8-12,120,',
+    'Lat Row,1,8-12,120,',
+    'Chest Supported T-Bar Row,2,8-12,120,',
+    'Kelso Shrug,2,10-15,90,',
+    'Single Arm Machine Lateral Raise,3,10-15,90,',
+    'Tricep Pushdown,2,8-12,90,',
+    'Overhead Rope Triceps Extension,1,10-15,90,',
+    'Preacher Curl,2,8-12,90,',
+    'Recline Curl,1,8-12,90,',
+    'Hammer Curl,1,8-12,90,',
   ].join('\n');
 }

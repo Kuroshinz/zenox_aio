@@ -683,6 +683,12 @@ export const EXERCISES: Exercise[] = [
   { id: 'leg-extension', name: 'Leg Extension', muscle: 'legs', equipment: 'Machine', cue: 'Đá duỗi gối, siết cứng đùi trước đỉnh chuyển động' },
   { id: 'shrugs', name: 'Dumbbell Shrugs', muscle: 'shoulders', equipment: 'Dumbbell', cue: 'Nâng vai sát tai, giữ 1 giây không xoay khớp vai' },
   { id: 'abductor-machine', name: 'Hip Abduction Machine', muscle: 'legs', equipment: 'Machine', cue: 'Mở rộng gối ép kháng lực, tập trung mép mông trên' },
+  { id: 'pec-deck', name: 'Pec Deck Machine Fly', muscle: 'chest', equipment: 'Machine', cue: 'Khuỷu tay tì đệm, ép cơ ngực chạm nhau đỉnh co' },
+  { id: 't-bar-row', name: 'Chest Supported T-Bar Row', muscle: 'back', equipment: 'Machine', cue: 'Ngực tựa đệm, kéo cùi chỏ về hông siết chặt lưng xô' },
+  { id: 'pullover', name: 'Top Half Pullover', muscle: 'back', equipment: 'Cable', cue: 'Khóa nhẹ khớp khuỷu, kéo ép cơ xô nửa biên độ trên' },
+  { id: 'preacher-curl', name: 'Preacher Curl', muscle: 'arms', equipment: 'Barbell', cue: 'Tựa bắp tay lên đệm dốc, cô lập bắp tay trước' },
+  { id: 'overhead-triceps-ext', name: 'Overhead Rope Triceps Extension', muscle: 'arms', equipment: 'Cable', cue: 'Dây thừng kéo qua đầu, tách hai đầu dây duỗi tay sau' },
+  { id: 'machine-shoulder-press', name: 'Gymleco / Machine Shoulder Press', muscle: 'shoulders', equipment: 'Machine', cue: 'Đẩy thẳng tạ máy, kiểm soát hạ chậm 2 giây' },
 ];
 
 export const exerciseById = (id: string, customList: Exercise[] = []): Exercise | undefined =>
