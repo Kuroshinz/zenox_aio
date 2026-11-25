@@ -68,6 +68,7 @@ import { TrackedScheduleMatrix } from './TrackedScheduleMatrix';
 import { CtgDeloadAdvisor } from './CtgDeloadAdvisor';
 import { LiveWorkoutSessionView } from './LiveWorkoutSessionView';
 import { CtgCalendarSyncModal } from './CtgCalendarSyncModal';
+import { SmartWorkoutImportModal } from './SmartWorkoutImportModal';
 import { CalendarEvent } from '../../../types/calendar';
 import { getAccessToken, googleSignIn } from '../../../services/auth';
 import { notifyError, notifyWarning } from '../../../utils/notify';
@@ -198,6 +199,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   const [restTotal, setRestTotal] = useState(90);
   const [autoScheduleOnFinish, setAutoScheduleOnFinish] = useState(false); // DEFAULT FALSE to prevent unrequested calendar injection!
   const [showCalendarSyncModal, setShowCalendarSyncModal] = useState(false);
+  const [showSmartImportModal, setShowSmartImportModal] = useState(false);
   const [hasGoogleToken, setHasGoogleToken] = useState(false);
   const [googleUserEmail, setGoogleUserEmail] = useState<string | null>(null);
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
@@ -1277,6 +1279,15 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => setShowSmartImportModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white text-xs font-bold shadow-md shadow-violet-500/20 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+              title="Nhập buổi tập bằng cú pháp text thông minh (NLP) hoặc file CSV từ Strong/Hevy"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>📥 Nhập Bằng Text / File</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setShowAddExerciseModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
             >
@@ -1327,22 +1338,33 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
             <Dumbbell className="w-4 h-4 text-orange-500" />
             Giáo Án Kháng Lực Đang Áp Dụng (Mesocycle)
           </h3>
-          <button
-            type="button"
-            onClick={() => {
-              setPlanTitle('');
-              setPlanDayOfWeek('Thứ 2');
-              setPlanPrescriptions([
-                { exerciseId: 'bench-press', sets: 4, reps: '8-10', rpe: 8, restSeconds: 90 },
-                { exerciseId: 'incline-dumbbell-press', sets: 3, reps: '10-12', rpe: 8, restSeconds: 75 },
-              ]);
-              setShowAddPlanModal(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Tạo Giáo Án Mới</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSmartImportModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
+              title="Nhập nhanh giáo án bài tập từ đoạn văn bản hoặc file"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Nhập Text / File</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPlanTitle('');
+                setPlanDayOfWeek('Thứ 2');
+                setPlanPrescriptions([
+                  { exerciseId: 'bench-press', sets: 4, reps: '8-10', rpe: 8, restSeconds: 90 },
+                  { exerciseId: 'incline-dumbbell-press', sets: 3, reps: '10-12', rpe: 8, restSeconds: 75 },
+                ]);
+                setShowAddPlanModal(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tạo Giáo Án Mới</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1622,6 +1644,15 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
               </button>
             </div>
 
+            <button
+              type="button"
+              onClick={() => setShowSmartImportModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
+              title="Nhập buổi tập nhanh bằng cú pháp text hoặc file"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Nhập Text / File</span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -2906,6 +2937,19 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         plannedSessions={plannedSessions}
         onBatchSchedule={onBatchScheduleToCalendar}
         onClearWorkoutEvents={onClearWorkoutEventsFromCalendar}
+        lang={lang}
+      />
+
+      {/* ZENOX Smart Workout Text & File Importer Studio Modal */}
+      <SmartWorkoutImportModal
+        isOpen={showSmartImportModal}
+        onClose={() => setShowSmartImportModal(false)}
+        userWeightKg={userWeightKg}
+        customExercises={customExercises}
+        prs={prs}
+        onLogWorkoutSession={onLogWorkoutSession}
+        onAddPlannedSession={onAddPlannedSession}
+        onOpenSyncStudio={() => setShowCalendarSyncModal(true)}
         lang={lang}
       />
     </div>
