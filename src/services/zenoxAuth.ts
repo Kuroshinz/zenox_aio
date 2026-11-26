@@ -21,6 +21,8 @@ export interface ZenoxUser {
   email: string;
   photoURL: string | null;
   authMethod: 'zenox_vault' | 'google';
+  /** Raw Firebase Auth UID when signed in via Firebase, used for Firestore security rules. */
+  firebaseUid?: string;
 }
 
 export interface ZenoxSession {
@@ -36,18 +38,28 @@ const VAULT_ACCOUNTS_KEY = 'zenox_vault_accounts';
 const ACTIVE_SESSION_KEY = 'zenox_auth_session';
 const ACTIVE_USER_KEY = 'gcal_active_user';
 const WORKSPACE_ENTERED_KEY = 'zenox_workspace_entered';
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function getWebCrypto(): Crypto {
+  const c = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (!c?.subtle || !c?.getRandomValues) {
+    throw new Error('Trình duyệt không hỗ trợ Web Crypto API.');
+  }
+  return c;
+}
 
 /** SHA-256 Cryptographic Hash Helper */
 async function hashWithSalt(password: string, salt: string): Promise<string> {
   const enc = new TextEncoder().encode(`${salt}:#zenox_secure:${password}`);
-  const hashBuf = await window.crypto.subtle.digest('SHA-256', enc);
+  const hashBuf = await getWebCrypto().subtle.digest('SHA-256', enc);
   const hashArr = Array.from(new Uint8Array(hashBuf));
   return hashArr.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function generateRandomSalt(): string {
   const arr = new Uint8Array(16);
-  window.crypto.getRandomValues(arr);
+  getWebCrypto().getRandomValues(arr);
   return Array.from(arr)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
@@ -55,7 +67,7 @@ function generateRandomSalt(): string {
 
 function generateSessionToken(): string {
   const arr = new Uint8Array(32);
-  window.crypto.getRandomValues(arr);
+  getWebCrypto().getRandomValues(arr);
   return (
     'zenox_st_' +
     Array.from(arr)
@@ -64,8 +76,52 @@ function generateSessionToken(): string {
   );
 }
 
+/** Persist a verified ZENOX session + active user consistently across all auth entry points. */
+export function establishZenoxSession(
+  userInput: {
+    uid: string;
+    displayName?: string | null;
+    email?: string | null;
+    photoURL?: string | null;
+    firebaseUid?: string;
+  },
+  authMethod: 'zenox_vault' | 'google' = 'google',
+  rememberMe: boolean = true
+): ZenoxUser {
+  const cleanEmail = (userInput.email || '').trim().toLowerCase();
+  const cleanName = userInput.displayName?.trim() || (cleanEmail ? cleanEmail.split('@')[0] : 'Thành viên ZENOX');
+  const user: ZenoxUser = {
+    uid: String(userInput.uid),
+    displayName: cleanName,
+    email: cleanEmail,
+    photoURL: userInput.photoURL ?? null,
+    authMethod,
+    ...(userInput.firebaseUid ? { firebaseUid: userInput.firebaseUid } : {}),
+  };
+
+  const session: ZenoxSession = {
+    token: generateSessionToken(),
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName,
+    authTime: Date.now(),
+    expiresAt: Date.now() + (rememberMe ? THIRTY_DAYS_MS : ONE_DAY_MS),
+  };
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(session));
+    localStorage.setItem(ACTIVE_USER_KEY, JSON.stringify(user));
+  }
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem(WORKSPACE_ENTERED_KEY, 'true');
+  }
+
+  return user;
+}
+
 /** Get all registered accounts from local vault */
 export function getVaultAccounts(): ZenoxAccount[] {
+  if (typeof localStorage === 'undefined') return [];
   try {
     const raw = localStorage.getItem(VAULT_ACCOUNTS_KEY);
     if (raw) return JSON.parse(raw);
@@ -76,11 +132,12 @@ export function getVaultAccounts(): ZenoxAccount[] {
 }
 
 function saveVaultAccounts(accounts: ZenoxAccount[]) {
+  if (typeof localStorage === 'undefined') return;
   localStorage.setItem(VAULT_ACCOUNTS_KEY, JSON.stringify(accounts));
 }
 
 // Clean up any legacy test accounts if present from early development
-if (typeof window !== 'undefined') {
+if (typeof localStorage !== 'undefined') {
   try {
     const accounts = getVaultAccounts();
     const cleaned = accounts.filter(
@@ -138,27 +195,16 @@ export async function registerZenoxAccount(
   accounts.push(newAccount);
   saveVaultAccounts(accounts);
 
-  // Auto-login upon registration
-  const user: ZenoxUser = {
-    uid: newAccount.id,
-    displayName: cleanName,
-    email: cleanEmail,
-    photoURL: null,
-    authMethod: 'zenox_vault',
-  };
-
-  const session: ZenoxSession = {
-    token: generateSessionToken(),
-    uid: user.uid,
-    email: cleanEmail,
-    displayName: cleanName,
-    authTime: Date.now(),
-    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
-  };
-
-  localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(session));
-  localStorage.setItem(ACTIVE_USER_KEY, JSON.stringify(user));
-  sessionStorage.setItem(WORKSPACE_ENTERED_KEY, 'true');
+  const user = establishZenoxSession(
+    {
+      uid: newAccount.id,
+      displayName: cleanName,
+      email: cleanEmail,
+      photoURL: null,
+    },
+    'zenox_vault',
+    true
+  );
 
   return { success: true, user };
 }
@@ -188,6 +234,13 @@ export async function loginZenoxAccount(
     };
   }
 
+  if (account.passwordHash === 'google_oauth_managed') {
+    return {
+      success: false,
+      error: 'Email này được liên kết với đăng nhập Google. Vui lòng chọn "Đăng nhập bằng tài khoản Google" ở phía trên.',
+    };
+  }
+
   const inputHash = await hashWithSalt(password, account.salt);
   if (inputHash !== account.passwordHash) {
     return {
@@ -200,41 +253,34 @@ export async function loginZenoxAccount(
   account.lastLoginAt = new Date().toISOString();
   saveVaultAccounts(accounts);
 
-  const user: ZenoxUser = {
-    uid: account.id,
-    displayName: account.name,
-    email: account.email,
-    photoURL: null,
-    authMethod: 'zenox_vault',
-  };
-
-  const sessionDuration = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-  const session: ZenoxSession = {
-    token: generateSessionToken(),
-    uid: user.uid,
-    email: user.email,
-    displayName: user.displayName,
-    authTime: Date.now(),
-    expiresAt: Date.now() + sessionDuration,
-  };
-
-  localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(session));
-  localStorage.setItem(ACTIVE_USER_KEY, JSON.stringify(user));
-  sessionStorage.setItem(WORKSPACE_ENTERED_KEY, 'true');
+  const user = establishZenoxSession(
+    {
+      uid: account.id,
+      displayName: account.name,
+      email: account.email,
+      photoURL: null,
+    },
+    'zenox_vault',
+    rememberMe
+  );
 
   return { success: true, user };
 }
 
 /** Terminate current session */
 export function logoutZenoxSession() {
-  localStorage.removeItem(ACTIVE_SESSION_KEY);
-  localStorage.removeItem(ACTIVE_USER_KEY);
-  sessionStorage.removeItem(WORKSPACE_ENTERED_KEY);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+    localStorage.removeItem(ACTIVE_USER_KEY);
+  }
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(WORKSPACE_ENTERED_KEY);
+  }
 }
 
 /** Verify if there is an active, valid session (anti-bypass verification) */
 export function verifyZenoxSession(): ZenoxUser | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof localStorage === 'undefined') return null;
 
   try {
     const rawSession = localStorage.getItem(ACTIVE_SESSION_KEY);
@@ -245,9 +291,11 @@ export function verifyZenoxSession(): ZenoxUser | null {
     const session: ZenoxSession = JSON.parse(rawSession);
     const user: ZenoxUser = JSON.parse(rawUser);
 
-    if (!session.token || !session.expiresAt) return null;
+    if (!session.token || !session.expiresAt || !user.uid) {
+      logoutZenoxSession();
+      return null;
+    }
 
-    // Check expiration
     if (Date.now() > session.expiresAt) {
       logoutZenoxSession();
       return null;
@@ -259,7 +307,7 @@ export function verifyZenoxSession(): ZenoxUser | null {
     }
 
     return user;
-  } catch (e) {
+  } catch {
     logoutZenoxSession();
     return null;
   }
@@ -277,6 +325,7 @@ export async function loginWithGoogleAccount(): Promise<{
   try {
     let appUser: { uid: string; email: string | null; displayName: string | null; photoURL: string | null } | null = null;
     let accessToken: string | null = null;
+    let firebaseUid: string | undefined;
 
     // 1. Launch real official Google OAuth popup via Firebase Auth
     try {
@@ -285,6 +334,7 @@ export async function loginWithGoogleAccount(): Promise<{
       if (res?.user?.email) {
         appUser = res.user;
         accessToken = res.accessToken;
+        firebaseUid = res.user.uid;
       }
     } catch (fbErr: any) {
       console.warn('Firebase popup encounter:', fbErr?.code || fbErr?.message);
@@ -299,14 +349,14 @@ export async function loginWithGoogleAccount(): Promise<{
         const domain = typeof window !== 'undefined' ? window.location.hostname : 'domain';
         return {
           success: false,
-          error: `Domain web (${domain}) chưa được cấp phép trong Firebase Authentication. Bạn chỉ cần thêm "${domain}" vào Firebase Console > Authentication > Settings > Authorized Domains. Hoặc chuyển sang tab Đăng Ký bên dưới để tạo tài khoản cá nhân và vào Workspace ngay lập tức!`,
+          error: `Domain web (${domain}) chưa được cấp phép trong Firebase Authentication. Bạn chỉ cần thêm "${domain}" vào Firebase Console > Authentication > Settings > Authorized Domains. Hoặc chuyển sang tab Đăng Ký bên dưới để tạo tài khoản cá nhân và vào Workspace ngay lập tức.`,
         };
       }
 
-      // 2. Secondary fallback via Google Identity Services (GIS)
+      // 2. Secondary fallback via Google Identity Services (identity only; sync happens after consent)
       try {
-        const { executeRealGoogleSync } = await import('./realGoogleAuth');
-        const gisRes = await executeRealGoogleSync();
+        const { authenticateRealGoogleUser } = await import('./realGoogleAuth');
+        const gisRes = await authenticateRealGoogleUser();
         if (gisRes?.user?.email) {
           appUser = gisRes.user;
           accessToken = gisRes.accessToken;
@@ -349,30 +399,24 @@ export async function loginWithGoogleAccount(): Promise<{
       saveVaultAccounts(accounts);
     }
 
-    const user: ZenoxUser = {
-      uid: existing.id || googleUid,
-      displayName: cleanName,
-      email: cleanEmail,
-      photoURL: appUser.photoURL || ('https://ui-avatars.com/api/?name=' + encodeURIComponent(cleanName) + '&background=0284c7&color=fff'),
-      authMethod: 'google',
-    };
+    const user = establishZenoxSession(
+      {
+        uid: existing.id || googleUid,
+        displayName: cleanName,
+        email: cleanEmail,
+        photoURL:
+          appUser.photoURL ||
+          'https://ui-avatars.com/api/?name=' + encodeURIComponent(cleanName) + '&background=27272a&color=fff',
+        firebaseUid,
+      },
+      'google',
+      true
+    );
 
-    const session: ZenoxSession = {
-      token: generateSessionToken(),
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      authTime: Date.now(),
-      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-    };
-
-    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(session));
-    localStorage.setItem(ACTIVE_USER_KEY, JSON.stringify(user));
-    if (accessToken) {
+    if (accessToken && typeof localStorage !== 'undefined') {
       localStorage.setItem('gcal_real_access_token', accessToken);
       localStorage.setItem('gcal_real_token_expires_at', String(Date.now() + 3500 * 1000));
     }
-    sessionStorage.setItem(WORKSPACE_ENTERED_KEY, 'true');
 
     // Return authenticated user immediately so consent step can ask user whether to sync
     return { success: true, user };
@@ -397,12 +441,10 @@ export async function syncGoogleCalendarData(
     if (googleEvents && googleEvents.length > 0) {
       const { accountStorage } = await import('./accountStorage');
       const { mergeSyncedGoogleEvents } = await import('../utils/calendarUtils');
-      const rawExisting =
-        accountStorage.getItem('gcal_events', uid) || localStorage.getItem('gcal_events');
+      const rawExisting = accountStorage.getItem('gcal_events', uid);
       const existingEvents: any[] = rawExisting ? JSON.parse(rawExisting) : [];
       const merged = mergeSyncedGoogleEvents(googleEvents, existingEvents);
       accountStorage.setItem('gcal_events', JSON.stringify(merged), uid);
-      localStorage.setItem('gcal_events', JSON.stringify(merged));
       return { success: true, count: googleEvents.length };
     }
     return { success: true, count: 0 };
@@ -416,10 +458,10 @@ export type SyncConsentStatus = 'agreed' | 'declined';
 
 /**
  * Checks if the account has already made a decision regarding calendar synchronization.
- * Includes intelligent detection for accounts that already have synced calendar events.
+ * Includes detection for accounts that already have scoped calendar events.
  */
 export function getAccountSyncConsent(uid: string, email?: string | null): SyncConsentStatus | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof localStorage === 'undefined') return null;
 
   // 1. Direct explicit consent key by uid
   const uidConsent = localStorage.getItem(`zenox_sync_consent_${uid}`);
@@ -438,15 +480,17 @@ export function getAccountSyncConsent(uid: string, email?: string | null): SyncC
 
   // 3. Check account record in local vault
   const accounts = getVaultAccounts();
-  const acc = accounts.find((a) => a.id === uid || (email && a.email.toLowerCase() === email.trim().toLowerCase()));
+  const acc = accounts.find(
+    (a) => a.id === uid || (email && a.email.toLowerCase() === email.trim().toLowerCase())
+  );
   if (acc && acc.syncConsent) {
     return acc.syncConsent === 'declined' ? 'declined' : 'agreed';
   }
 
-  // 4. Intelligent detection for existing returning users who already have synced events:
+  // 4. Detection for existing returning users who already have account-scoped events
   try {
     const safeUid = String(uid).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const rawEvents = localStorage.getItem(`zenox_acc_${safeUid}__gcal_events`) || localStorage.getItem('gcal_events');
+    const rawEvents = localStorage.getItem(`zenox_acc_${safeUid}__gcal_events`);
     if (rawEvents) {
       const parsed = JSON.parse(rawEvents);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -467,14 +511,16 @@ export function setAccountSyncConsent(
   email: string | null | undefined,
   consent: SyncConsentStatus
 ): void {
-  if (typeof window === 'undefined') return;
+  if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(`zenox_sync_consent_${uid}`, consent);
     if (email) {
       localStorage.setItem(`zenox_sync_consent_${email.trim().toLowerCase()}`, consent);
     }
     const accounts = getVaultAccounts();
-    const acc = accounts.find((a) => a.id === uid || (email && a.email.toLowerCase() === email.trim().toLowerCase()));
+    const acc = accounts.find(
+      (a) => a.id === uid || (email && a.email.toLowerCase() === email.trim().toLowerCase())
+    );
     if (acc) {
       acc.syncConsent = consent;
       saveVaultAccounts(accounts);

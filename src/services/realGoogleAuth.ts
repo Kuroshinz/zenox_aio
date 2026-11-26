@@ -140,27 +140,36 @@ export function requestRealGoogleOAuthToken(customClientId?: string): Promise<st
 }
 
 /**
- * Execute Full Real Google Sign-In and Calendar Synchronization
+ * Authenticate with Google OAuth via GIS without eagerly fetching Calendar events.
  */
-export async function executeRealGoogleSync(
+export async function authenticateRealGoogleUser(
   customClientId?: string,
   providedToken?: string
-): Promise<{ user: AppUser; accessToken: string; events: CalendarEvent[] }> {
+): Promise<{ user: AppUser; accessToken: string }> {
   let token = providedToken;
 
   if (!token) {
     token = await requestRealGoogleOAuthToken(customClientId);
   }
 
-  // 1. Fetch real Google User Profile
   const user = await fetchGoogleUserInfo(token);
-
-  // 2. Fetch real Google Calendar Events
-  const events = await fetchGoogleCalendarEvents(token);
-
-  // 3. Persist session
   localStorage.setItem('gcal_active_user', JSON.stringify(user));
   setAccessToken(token);
 
-  return { user, accessToken: token, events };
+  return { user, accessToken: token };
+}
+
+/**
+ * Execute Full Real Google Sign-In and Calendar Synchronization
+ */
+export async function executeRealGoogleSync(
+  customClientId?: string,
+  providedToken?: string
+): Promise<{ user: AppUser; accessToken: string; events: CalendarEvent[] }> {
+  const { user, accessToken } = await authenticateRealGoogleUser(customClientId, providedToken);
+
+  // Fetch real Google Calendar Events after authentication
+  const events = await fetchGoogleCalendarEvents(accessToken);
+
+  return { user, accessToken, events };
 }

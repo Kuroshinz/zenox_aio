@@ -7,7 +7,7 @@
  */
 
 export function getActiveUserUid(): string {
-  if (typeof window === 'undefined') return 'zenox_guest';
+  if (typeof localStorage === 'undefined') return 'zenox_guest';
   try {
     const raw = localStorage.getItem('gcal_active_user');
     if (raw) {
@@ -51,26 +51,24 @@ export function getAccountStorageKey(baseKey: string, explicitUid?: string): str
 
 export const accountStorage = {
   getItem(key: string, explicitUid?: string): string | null {
-    if (typeof window === 'undefined') return null;
-    const scopedKey = getAccountStorageKey(key, explicitUid);
+    if (typeof localStorage === 'undefined') return null;
+    const uid = explicitUid || getActiveUserUid();
+    const scopedKey = getAccountStorageKey(key, uid);
     const val = localStorage.getItem(scopedKey);
     if (val !== null) return val;
 
-    // Data Preservation: If scoped namespace is not yet initialized for this user,
-    // seamlessly copy over any pre-existing un-scoped root data so data is never lost upon login!
-    if (!GLOBAL_BROWSER_KEYS.has(key)) {
+    // Only allow unscoped root fallback for unauthenticated guest sessions so a
+    // newly created/logged-in account never inherits another user's root data.
+    if (uid === 'zenox_guest' && !GLOBAL_BROWSER_KEYS.has(key)) {
       const rootVal = localStorage.getItem(key);
       if (rootVal !== null) {
-        try {
-          localStorage.setItem(scopedKey, rootVal);
-        } catch {}
         return rootVal;
       }
     }
     return null;
   },
   setItem(key: string, value: string, explicitUid?: string): void {
-    if (typeof window === 'undefined') return;
+    if (typeof localStorage === 'undefined') return;
     const scopedKey = getAccountStorageKey(key, explicitUid);
     try {
       localStorage.setItem(scopedKey, value);
@@ -79,7 +77,7 @@ export const accountStorage = {
     }
   },
   removeItem(key: string, explicitUid?: string): void {
-    if (typeof window === 'undefined') return;
+    if (typeof localStorage === 'undefined') return;
     const scopedKey = getAccountStorageKey(key, explicitUid);
     localStorage.removeItem(scopedKey);
   },

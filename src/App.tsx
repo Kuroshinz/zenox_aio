@@ -71,7 +71,12 @@ import { StudyFocusView } from './components/productivity/StudyFocusView';
 import { FinanceView } from './components/productivity/FinanceView';
 import { HealthView } from './components/productivity/HealthView';
 import { LandingPage } from './components/LandingPage';
-import { verifyZenoxSession, logoutZenoxSession, ZenoxUser } from './services/zenoxAuth';
+import {
+  verifyZenoxSession,
+  logoutZenoxSession,
+  establishZenoxSession,
+  ZenoxUser,
+} from './services/zenoxAuth';
 import { getCurrentRoute, navigateToRoute } from './services/router';
 import { mergeSyncedGoogleEvents } from './utils/calendarUtils';
 import { useProductivityStore, todayString } from './hooks/useProductivityStore';
@@ -79,7 +84,7 @@ import { buildTaskEvents } from './utils/productivityUtils';
 import { buildWorkoutEvents, startOfWeek, tdee, calorieTarget, macroTargets } from './utils/fitnessMetrics';
 import { parseVnDate } from './components/productivity/fitness/RoadmapTab';
 import { User } from 'firebase/auth';
-import { initAuth, logout, getAccessToken, clearAccessToken, googleSignIn, AppUser } from './services/auth';
+import { auth, initAuth, logout, getAccessToken, clearAccessToken, googleSignIn, AppUser } from './services/auth';
 import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './services/googleCalendarSync';
 import { fetchCalendarFromICalUrl } from './services/googleCalendarUrlSync';
 import { executeRealGoogleSync, hasOwnClientId } from './services/realGoogleAuth';
@@ -260,19 +265,21 @@ export default function App() {
 
   // Synchronize events and categories whenever the logged-in user changes (Google vs Web accounts)
   useEffect(() => {
+    const activeUid = user?.uid;
     try {
-      const savedEvents = accountStorage.getItem('gcal_events');
+      const savedEvents = accountStorage.getItem('gcal_events', activeUid);
       if (savedEvents) {
         setEvents(JSON.parse(savedEvents));
       } else {
-        setEvents(INITIAL_EVENTS);
+        const consent = activeUid ? localStorage.getItem(`zenox_sync_consent_${activeUid}`) : null;
+        setEvents(consent === 'declined' ? [] : getInitialEventsForCurrentUser());
       }
     } catch {
-      setEvents(INITIAL_EVENTS);
+      setEvents(getInitialEventsForCurrentUser());
     }
 
     try {
-      const savedCats = accountStorage.getItem('gcal_categories');
+      const savedCats = accountStorage.getItem('gcal_categories', activeUid);
       if (savedCats) {
         const parsed = JSON.parse(savedCats);
         const knownIds = new Set(parsed.map((c: any) => c.id));
@@ -470,6 +477,18 @@ export default function App() {
   });
   const liveSyncDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const getFirestoreSyncUid = useCallback(
+    (u: ZenoxUser | AppUser | User | null): string | null => {
+      if (!u || !auth.currentUser) return null;
+      if ('firebaseUid' in u && u.firebaseUid) return u.firebaseUid;
+      if (auth.currentUser.uid === u.uid || `google-${auth.currentUser.uid}` === u.uid) {
+        return auth.currentUser.uid;
+      }
+      return null;
+    },
+    []
+  );
+
   // 8. Event saving / updating handler
   const handleSaveEvent = useCallback((savedEvent: CalendarEvent) => {
     // Editing a task-derived event updates the owning task instead of creating a
@@ -495,10 +514,11 @@ export default function App() {
       return [savedEvent, ...prev];
     });
 
-    // Cloud sync push if logged in
-    if (user) {
+    // Cloud sync push only when Firebase Auth session matches
+    const firestoreUid = getFirestoreSyncUid(user);
+    if (firestoreUid) {
       setSyncState('syncing');
-      saveEventToFirestore(user.uid, savedEvent)
+      saveEventToFirestore(firestoreUid, savedEvent)
         .then(() => setSyncState('synced'))
         .catch(() => setSyncState('error'));
     }
@@ -519,7 +539,7 @@ export default function App() {
       lang === 'vi' ? 'Đã lưu sự kiện thành công!' : 'Event saved successfully!',
       `"${savedEvent.title}" (${savedEvent.startDate}${savedEvent.allDay ? ' · Cả ngày' : ` lúc ${savedEvent.startTime}`})`
     );
-  }, [user, productivity.updateTask, lang]);
+  }, [user, getFirestoreSyncUid, productivity.updateTask, isLiveSyncEnabled, lang]);
 
   const handleDeleteEvent = useCallback((eventId: string) => {
     // Task-derived calendar events are owned by the productivity store, not by
@@ -536,15 +556,16 @@ export default function App() {
     if (selectedEventForDetail?.id === eventId) {
       setSelectedEventForDetail(null);
     }
-    if (user) {
-      deleteEventFromFirestore(user.uid, eventId).catch(console.warn);
+    const firestoreUid = getFirestoreSyncUid(user);
+    if (firestoreUid) {
+      deleteEventFromFirestore(firestoreUid, eventId).catch(console.warn);
     }
     if (isLiveSyncEnabled) playSyncPulse();
     notifySuccess(
       lang === 'vi' ? 'Đã xóa sự kiện!' : 'Event deleted!',
       target?.title || undefined
     );
-  }, [selectedEventForDetail, user, productivity.deleteTask, events, lang]);
+  }, [selectedEventForDetail, user, getFirestoreSyncUid, productivity.deleteTask, events, isLiveSyncEnabled, lang]);
 
   const handleToggleCompleteTask = (eventId: string) => {
     if (eventId.startsWith('task-')) {
@@ -565,6 +586,7 @@ export default function App() {
       return;
     }
 
+    const firestoreUid = getFirestoreSyncUid(user);
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id === eventId) {
@@ -574,15 +596,15 @@ export default function App() {
             endDate: newDateStr,
             updatedAt: Date.now(),
           };
-          if (user) {
-            saveEventToFirestore(user.uid, updated).catch(console.warn);
+          if (firestoreUid) {
+            saveEventToFirestore(firestoreUid, updated).catch(console.warn);
           }
           return updated;
         }
         return e;
       })
     );
-  }, [user, productivity.updateTask]);
+  }, [user, getFirestoreSyncUid, productivity.updateTask]);
 
   // 9. Drag & Drop and Resizing Engine
   const {
@@ -607,8 +629,22 @@ export default function App() {
     }
 
     const unsubscribeAuth = initAuth(
-      (authedUser) => {
-        setUser(authedUser);
+      (authedUser, token) => {
+        // Only auto-restore Firebase/Google session if an active Firebase session or valid token exists
+        if (!token && !auth.currentUser) {
+          return;
+        }
+        const sessionUser = establishZenoxSession(
+          {
+            uid: authedUser.uid.startsWith('google-') ? authedUser.uid : `google-${authedUser.uid}`,
+            displayName: authedUser.displayName,
+            email: authedUser.email,
+            photoURL: authedUser.photoURL,
+            firebaseUid: auth.currentUser?.uid || authedUser.uid,
+          },
+          'google'
+        );
+        setUser(sessionUser);
         setSyncState('synced');
       },
       () => {
@@ -624,11 +660,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    const firestoreUid = getFirestoreSyncUid(user);
+    if (!firestoreUid) {
+      if (user) setSyncState('synced');
+      return;
+    }
     setSyncState('syncing');
 
     const unsubscribeFirestore = subscribeUserEvents(
-      user.uid,
+      firestoreUid,
       (remoteEvents) => {
         if (remoteEvents.length > 0) {
           setEvents((prev) => {
@@ -654,7 +694,7 @@ export default function App() {
     return () => {
       if (unsubscribeFirestore) unsubscribeFirestore();
     };
-  }, [user, lang]);
+  }, [user, getFirestoreSyncUid, lang]);
 
   // Auto-sync from saved Google Calendar iCal URL if present
   useEffect(() => {
@@ -883,7 +923,8 @@ export default function App() {
       // Attempt official real Google OAuth login via Google Identity Services
       const realRes = await executeRealGoogleSync();
       if (realRes?.user) {
-        setUser(realRes.user);
+        const sessionUser = establishZenoxSession(realRes.user, 'google');
+        setUser(sessionUser);
         setSyncState('synced');
         playSuccessSound();
         notifySuccess(
@@ -891,6 +932,7 @@ export default function App() {
           realRes.user.email || 'Google'
         );
         if (realRes.events && realRes.events.length > 0) {
+          accountStorage.setItem('gcal_events', JSON.stringify(realRes.events), sessionUser.uid);
           setEvents(realRes.events);
         }
         setActiveAlert({
@@ -923,16 +965,10 @@ export default function App() {
   };
 
   const handleAuthUserSuccess = (authedUser: ZenoxUser, syncGoogleCalendar: boolean = true) => {
-    setUser(authedUser);
-    setIsLoginModalOpen(false);
-    sessionStorage.setItem('zenox_workspace_entered', 'true');
-    setView('dashboard');
-    navigateToRoute('workspace');
-
     if (syncGoogleCalendar) {
-      // Re-hydrate accurate synced Google Calendar events
+      // Re-hydrate accurate synced Google Calendar events strictly from user's scoped namespace
       try {
-        const stored = accountStorage.getItem('gcal_events', authedUser.uid) || accountStorage.getItem('gcal_events');
+        const stored = accountStorage.getItem('gcal_events', authedUser.uid);
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -950,51 +986,75 @@ export default function App() {
       );
       playSuccessSound();
     } else {
-      // User declined sync: keep their existing workspace events if any, or initialize clean
+      // User declined sync: preserve existing workspace events if any, or initialize clean empty list
+      let hasExistingEvents = false;
       try {
         const stored = accountStorage.getItem('gcal_events', authedUser.uid);
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
             setEvents(parsed);
-            return;
+            hasExistingEvents = true;
           }
         }
-      } catch (e) {}
-      setEvents([]);
-      accountStorage.setItem('gcal_events', JSON.stringify([]), authedUser.uid);
+      } catch {}
+
+      if (!hasExistingEvents) {
+        accountStorage.setItem('gcal_events', JSON.stringify([]), authedUser.uid);
+        setEvents([]);
+      }
+
       notifySuccess(
-        lang === 'vi' ? 'Khởi tạo Workspace mới' : 'Fresh Workspace Initialized',
         lang === 'vi'
-          ? 'Tài khoản của bạn đã được khởi tạo ở trạng thái hoàn toàn mới.'
-          : 'Your account is ready with a fresh blank canvas.'
+          ? hasExistingEvents
+            ? 'Đã đăng nhập Workspace'
+            : 'Khởi tạo Workspace mới'
+          : hasExistingEvents
+            ? 'Signed in to Workspace'
+            : 'Fresh Workspace Initialized',
+        lang === 'vi'
+          ? hasExistingEvents
+            ? `Chào mừng ${authedUser.displayName} quay trở lại.`
+            : 'Tài khoản của bạn đã được khởi tạo ở trạng thái hoàn toàn mới.'
+          : hasExistingEvents
+            ? `Welcome back, ${authedUser.displayName}.`
+            : 'Your account is ready with a fresh blank canvas.'
       );
     }
+
+    setUser(authedUser);
+    setIsLoginModalOpen(false);
+    sessionStorage.setItem('zenox_workspace_entered', 'true');
+    setView('dashboard');
+    navigateToRoute('workspace');
   };
 
   const handleCreateNewAccount = (name: string, email: string, clearData: boolean) => {
     const trimmedName = name.trim() || (lang === 'vi' ? 'Người dùng mới' : 'New User');
-    const trimmedEmail = email.trim() || null;
-    const newUser: AppUser = {
-      uid: 'user-' + Date.now(),
-      displayName: trimmedName,
-      email: trimmedEmail,
-      photoURL: null,
-    };
-    setUser(newUser);
-    localStorage.setItem('gcal_active_user', JSON.stringify(newUser));
+    const trimmedEmail = email.trim() || `${'user-' + Date.now()}@zenox.local`;
+    const newUid = 'user-' + Date.now();
+    const sessionUser = establishZenoxSession(
+      {
+        uid: newUid,
+        displayName: trimmedName,
+        email: trimmedEmail,
+        photoURL: null,
+      },
+      'zenox_vault'
+    );
 
     if (clearData) {
+      accountStorage.setItem('gcal_events', JSON.stringify([]), sessionUser.uid);
       setEvents([]);
-      accountStorage.setItem('gcal_events', JSON.stringify([]));
-      productivity.clearAll(trimmedName, trimmedEmail || undefined);
+      productivity.clearAll(trimmedName, trimmedEmail);
     } else {
       productivity.updateCtgProfile({
         name: trimmedName,
-        email: trimmedEmail || undefined,
+        email: trimmedEmail,
       });
     }
 
+    setUser(sessionUser);
     setSyncState('synced');
     setLastSyncedTime(new Date().toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US'));
     setActiveAlert({

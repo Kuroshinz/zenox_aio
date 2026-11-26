@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import { CalendarEvent, CalendarCategory, SyncState } from '../../types/calendar';
 import { AppUser } from '../../services/auth';
 import { executeRealGoogleSync } from '../../services/realGoogleAuth';
+import { establishZenoxSession } from '../../services/zenoxAuth';
 import { playSuccessSound } from '../../utils/sound';
 import { notifySuccess } from '../../utils/notify';
 import {
@@ -112,6 +113,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       }
 
       if (resUser) {
+        establishZenoxSession(resUser, 'google');
         playSuccessSound();
         notifySuccess(
           lang === 'vi' ? 'Đã kết nối Google Calendar!' : 'Google Calendar Connected!',
@@ -155,6 +157,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     try {
       const res = await executeRealGoogleSync(undefined, manualToken.trim());
       if (res?.user) {
+        establishZenoxSession(res.user, 'google');
         if (res.events && res.events.length > 0) {
           onImportEvents(res.events);
         }
@@ -420,7 +423,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                               type="button"
                               onClick={() => {
                                 navigator.clipboard.writeText(currentDomain);
-                                alert(lang === 'vi' ? `Đã sao chép: ${currentDomain}` : `Copied: ${currentDomain}`);
+                                notifySuccess(
+                                  lang === 'vi' ? 'Đã sao chép URI' : 'URI copied',
+                                  currentDomain
+                                );
                               }}
                               className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer text-[10px]"
                             >
