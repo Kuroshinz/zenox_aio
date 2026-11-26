@@ -322,18 +322,16 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-[#0f0b15] border border-white/10 rounded-3xl w-full max-w-5xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden relative">
-        {/* Glow */}
-        <div className="absolute top-0 right-1/4 w-80 h-40 bg-violet-600/15 rounded-full blur-3xl pointer-events-none" />
 
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center text-white shadow-lg shadow-violet-900/30">
-              <Sparkles className="w-5 h-5 text-amber-300" />
+            <div className="w-10 h-10 rounded-xl bg-zinc-800 border border-white/10 flex items-center justify-center text-zinc-100">
+              <Sparkles className="w-5 h-5 text-zinc-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
                   ZENOX Smart Workout Studio
                 </span>
                 <span className="text-xs text-white/40 hidden sm:inline">Hỗ trợ định dạng CSV Upper A / B &amp; Smart Text</span>
@@ -361,31 +359,31 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
               onClick={() => setActiveTab('text')}
               className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'text'
-                  ? 'border-violet-500 text-violet-400'
+                  ? 'border-amber-500 text-zinc-100'
                   : 'border-transparent text-white/60 hover:text-white'
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>✍️ Nhập Text / Cú Pháp CSV</span>
+              <span>Nhập Text / Cú Pháp CSV</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('file')}
               className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'file'
-                  ? 'border-violet-500 text-violet-400'
+                  ? 'border-amber-500 text-zinc-100'
                   : 'border-transparent text-white/60 hover:text-white'
               }`}
             >
               <Upload className="w-4 h-4" />
-              <span>📁 Tải File Lên (CSV / JSON)</span>
+              <span>Tải File Lên (CSV / JSON)</span>
             </button>
           </div>
 
           <button
             type="button"
             onClick={handleDownloadTemplate}
-            className="hidden sm:flex items-center gap-1.5 text-xs text-violet-300 hover:text-white font-semibold cursor-pointer pb-2"
+            className="hidden sm:flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 font-semibold cursor-pointer pb-2"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Tải file CSV mẫu (Upper A)</span>
@@ -471,7 +469,7 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                           onClick={() => setSelectedRoutineIndex(idx)}
                           className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
                             safeRoutineIndex === idx
-                              ? 'bg-violet-600 text-white shadow-md shadow-violet-900/40 scale-105'
+                              ? 'bg-zinc-800 text-zinc-100 border border-amber-500/50'
                               : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10'
                           }`}
                         >
@@ -588,7 +586,7 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                   Hỗ trợ định dạng CSV từ <strong>Strong app</strong>, <strong>Hevy app</strong>, hoặc bảng CSV Upper/Lower như mẫu bạn cung cấp.
                 </p>
 
-                <label className="mt-4 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-900/30 cursor-pointer transition-all hover:scale-105">
+                <label className="mt-4 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-white/10 text-xs font-semibold cursor-pointer transition-colors">
                   <input
                     type="file"
                     accept=".csv,.json,.txt"
@@ -685,11 +683,11 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
               type="button"
               disabled={isProcessing || activeSnippet.allSets.length === 0}
               onClick={handleSaveActiveCompletedWorkout}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 text-white text-xs font-bold shadow-md shadow-emerald-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-white/10 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-40"
               title="Ghi nhận ngay buổi tập đang chọn vào Lịch sử tập luyện"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>💾 Lưu "{activeSnippet.workoutTitle}" Đã Hoàn Thành</span>
+              <span>Lưu "{activeSnippet.workoutTitle}" Đã Hoàn Thành</span>
             </button>
 
             {/* Option B: If multiple routines, Save ALL routines to Mesocycle */}
@@ -698,22 +696,22 @@ export const SmartWorkoutImportModal: React.FC<SmartWorkoutImportModalProps> = (
                 type="button"
                 disabled={isProcessing}
                 onClick={handleSaveAllRoutinesToPlan}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 text-white text-xs font-bold shadow-md shadow-violet-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold cursor-pointer transition-colors disabled:opacity-40 shadow-sm"
                 title="Lưu cả Upper A (Thứ 2) và Upper B (Thứ 5) vào giáo án tuần để đồng bộ Google Calendar"
               >
-                <Calendar className="w-3.5 h-3.5 text-amber-300" />
-                <span>📋 Lưu CẢ {parsedRoutines.length} Buổi Vào Giáo Án Tuần</span>
+                <Calendar className="w-3.5 h-3.5 text-white/80" />
+                <span>Lưu CẢ {parsedRoutines.length} Buổi Vào Giáo Án Tuần</span>
               </button>
             ) : (
               <button
                 type="button"
                 disabled={isProcessing || activeSnippet.exerciseGroups.length === 0}
                 onClick={handleSaveActivePlannedSession}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 text-white text-xs font-bold shadow-md shadow-violet-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold cursor-pointer transition-colors disabled:opacity-40 shadow-sm"
                 title="Lưu các bài tập này thành Giáo án mẫu để áp dụng hàng tuần và đồng bộ Google Calendar"
               >
-                <Calendar className="w-3.5 h-3.5 text-amber-300" />
-                <span>📋 Lưu Thành Giáo Án Mới</span>
+                <Calendar className="w-3.5 h-3.5 text-white/80" />
+                <span>Lưu Thành Giáo Án Mới</span>
               </button>
             )}
           </div>

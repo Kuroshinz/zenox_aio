@@ -29,6 +29,7 @@ import {
   Calculator,
   Compass,
   Target,
+  Upload,
 } from 'lucide-react';
 import {
   CtgPeriodizedRoadmap,
@@ -238,7 +239,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       (e) =>
         e.id.startsWith('scheduled-wo-') ||
         e.id.startsWith('ctg-workout-') ||
-        (e.calendarId === 'health' && e.title.includes('💪'))
+        (e.calendarId === 'health' && (e.title.includes('💪') || e.title.includes('[ZENOX]')))
     ).length;
   }, [events]);
 
@@ -890,7 +891,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
 
     const newEvent: CalendarEvent = {
       id: `scheduled-wo-${Date.now()}`,
-      title: `💪 [ZENOX] ${session.title}`,
+      title: `[ZENOX] ${session.title}`,
       description: `Giáo án ZENOX (${session.dayOfWeek || 'Buổi tập'}):\n${session.prescriptions.map((p) => `• ${p.exerciseId} (${p.sets}x${p.reps})`).join('\n')}\nĐã lên lịch tối ưu bởi ZENOX.`,
       startDate: targetDateStr,
       startTime: '17:30',
@@ -1074,7 +1075,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     <div className="space-y-6">
       {/* CTG Active Phase Training Guidance Card (Có thể ẩn / hiện theo nhu cầu) */}
       {ctgActivePhase && showCtgGuidance && (
-        <div className="bg-gradient-to-r from-blue-900/40 via-indigo-950/30 to-[#0b101b] border border-blue-500/40 rounded-2xl p-4 md:p-5 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 text-white relative">
+        <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 text-zinc-100 relative">
           <div className="flex items-start gap-3.5 pr-8 md:pr-0">
             <div className="w-10 h-10 rounded-2xl bg-blue-500/20 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
               <Compass className="w-5 h-5" />
@@ -1099,11 +1100,11 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
               <p className="text-xs text-blue-100/80 mt-1 leading-relaxed">
                 {ctgActivePhase.phaseType === 'bulk' ? (
                   <span>
-                    🏋️ <strong>Chiến lược Tăng cơ (Hypertrophy Wave):</strong> Tận dụng thặng dư calo để tối ưu hóa phì đại cơ bắp. Ưu tiên Progressive Overload (tăng tạ/reps mỗi tuần), giữ RPE 7-9 (1-3 reps dự trữ), ngủ đủ 7-8h mỗi đêm.
+                    <strong>Chiến lược Tăng cơ (Hypertrophy Wave):</strong> Tận dụng thặng dư calo để tối ưu hóa phì đại cơ bắp. Ưu tiên Progressive Overload (tăng tạ/reps mỗi tuần), giữ RPE 7-9 (1-3 reps dự trữ), ngủ đủ 7-8h mỗi đêm.
                   </span>
                 ) : (
                   <span>
-                    🔥 <strong>Chiến lược Giữ cơ trong Thâm hụt (Preserve Lean Mass):</strong> Duy trì cường độ tạ nặng (Heavy Lifting) để gửi tín hiệu bảo toàn cơ nạc, kiểm soát volume hợp lý (8-14 sets/nhóm cơ/tuần), tránh tập đến kiệt quệ hoàn toàn (RPE 8-8.5).
+                    <strong>Chiến lược Giữ cơ trong Thâm hụt (Preserve Lean Mass):</strong> Duy trì cường độ tạ nặng (Heavy Lifting) để gửi tín hiệu bảo toàn cơ nạc, kiểm soát volume hợp lý (8-14 sets/nhóm cơ/tuần), tránh tập đến kiệt quệ hoàn toàn (RPE 8-8.5).
                   </span>
                 )}
               </p>
@@ -1128,7 +1129,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                     lang === 'vi' ? `Đã nạp giáo án (${suggested.toUpperCase()}) cho giai đoạn ${ctgActivePhase.name}!` : `Applied ${suggested.toUpperCase()} template.`
                   );
                 }}
-                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
+                className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs cursor-pointer transition-colors flex items-center gap-1.5"
                 title={plannedSessions.length > 0 ? (lang === 'vi' ? 'Lưu ý: Sẽ hỏi xác nhận trước khi thay thế lịch tập hiện tại' : 'Will confirm before replacing schedule') : undefined}
               >
                 <Zap className="w-3.5 h-3.5" />
@@ -1150,7 +1151,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       )}
 
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent dark:from-blue-950/30 dark:via-indigo-950/20 rounded-2xl border border-blue-200 dark:border-blue-900/50 p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-zinc-50 dark:bg-zinc-900/60 rounded-2xl border border-zinc-200 dark:border-white/[0.08] p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-600 text-white">
@@ -1267,32 +1268,32 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
             <button
               type="button"
               onClick={() => setShowCalendarSyncModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
-              title="Mở ZENOX Workout Sync Studio để tự động lên lịch thông minh và đồng bộ Google Calendar"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-800 hover:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-100 border border-zinc-700/60 dark:border-white/10 text-xs font-semibold cursor-pointer transition-colors"
+              title="Đồng bộ lịch tập sang Google Calendar"
             >
-              <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300 animate-pulse" />
-              <span>⚡ Lên Lịch & Tự Động Đồng Bộ Google Calendar</span>
+              <Calendar className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Đồng bộ Google Calendar</span>
             </button>
             <button
               type="button"
               onClick={() => setShowSmartImportModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white text-xs font-bold shadow-md shadow-violet-500/20 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
-              title="Nhập buổi tập bằng cú pháp text thông minh (NLP) hoặc file CSV từ Strong/Hevy"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-800 hover:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-100 border border-zinc-700/60 dark:border-white/10 text-xs font-semibold cursor-pointer transition-colors"
+              title="Nhập buổi tập bằng cú pháp text hoặc file CSV"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>📥 Nhập Bằng Text / File</span>
+              <Upload className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Nhập text / file</span>
             </button>
             <button
               type="button"
               onClick={() => setShowAddExerciseModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-800 hover:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-100 border border-zinc-700/60 dark:border-white/10 text-xs font-semibold cursor-pointer transition-colors"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Thêm Bài Ngoài</span>
+              <Plus className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Thêm bài tập</span>
             </button>
           </div>
         </div>
@@ -1339,15 +1340,6 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
             Giáo Án Kháng Lực Đang Áp Dụng (Mesocycle)
           </h3>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowSmartImportModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
-              title="Nhập nhanh giáo án bài tập từ đoạn văn bản hoặc file"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Nhập Text / File</span>
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -1611,7 +1603,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                 <span>Nhật Ký Ngày Tập &amp; Chuỗi Tập Luyện</span>
                 {workoutStreak > 0 && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500 text-white shadow-2xs">
-                    🔥 Streak {workoutStreak} ngày
+                    Streak {workoutStreak} ngày
                   </span>
                 )}
               </h3>
@@ -1644,15 +1636,6 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowSmartImportModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
-              title="Nhập buổi tập nhanh bằng cú pháp text hoặc file"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Nhập Text / File</span>
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -2191,20 +2174,20 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
 
       {/* Floating Minimized Active Workout Pill */}
       {activeSession && isSessionMinimized && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#0c050e]/95 border border-rose-500/50 rounded-2xl p-3.5 shadow-2xl flex items-center gap-3 backdrop-blur-xl animate-pulse">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+        <div className="fixed bottom-6 right-6 z-50 bg-zinc-950/95 border border-zinc-800 rounded-xl p-3 shadow-xl flex items-center gap-3 backdrop-blur-md">
+          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
           <div className="text-xs">
-            <span className="font-bold text-white block truncate max-w-[160px]">{activeSession.planned.title}</span>
-            <span className="text-[10px] text-rose-300 font-mono">
-              ⏱ {String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}:{String(elapsedSeconds % 60).padStart(2, '0')} · {activeWorkoutStats.completedCount}/{activeWorkoutStats.totalCount} sets
+            <span className="font-bold text-zinc-100 block truncate max-w-[160px]">{activeSession.planned.title}</span>
+            <span className="text-[10px] text-zinc-400 font-mono">
+              {String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}:{String(elapsedSeconds % 60).padStart(2, '0')} · {activeWorkoutStats.completedCount}/{activeWorkoutStats.totalCount} sets
             </span>
           </div>
           <button
             type="button"
             onClick={() => setIsSessionMinimized(false)}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white text-xs font-bold shadow-md cursor-pointer transition-all"
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-white/10 text-xs font-semibold cursor-pointer transition-colors"
           >
-            Mở Lại Tab Tập
+            Mở lại
           </button>
         </div>
       )}
@@ -2522,7 +2505,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="bg-white dark:bg-white/[0.03] backdrop-blur-xl w-full max-w-2xl max-h-[85vh] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-white/[0.08] bg-linear-to-r from-orange-500/10 to-transparent">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-white/[0.08] bg-zinc-50 dark:bg-zinc-900/40">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400">
                   <Calculator className="w-5 h-5" />
@@ -2604,12 +2587,12 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                 </div>
 
                 {/* 1RM Highlight */}
-                <div className="bg-linear-to-br from-orange-500 to-amber-600 rounded-2xl p-4 text-white text-center shadow-md">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-zinc-100 text-center">
                   <span className="text-[11px] font-semibold uppercase tracking-wider opacity-90">
                     1RM Ước Tính (One Rep Max)
                   </span>
-                  <div className="text-4xl font-extrabold font-mono mt-0.5 tracking-tight">
-                    {oneRmResult.oneRepMax} <span className="text-xl">kg</span>
+                  <div className="text-4xl font-extrabold font-mono mt-0.5 tracking-tight text-amber-500">
+                    {oneRmResult.oneRepMax} <span className="text-xl text-zinc-400">kg</span>
                   </div>
                   <div className="text-[11px] opacity-90 mt-1 flex items-center justify-center gap-3">
                     <span>Epley: {oneRmResult.epley} kg</span>
@@ -2844,7 +2827,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                         }}
                         className="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-orange-500/15 border border-orange-500/30 text-orange-600 dark:text-orange-400 hover:bg-orange-500/25 cursor-pointer transition-colors"
                       >
-                        📋 {s.title}
+                        {s.title}
                       </button>
                     ))}
                   </div>

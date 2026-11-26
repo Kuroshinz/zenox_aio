@@ -197,17 +197,15 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
     <div className="space-y-4">
       {/* 1. Header with Adherence Badge */}
       <div className="bg-[#0b050d] rounded-3xl border border-white/10 p-5 shadow-xl relative overflow-hidden space-y-4">
-        {/* Glow */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-rose-600/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3.5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-500/20 to-orange-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-zinc-800 border border-white/10 text-zinc-300 flex items-center justify-center shrink-0">
               <Calendar className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
                   ZENOX Split Matrix
                 </span>
                 <span className="text-xs text-white/50 font-mono">
@@ -226,11 +224,11 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
               <button
                 type="button"
                 onClick={onOpenSyncStudio}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white text-xs font-bold shadow-lg shadow-rose-950/40 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-white/10 text-xs font-semibold cursor-pointer transition-colors"
                 title="Tự động đồng bộ lịch tập tuần này vào Google Calendar và Lịch Zenox"
               >
-                <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                <span>⚡ Đồng Bộ Google Calendar</span>
+                <Calendar className="w-3.5 h-3.5 text-zinc-400" />
+                <span>Đồng bộ Google Calendar</span>
               </button>
             )}
             <div className="px-3.5 py-1.5 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-2">
@@ -297,7 +295,7 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
                             Đã tập ({d.completed[0]?.sets.length || 0}s)
                           </span>
                         ) : d.isToday ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-rose-500 text-white font-bold animate-pulse">
+                          <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-amber-400 border border-amber-500/30 font-semibold">
                             <Flame className="w-2.5 h-2.5" />
                             Hôm nay
                           </span>
@@ -352,14 +350,14 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
 
         {/* 3. Today's Hero Workout Launchpad */}
         {todaySchedule?.planned && !todaySchedule.isCompleted && (
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-950/40 via-orange-950/20 to-black/40 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-900/40 animate-pulse">
+              <div className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
                 <Play className="w-5 h-5 fill-current ml-0.5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.2 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.2 rounded-full bg-zinc-800 text-amber-400 border border-amber-500/30">
                     Buổi Tập Hôm Nay
                   </span>
                   <span className="text-xs text-white/50">
@@ -385,7 +383,7 @@ export const TrackedScheduleMatrix: React.FC<TrackedScheduleMatrixProps> = ({
               <button
                 type="button"
                 onClick={() => onStartSession(todaySchedule.planned!)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500 text-white text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg shadow-rose-900/40 transition-all"
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors shadow-sm"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Bắt Đầu Phiên Tập Ngay</span>

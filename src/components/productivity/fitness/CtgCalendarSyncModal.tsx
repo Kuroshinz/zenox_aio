@@ -188,7 +188,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
       (e) =>
         e.id.startsWith('scheduled-wo-') ||
         e.id.startsWith('ctg-workout-') ||
-        (e.calendarId === 'health' && e.title.includes('💪'))
+        (e.calendarId === 'health' && (e.title.includes('💪') || e.title.includes('[ZENOX]')))
     );
   }, [existingEvents]);
 
@@ -373,7 +373,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
       // 1. Prepare CalendarEvent objects
       const newEvents: CalendarEvent[] = activeSlots.map((slot, idx) => ({
         id: `ctg-workout-${Date.now()}-${idx}`,
-        title: `💪 [ZENOX] ${slot.sessionTitle}`,
+        title: `[ZENOX] ${slot.sessionTitle}`,
         description: `Lộ trình ZENOX: ${resolvedPhase.name}\nBài tập: ${slot.prescriptionsSummary}\nĐược tự động lên lịch tối ưu bởi ZENOX AI.`,
         startDate: slot.date,
         startTime: slot.startTime,
@@ -425,20 +425,17 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in">
-      <div className="bg-[#0c050d] border border-rose-500/30 rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative">
-        {/* Glow Effects */}
-        <div className="absolute top-0 right-0 w-80 h-80 bg-rose-600/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="bg-[#0c050d] border border-zinc-800 rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative">
 
         {/* Header */}
         <div className="p-5 sm:p-6 border-b border-white/10 flex items-center justify-between shrink-0 bg-white/[0.02]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-600 to-rose-500 border border-rose-500/30 text-white flex items-center justify-center shrink-0 shadow-md">
-              <Zap className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-zinc-800 border border-white/10 text-zinc-100 flex items-center justify-center shrink-0">
+              <Zap className="w-5 h-5 text-amber-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
                   Google Calendar Studio
                 </span>
                 <span className="text-xs text-white/50 font-mono">{resolvedPhase.name}</span>
@@ -470,7 +467,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
                 <div>
                   <div className="font-bold text-white flex items-center gap-2">
                     <span>Google Calendar: Đã kết nối</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   </div>
                   <div className="text-[11px] text-emerald-300/80 font-mono">
                     {googleUser?.email || 'Tài khoản Google đã xác thực OAuth'}
@@ -504,7 +501,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
                 type="button"
                 onClick={handleConnectGoogle}
                 disabled={isConnectingGoogle}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shrink-0 cursor-pointer shadow-md flex items-center gap-2 transition-all self-start sm:self-auto"
+                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-white/10 text-xs font-semibold shrink-0 cursor-pointer flex items-center gap-2 transition-colors self-start sm:self-auto"
               >
                 {isConnectingGoogle ? (
                   <>
@@ -751,7 +748,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
               type="button"
               onClick={handleExecuteSync}
               disabled={isSyncing || selectedCount === 0}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white text-xs font-bold cursor-pointer shadow-lg shadow-rose-900/40 flex items-center gap-2 transition-all disabled:opacity-50"
+              className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold cursor-pointer flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
             >
               {isSyncing ? (
                 <>
