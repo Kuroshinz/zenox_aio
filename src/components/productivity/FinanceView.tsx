@@ -43,6 +43,7 @@ import {
 } from '../../utils/productivityUtils';
 import { formatDateString } from '../../utils/calendarUtils';
 import { notifySuccess } from '../../utils/notify';
+import { triggerHaptic } from '../../utils/nativeBridge';
 
 interface FinanceViewProps {
   transactions: Transaction[];
@@ -484,7 +485,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   ];
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-gray-50/50 dark:bg-transparent dark:vortex-canvas p-4 md:p-6 lg:p-8 select-none">
+    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-gray-50/50 dark:bg-transparent dark:vortex-canvas p-3 sm:p-5 lg:p-8 select-none">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -987,7 +988,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </div>
 
             <input
-              className="md:col-span-3 text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100"
+              className="md:col-span-3 text-base sm:text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100"
               placeholder={lang === 'vi' ? 'Nội dung (VD: Cà phê sáng)' : 'Title (e.g. Morning coffee)'}
               value={formTitle}
               onChange={(e) => setFormTitle(e.target.value)}
@@ -996,9 +997,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
             <input
               type="number"
+              inputMode="numeric"
               min={0}
               step={1000}
-              className="md:col-span-2 text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100 font-mono"
+              className="md:col-span-2 text-base sm:text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100 font-mono"
               placeholder={lang === 'vi' ? 'Số tiền' : 'Amount'}
               value={formAmount}
               onChange={(e) => setFormAmount(e.target.value)}
@@ -1006,7 +1008,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             />
 
             <select
-              className="md:col-span-2 text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100"
+              className="md:col-span-2 text-base sm:text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100"
               value={formCategory}
               onChange={(e) => setFormCategory(e.target.value as FinanceCategoryId)}
             >
@@ -1019,13 +1021,42 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
             <input
               type="date"
-              className="md:col-span-2 text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100"
+              className="md:col-span-2 text-base sm:text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] dark:[color-scheme:dark] text-gray-800 dark:text-gray-100"
               value={formDate}
               onChange={(e) => setFormDate(e.target.value)}
             />
 
+            {/* Quick VND amount chips for 1-tap iPhone entry */}
+            <div className="md:col-span-12 flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[11px]">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 shrink-0">
+                {lang === 'vi' ? 'Mức nhanh:' : 'Quick:'}
+              </span>
+              {[20000, 35000, 50000, 100000, 200000, 500000].map((presetAmt) => (
+                <button
+                  key={presetAmt}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFormAmount(String((Number(formAmount) || 0) + presetAmt));
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-white/[0.06] hover:bg-emerald-500/15 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-white/10 font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                >
+                  +{(presetAmt / 1000).toFixed(0)}k
+                </button>
+              ))}
+              {formAmount && (
+                <button
+                  type="button"
+                  onClick={() => setFormAmount('')}
+                  className="px-2 py-1 rounded-full text-rose-500 hover:bg-rose-500/10 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Xóa số' : 'Clear'}
+                </button>
+              )}
+            </div>
+
             <input
-              className="md:col-span-8 text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100"
+              className="md:col-span-8 text-base sm:text-xs px-3 py-2 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-gray-800 dark:text-gray-100"
               placeholder={lang === 'vi' ? 'Ghi chú (không bắt buộc)' : 'Note (optional)'}
               value={formNote}
               onChange={(e) => setFormNote(e.target.value)}

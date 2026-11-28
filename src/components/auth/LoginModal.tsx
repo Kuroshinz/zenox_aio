@@ -19,20 +19,12 @@ import {
   loginZenoxAccount,
   registerZenoxAccount,
   loginWithGoogleAccount,
+  completeGoogleRedirectLogin,
   syncGoogleCalendarData,
   getAccountSyncConsent,
   setAccountSyncConsent,
-  ensureSeededVaultAccount,
   ZenoxUser,
 } from '../../services/zenoxAuth';
-import {
-  CLONE_ACCOUNT_EMAIL,
-  CLONE_ACCOUNT_NAME,
-  CLONE_ACCOUNT_PASSWORD,
-  CLONE_ACCOUNT_UID,
-  loginCloneDemoAccount,
-  seedCloneAccountData,
-} from '../../services/cloneAccountSeed';
 import { accountStorage } from '../../services/accountStorage';
 import { notifySuccess } from '../../utils/notify';
 
@@ -85,11 +77,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [processStatus, setProcessStatus] = useState('');
 
   const timersRef = useRef<number[]>([]);
+  const errorBannerRef = useRef<HTMLDivElement | null>(null);
 
   const clearHandshakeTimers = () => {
     timersRef.current.forEach((id) => window.clearTimeout(id));
     timersRef.current = [];
   };
+
+  useEffect(() => {
+    if (errorMessage && errorBannerRef.current) {
+      errorBannerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [errorMessage]);
 
   useEffect(() => {
     setMode(initialMode);
@@ -101,6 +100,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setIsAskingSyncConsent(false);
     setIsProcessing(false);
     clearHandshakeTimers();
+
+    if (isOpen) {
+      completeGoogleRedirectLogin().then((res) => {
+        if (res.success && res.user) {
+          proceedWithAuthenticatedUser(res.user);
+        } else if (res.error) {
+          setErrorMessage(res.error);
+        }
+      });
+    }
+
     return () => clearHandshakeTimers();
   }, [isOpen, initialMode]);
 
@@ -223,6 +233,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
     try {
       const res = await loginWithGoogleAccount();
+      if (res.redirecting) {
+        return;
+      }
       if (res.success && res.user) {
         await proceedWithAuthenticatedUser(res.user);
       } else {
@@ -235,19 +248,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  const handleCloneDemoClick = async (forceReset: boolean = false) => {
-    if (isAnySubmitting) return;
-    setErrorMessage(null);
-    setIsSubmittingForm(true);
-    try {
-      const cloneUser = await loginCloneDemoAccount(forceReset);
-      startCinematicAuthHandshake(cloneUser, false);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Không thể khởi tạo tài khoản Clone Demo.');
-      setIsSubmittingForm(false);
-    }
-  };
-
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isAnySubmitting) return;
@@ -255,15 +255,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setIsSubmittingForm(true);
 
     try {
-      if (loginEmail.trim().toLowerCase() === CLONE_ACCOUNT_EMAIL) {
-        await ensureSeededVaultAccount({
-          id: CLONE_ACCOUNT_UID,
-          name: CLONE_ACCOUNT_NAME,
-          email: CLONE_ACCOUNT_EMAIL,
-          password: CLONE_ACCOUNT_PASSWORD,
-        });
-        seedCloneAccountData(false);
-      }
       const res = await loginZenoxAccount(loginEmail, loginPassword, rememberMe);
       if (res.success && res.user) {
         await proceedWithAuthenticatedUser(res.user);
@@ -467,7 +458,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </div>
 
             {errorMessage && (
-              <div className="w-full mb-4 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex flex-col gap-2.5 animate-in fade-in duration-200">
+              <div
+                ref={errorBannerRef}
+                role="alert"
+                className="w-full mb-4 p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex flex-col gap-2.5 animate-in fade-in duration-200 shadow-lg shadow-rose-950/30"
+              >
                 <div className="flex items-start gap-2.5">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
                   <span className="leading-relaxed flex-1">{errorMessage}</span>
@@ -529,38 +524,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                         ? 'Đăng nhập bằng tài khoản Google'
                         : 'Sign In with Google Account'}
                   </span>
-                </button>
-              </div>
-
-              {/* 1-CLICK CLONE DEMO TEST ACCOUNT */}
-              <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-950/50 via-teal-950/30 to-zinc-900/60 border border-emerald-500/30 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-300">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Acc Clone Sandbox (Full Dữ Liệu Test)</span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isAnySubmitting}
-                    onClick={() => handleCloneDemoClick(true)}
-                    className="text-[10px] font-mono text-emerald-300/80 hover:text-emerald-200 underline cursor-pointer disabled:opacity-50"
-                    title="Khôi phục lại toàn bộ dữ liệu mẫu ban đầu của Acc Clone"
-                  >
-                    Reset mẫu
-                  </button>
-                </div>
-                <div className="text-[10px] font-mono text-zinc-300 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                  <span>Email: <strong className="text-white select-text">{CLONE_ACCOUNT_EMAIL}</strong></span>
-                  <span>Pass: <strong className="text-white select-text">{CLONE_ACCOUNT_PASSWORD}</strong></span>
-                </div>
-                <button
-                  type="button"
-                  disabled={isAnySubmitting}
-                  onClick={() => handleCloneDemoClick(false)}
-                  className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm disabled:opacity-60"
-                >
-                  <ArrowRight className="w-3.5 h-3.5" />
-                  <span>Vào Ngay Acc Clone Test (1 Bấm)</span>
                 </button>
               </div>
 

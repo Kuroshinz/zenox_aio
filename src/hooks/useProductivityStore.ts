@@ -1031,6 +1031,8 @@ export function useProductivityStore(): ProductivityStore {
       meals,
       nutritionSettings,
       weeklyCheckins,
+      ctgPeriodizedRoadmap,
+      savedCtgRoadmaps,
     }),
     [
       tasks,
@@ -1051,6 +1053,8 @@ export function useProductivityStore(): ProductivityStore {
       meals,
       nutritionSettings,
       weeklyCheckins,
+      ctgPeriodizedRoadmap,
+      savedCtgRoadmaps,
     ]
   );
 
@@ -1074,6 +1078,8 @@ export function useProductivityStore(): ProductivityStore {
       if (data.meals) setMeals(data.meals);
       if (data.nutritionSettings) setNutritionSettings(data.nutritionSettings);
       if (data.weeklyCheckins) setWeeklyCheckins(data.weeklyCheckins);
+      if (data.ctgPeriodizedRoadmap !== undefined) setCtgPeriodizedRoadmap(data.ctgPeriodizedRoadmap);
+      if (data.savedCtgRoadmaps) setSavedCtgRoadmaps(data.savedCtgRoadmaps);
     },
     [
       setTasks,

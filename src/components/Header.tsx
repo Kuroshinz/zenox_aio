@@ -261,6 +261,27 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isLiveSyncEnabled, isSyncing, syncState, isLoggedInGoogle, lastSyncError, lang]);
 
 
+  const [isDesktopShaderEligible, setIsDesktopShaderEligible] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return (
+      window.matchMedia('(min-width: 768px)').matches &&
+      !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mqWidth = window.matchMedia('(min-width: 768px)');
+    const mqMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setIsDesktopShaderEligible(mqWidth.matches && !mqMotion.matches);
+    mqWidth.addEventListener('change', update);
+    mqMotion.addEventListener('change', update);
+    return () => {
+      mqWidth.removeEventListener('change', update);
+      mqMotion.removeEventListener('change', update);
+    };
+  }, []);
+
   useEffect(() => {
     const handler = () => {
       setStoredNotifs(getStoredNotifications());
@@ -297,7 +318,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={onToggleSidebar}
           title={lang === 'vi' ? 'Ẩn/hiện thanh bên' : 'Toggle sidebar'}
-          className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
+          className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer shrink-0"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -356,37 +377,49 @@ export const Header: React.FC<HeaderProps> = ({
             title={lang === 'vi' ? 'Bấm để xem chi tiết tình trạng đồng bộ & lưu trữ' : 'Click to view sync & storage status'}
             className={`group flex items-center gap-1.5 sm:gap-2 p-1 sm:pl-1 sm:pr-3 sm:py-1 rounded-full border backdrop-blur-xl transition-all duration-300 cursor-pointer select-none header-threeui-sync-control ${syncStatus.badgeClass}`}
           >
-            {/* ThreeUI WebGL Shader Toggle Switch */}
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleLiveSync?.(!isLiveSyncEnabled);
-              }}
-              className="w-[44px] sm:w-[58px] h-[24px] sm:h-[28px] rounded-full overflow-hidden bg-transparent shrink-0 relative flex items-center justify-center transition-transform group-hover:scale-[1.02]"
-              title={lang === 'vi' ? 'Bật/tắt chế độ Live Sync' : 'Toggle Live Sync'}
-            >
-              <SkeuomorphicToggleCollection
-                variant="shader"
-                mode="auto"
-                speed={1.00}
-                size={2.5}
-                opacity={1.00}
-                hue={syncStatus.hue}
-                saturation={syncStatus.saturation}
-                brightness={syncStatus.brightness}
-                defaultOn={isLiveSyncEnabled}
-                label={syncStatus.label}
-                onChange={onToggleLiveSync}
-              />
-            </div>
+            {/* Desktop WebGL Shader Toggle Switch (unmounted on mobile/reduced-motion to save battery & GPU) */}
+            {isDesktopShaderEligible && (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleLiveSync?.(!isLiveSyncEnabled);
+                }}
+                className="hidden md:flex w-[58px] h-[28px] rounded-full overflow-hidden bg-transparent shrink-0 relative items-center justify-center transition-transform group-hover:scale-[1.02]"
+                title={lang === 'vi' ? 'Bật/tắt chế độ Live Sync' : 'Toggle Live Sync'}
+              >
+                <SkeuomorphicToggleCollection
+                  variant="shader"
+                  mode="auto"
+                  speed={1.00}
+                  size={2.5}
+                  opacity={1.00}
+                  hue={syncStatus.hue}
+                  saturation={syncStatus.saturation}
+                  brightness={syncStatus.brightness}
+                  defaultOn={isLiveSyncEnabled}
+                  label={syncStatus.label}
+                  onChange={onToggleLiveSync}
+                />
+              </div>
+            )}
 
-            {/* Connected Dynamic Status Indicator & Label */}
-            <div className="hidden sm:flex items-center gap-1.5 whitespace-nowrap">
-              <span className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${syncStatus.dotClass}`} />
-              <span className={`text-[11px] font-mono font-bold tracking-tight transition-colors ${syncStatus.textClass}`}>
+            {/* Lightweight sync indicator on mobile/reduced-motion */}
+            <div className={`flex ${isDesktopShaderEligible ? 'md:hidden' : ''} items-center gap-1.5 px-1.5 py-0.5 whitespace-nowrap`}>
+              <span className={`w-2 h-2 rounded-full transition-all shrink-0 ${syncStatus.dotClass}`} />
+              <span className={`hidden sm:inline text-[11px] font-mono font-bold tracking-tight ${syncStatus.textClass}`}>
                 {syncStatus.label}
               </span>
             </div>
+
+            {/* Desktop Connected Dynamic Status Indicator & Label */}
+            {isDesktopShaderEligible && (
+              <div className="hidden md:flex items-center gap-1.5 whitespace-nowrap">
+                <span className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${syncStatus.dotClass}`} />
+                <span className={`text-[11px] font-mono font-bold tracking-tight transition-colors ${syncStatus.textClass}`}>
+                  {syncStatus.label}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Sync Diagnostics & Status Popover */}
@@ -837,27 +870,27 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Consolidated Utility Capsule: Lang + Theme (desktop; mobile in profile menu) */}
-        <div className="hidden sm:flex items-center p-0.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
+        <div className="hidden sm:flex items-center p-0.5 rounded-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 backdrop-blur-md">
           <button
             onClick={onToggleLang}
             title={lang === 'vi' ? 'Đổi sang English' : 'Chuyển sang Tiếng Việt'}
-            className="px-2 py-1 rounded-full text-[11px] font-bold text-white/75 hover:text-white hover:bg-white/10 transition-colors cursor-pointer flex items-center gap-1"
+            className="px-2 py-1 rounded-full text-[11px] font-bold text-slate-700 dark:text-white/75 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer flex items-center gap-1"
           >
-            <Globe className="w-3 h-3 text-rose-400" />
+            <Globe className="w-3 h-3 text-rose-500 dark:text-rose-400" />
             <span>{lang === 'vi' ? 'VI' : 'EN'}</span>
           </button>
 
-          <div className="w-px h-3 bg-white/15 mx-0.5" />
+          <div className="w-px h-3 bg-slate-300 dark:bg-white/15 mx-0.5" />
 
           <button
             onClick={onToggleDarkMode}
             title={darkMode ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}
-            className="p-1 rounded-full text-white/75 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-1 rounded-full text-slate-700 dark:text-white/75 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors cursor-pointer"
           >
             {darkMode ? (
-              <Sun className="w-3.5 h-3.5 text-amber-400" />
+              <Sun className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
             ) : (
-              <Moon className="w-3.5 h-3.5 text-slate-300" />
+              <Moon className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
             )}
           </button>
         </div>

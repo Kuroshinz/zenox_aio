@@ -1899,7 +1899,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                   placeholder={`Ví dụ: Bữa ${MEAL_LABEL[selectedSlot]} ngoài quán, Whey...`}
                   value={macroTitle}
                   onChange={(e) => setMacroTitle(e.target.value)}
-                  className="w-full text-xs px-3 py-2 rounded-xl border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                  className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
                 />
               </div>
 
@@ -1909,11 +1909,12 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 </label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   step="0.5"
                   min="0"
                   value={macroProtein}
                   onChange={(e) => setMacroProtein(e.target.value)}
-                  className="w-full text-xs px-3 py-2 rounded-xl border border-rose-300 dark:border-rose-900 bg-rose-50/30 dark:bg-rose-950/20 text-gray-800 dark:text-gray-100 font-bold font-mono"
+                  className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-rose-300 dark:border-rose-900 bg-rose-50/30 dark:bg-rose-950/20 text-gray-800 dark:text-gray-100 font-bold font-mono"
                   required
                 />
               </div>
@@ -1924,11 +1925,12 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 </label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   step="0.5"
                   min="0"
                   value={macroCarbs}
                   onChange={(e) => setMacroCarbs(e.target.value)}
-                  className="w-full text-xs px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-900 bg-amber-50/30 dark:bg-amber-950/20 text-gray-800 dark:text-gray-100 font-bold font-mono"
+                  className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-900 bg-amber-50/30 dark:bg-amber-950/20 text-gray-800 dark:text-gray-100 font-bold font-mono"
                   required
                 />
               </div>
@@ -1939,11 +1941,12 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 </label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   step="0.5"
                   min="0"
                   value={macroFat}
                   onChange={(e) => setMacroFat(e.target.value)}
-                  className="w-full text-xs px-3 py-2 rounded-xl border border-purple-300 dark:border-purple-900 bg-purple-50/30 dark:bg-purple-950/20 text-gray-800 dark:text-gray-100 font-bold font-mono"
+                  className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-purple-300 dark:border-purple-900 bg-purple-50/30 dark:bg-purple-950/20 text-gray-800 dark:text-gray-100 font-bold font-mono"
                   required
                 />
               </div>
@@ -1957,7 +1960,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 </div>
                 <button
                   type="submit"
-                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1"
+                  className="px-3.5 py-2.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Lưu</span>
@@ -1967,13 +1970,13 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
           </form>
         ) : inputMode === 'quick' ? (
           <form onSubmit={handleAddMeal} className="space-y-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Ví dụ: 200g ức gà + 250g cơm trắng + 1 chuối hoặc 1 bát phở bò..."
-                className="flex-1 text-xs px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-2xs"
+                placeholder="Ví dụ: 200g ức gà + 250g cơm trắng + 1 chuối..."
+                className="flex-1 text-base sm:text-xs px-3.5 py-2.5 rounded-xl border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-2xs"
               />
               <button
                 type="submit"
@@ -1982,6 +1985,37 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
               >
                 + Ghi nhận ({MEAL_LABEL[selectedSlot]})
               </button>
+            </div>
+
+            {/* 1-Tap Recent & Staple Quick Presets */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px]">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 shrink-0">
+                1 chạm:
+              </span>
+              {Array.from(
+                new Set([
+                  ...meals
+                    .slice(-6)
+                    .reverse()
+                    .map((m) => m.description)
+                    .filter((d) => Boolean(d && d.length <= 42)),
+                  '200g ức gà + 200g cơm trắng',
+                  '1 bát phở bò',
+                  '150g thịt bò + 200g cơm',
+                  '1 muỗng whey + 1 chuối',
+                ])
+              )
+                .slice(0, 6)
+                .map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setInputText(preset)}
+                    className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-white/[0.06] hover:bg-rose-500/15 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-white/10 whitespace-nowrap shrink-0 cursor-pointer transition-colors font-medium"
+                  >
+                    + {preset}
+                  </button>
+                ))}
             </div>
 
             {parsedPreview.length > 0 && (

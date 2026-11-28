@@ -1,6 +1,7 @@
 import {
   BodyPoint,
   BudgetSettings,
+  CtgPeriodizedRoadmap,
   CtgProfile,
   FocusSession,
   GoalItem,
@@ -39,6 +40,8 @@ export interface ProductivitySnapshotData {
   meals?: MealLog[];
   nutritionSettings?: NutritionSettings;
   weeklyCheckins?: WeeklyCheckinRecord[];
+  ctgPeriodizedRoadmap?: CtgPeriodizedRoadmap | null;
+  savedCtgRoadmaps?: CtgPeriodizedRoadmap[];
 }
 
 export interface ProductivityBackup extends ProductivitySnapshotData {
@@ -103,5 +106,22 @@ export function parseProductivityBackup(raw: unknown): ProductivityBackup | null
     wellness: raw.wellness as WellnessCheck[],
     healthProfile: raw.healthProfile as unknown as HealthProfile,
     habits: isArray(raw.habits) ? (raw.habits as HabitItem[]) : undefined,
+    ctgProfile: isObject(raw.ctgProfile) ? (raw.ctgProfile as unknown as CtgProfile) : undefined,
+    bodyPoints: isArray(raw.bodyPoints) ? (raw.bodyPoints as BodyPoint[]) : undefined,
+    plannedSessions: isArray(raw.plannedSessions) ? (raw.plannedSessions as PlannedSession[]) : undefined,
+    workoutSessions: isArray(raw.workoutSessions) ? (raw.workoutSessions as WorkoutSession[]) : undefined,
+    sportSessions: isArray(raw.sportSessions) ? (raw.sportSessions as SportSession[]) : undefined,
+    meals: isArray(raw.meals) ? (raw.meals as MealLog[]) : undefined,
+    nutritionSettings: isObject(raw.nutritionSettings)
+      ? (raw.nutritionSettings as unknown as NutritionSettings)
+      : undefined,
+    weeklyCheckins: isArray(raw.weeklyCheckins) ? (raw.weeklyCheckins as WeeklyCheckinRecord[]) : undefined,
+    ctgPeriodizedRoadmap:
+      raw.ctgPeriodizedRoadmap === null || isObject(raw.ctgPeriodizedRoadmap)
+        ? (raw.ctgPeriodizedRoadmap as unknown as CtgPeriodizedRoadmap | null)
+        : undefined,
+    savedCtgRoadmaps: isArray(raw.savedCtgRoadmaps)
+      ? (raw.savedCtgRoadmaps as CtgPeriodizedRoadmap[])
+      : undefined,
   };
 }

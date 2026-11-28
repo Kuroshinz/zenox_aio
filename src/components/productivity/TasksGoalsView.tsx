@@ -374,7 +374,7 @@ export const TasksGoalsView: React.FC<TasksGoalsViewProps> = ({
   const categoryOf = (id: string) => categories.find((c) => c.id === id);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-gray-50/50 dark:bg-transparent p-4 md:p-6 lg:p-8 select-none">
+    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-gray-50/50 dark:bg-transparent p-3 sm:p-5 lg:p-8 select-none">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -477,7 +477,7 @@ export const TasksGoalsView: React.FC<TasksGoalsViewProps> = ({
                 placeholder={
                   lang === 'vi' ? 'Thêm nhanh việc cần làm (nhấn Enter để lưu)' : 'Add task (press Enter to save)'
                 }
-                className="w-full text-xs bg-transparent border-none outline-none text-gray-800 dark:text-gray-100 placeholder:text-gray-400"
+                className="w-full text-base sm:text-xs bg-transparent border-none outline-none text-gray-800 dark:text-gray-100 placeholder:text-gray-400"
               />
             </div>
 

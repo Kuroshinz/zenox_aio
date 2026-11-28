@@ -69,16 +69,16 @@ export const MonthView: React.FC<MonthViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-[#070103]/90 select-none">
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800 text-center py-2 bg-gray-50/70 dark:bg-[#1a1e24]/70 shrink-0">
+      <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800 text-center py-1.5 sm:py-2 bg-gray-50/70 dark:bg-[#1a1e24]/70 shrink-0">
         {weekdays.map((day, idx) => (
-          <div key={idx} className="text-xs font-semibold tracking-wider text-gray-500 dark:text-gray-400">
+          <div key={idx} className="text-[10px] sm:text-xs font-semibold tracking-wider text-gray-500 dark:text-gray-400">
             {day}
           </div>
         ))}
       </div>
 
       {/* Month Days Grid */}
-      <div className="flex-1 grid grid-cols-7 auto-rows-[minmax(128px,1fr)] border-l border-t border-gray-200 dark:border-gray-800 overflow-y-auto">
+      <div className="flex-1 grid grid-cols-7 auto-rows-[minmax(88px,1fr)] sm:auto-rows-[minmax(128px,1fr)] border-l border-t border-gray-200 dark:border-gray-800 overflow-y-auto">
         {days.map((dayItem, index) => {
           const dateStr = dayItem.dateString;
           // Sort events: All-day / multi-day first, then chronologically by startTime

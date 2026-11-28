@@ -2,6 +2,11 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
   GoogleAuthProvider,
   onAuthStateChanged,
   User,
@@ -134,19 +139,15 @@ export const initAuth = (
  */
 export const googleSignIn = async (): Promise<{ user: AppUser; accessToken: string }> => {
   provider.setCustomParameters({
-    prompt: 'consent',
+    prompt: 'select_account',
   });
   const result = await signInWithPopup(auth, provider);
   const credential = GoogleAuthProvider.credentialFromResult(result);
-  const accessToken = credential?.accessToken;
+  const accessToken = credential?.accessToken || '';
 
-  if (!accessToken) {
-    throw new Error(
-      'Google không trả về access token. Vui lòng cấp quyền Calendar hoặc dùng Access Token / iCal URL trong hộp thoại đồng bộ.'
-    );
+  if (accessToken) {
+    setAccessToken(accessToken, 3600);
   }
-
-  setAccessToken(accessToken, 3600);
   const appUser: AppUser = {
     uid: result.user.uid,
     email: result.user.email,
@@ -155,6 +156,66 @@ export const googleSignIn = async (): Promise<{ user: AppUser; accessToken: stri
   };
 
   return { user: appUser, accessToken };
+};
+
+export const googleSignInRedirect = async (): Promise<void> => {
+  provider.setCustomParameters({
+    prompt: 'select_account',
+  });
+  await signInWithRedirect(auth, provider);
+};
+
+export const resolveGoogleRedirectResult = async (): Promise<{ user: AppUser; accessToken: string } | null> => {
+  try {
+    const result = await getRedirectResult(auth);
+    if (!result?.user) return null;
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const accessToken = credential?.accessToken || '';
+    if (accessToken) {
+      setAccessToken(accessToken, 3600);
+    }
+    return {
+      user: {
+        uid: result.user.uid,
+        email: result.user.email,
+        displayName: result.user.displayName,
+        photoURL: result.user.photoURL,
+      },
+      accessToken,
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const registerWithFirebaseEmail = async (
+  name: string,
+  email: string,
+  password: string
+): Promise<AppUser> => {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  if (name.trim()) {
+    await updateProfile(cred.user, { displayName: name.trim() }).catch(() => undefined);
+  }
+  return {
+    uid: cred.user.uid,
+    email: cred.user.email,
+    displayName: name.trim() || cred.user.displayName,
+    photoURL: cred.user.photoURL,
+  };
+};
+
+export const loginWithFirebaseEmail = async (
+  email: string,
+  password: string
+): Promise<AppUser> => {
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return {
+    uid: cred.user.uid,
+    email: cred.user.email,
+    displayName: cred.user.displayName,
+    photoURL: cred.user.photoURL,
+  };
 };
 
 export const logout = async () => {

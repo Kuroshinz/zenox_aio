@@ -81,6 +81,11 @@ import { getAccessToken, googleSignIn } from '../../../services/auth';
 import { accountStorage } from '../../../services/accountStorage';
 import { notifyError, notifyWarning } from '../../../utils/notify';
 import { TrainingReadinessAutoregulator } from './TrainingReadinessAutoregulator';
+import {
+  triggerHaptic,
+  scheduleRestTimerNotification,
+  cancelRestTimerNotification,
+} from '../../../utils/nativeBridge';
 
 interface TrainingTabProps {
   plannedSessions: PlannedSession[];
@@ -694,10 +699,17 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
 
     if (willBeCompleted) {
       if (isNewPr) {
+        triggerHaptic('success');
         notifySuccess('Kỷ Lục Mới (PR)! ⭐', `Chúc mừng! Bạn đã vượt kỷ lục bài này với mức tạ ${cur.weightKg}kg!`);
+      } else {
+        triggerHaptic('light');
       }
-      setRestTotal(restSeconds || 90);
-      setRestSecondsLeft(restSeconds || 90);
+      const nextRest = restSeconds || 90;
+      setRestTotal(nextRest);
+      setRestSecondsLeft(nextRest);
+      scheduleRestTimerNotification(nextRest);
+    } else {
+      cancelRestTimerNotification();
     }
   };
 
@@ -1325,8 +1337,18 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
           setCalcTab('plates');
           setShowCalculatorModal(true);
         }}
-        onAdjustRestTimer={(delta) => setRestSecondsLeft((s) => (s !== null ? Math.max(0, s + delta) : delta))}
-        onSkipRestTimer={() => setRestSecondsLeft(null)}
+        onAdjustRestTimer={(delta) =>
+          setRestSecondsLeft((s) => {
+            const next = s !== null ? Math.max(0, s + delta) : delta;
+            if (next > 0) scheduleRestTimerNotification(next);
+            else cancelRestTimerNotification();
+            return next;
+          })
+        }
+        onSkipRestTimer={() => {
+          setRestSecondsLeft(null);
+          cancelRestTimerNotification();
+        }}
         onSetRestTimerTotal={setRestTotal}
         customExercises={customExercises}
         lang={lang}

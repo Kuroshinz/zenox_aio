@@ -126,6 +126,7 @@ import { auth, initAuth, logout, getAccessToken, clearAccessToken, googleSignIn,
 import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './services/googleCalendarSync';
 import { fetchCalendarFromICalUrl } from './services/googleCalendarUrlSync';
 import { Bell, FileText, LayoutDashboard, CalendarDays, Dumbbell, ListChecks, Wallet } from 'lucide-react';
+import { triggerHaptic } from './utils/nativeBridge';
 import { CalendarActionBar } from './components/CalendarActionBar';
 import { ToastContainer } from './components/ToastContainer';
 
@@ -718,6 +719,77 @@ export default function App() {
       if (unsubscribeFirestore) unsubscribeFirestore();
     };
   }, [user, getFirestoreSyncUid, lang]);
+
+  // Cross-device Firestore sync for Productivity & Fitness Snapshot (Web <-> iPhone)
+  const isApplyingRemoteProdRef = useRef(false);
+  const prodHydratedUidRef = useRef<string | null>(null);
+  const prodCloudTsRef = useRef<number>(0);
+
+  useEffect(() => {
+    const firestoreUid = getFirestoreSyncUid(user);
+    if (!firestoreUid || !user) return;
+
+    const storedTs = Number(accountStorage.getItem('gcal_prod_cloud_ts', user.uid) || '0');
+    prodCloudTsRef.current = Number.isFinite(storedTs) ? storedTs : 0;
+
+    let cancelled = false;
+    let unsubProd: (() => void) | undefined;
+
+    import('./services/firestoreSync')
+      .then(({ subscribeProductivitySnapshot, saveProductivitySnapshot }) => {
+        if (cancelled) return;
+        unsubProd = subscribeProductivitySnapshot(
+          firestoreUid,
+          (remote) => {
+            prodHydratedUidRef.current = firestoreUid;
+            if (!remote) {
+              const now = Date.now();
+              prodCloudTsRef.current = now;
+              accountStorage.setItem('gcal_prod_cloud_ts', String(now), user.uid);
+              saveProductivitySnapshot(firestoreUid, productivity.snapshot(), now).catch(() => undefined);
+              return;
+            }
+            if (remote.updatedAt > prodCloudTsRef.current) {
+              isApplyingRemoteProdRef.current = true;
+              prodCloudTsRef.current = remote.updatedAt;
+              accountStorage.setItem('gcal_prod_cloud_ts', String(remote.updatedAt), user.uid);
+              productivity.restore(remote.data as any);
+              window.setTimeout(() => {
+                isApplyingRemoteProdRef.current = false;
+              }, 300);
+            }
+          },
+          () => {
+            prodHydratedUidRef.current = firestoreUid;
+          }
+        );
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      if (unsubProd) unsubProd();
+    };
+  }, [user, getFirestoreSyncUid]);
+
+  useEffect(() => {
+    const firestoreUid = getFirestoreSyncUid(user);
+    if (!firestoreUid || !user) return;
+    if (prodHydratedUidRef.current !== firestoreUid || isApplyingRemoteProdRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
+      prodCloudTsRef.current = now;
+      accountStorage.setItem('gcal_prod_cloud_ts', String(now), user.uid);
+      import('./services/firestoreSync')
+        .then(({ saveProductivitySnapshot }) =>
+          saveProductivitySnapshot(firestoreUid, productivity.snapshot(), now)
+        )
+        .catch(() => undefined);
+    }, 2500);
+
+    return () => window.clearTimeout(timer);
+  }, [productivity.snapshot, user, getFirestoreSyncUid]);
 
   // Auto-sync from saved Google Calendar iCal URL if present
   useEffect(() => {
@@ -1407,6 +1479,8 @@ export default function App() {
     return null;
   }, [productivity.bodyPoints, productivity.ctgProfile.goal, lang]);
 
+  const calendarSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
   if (view === 'scene') {
     return (
       <div className="w-screen h-dvh bg-[#070205] flex flex-col items-center justify-center p-4 relative overflow-hidden select-none">
@@ -1586,7 +1660,29 @@ export default function App() {
                 onChangeEventTypeFilter={setEventTypeFilter}
               />
 
-              <div className="flex-1 overflow-hidden relative">
+              <div
+                className="flex-1 overflow-hidden relative"
+                onTouchStart={(e) => {
+                  if (e.touches.length === 1) {
+                    calendarSwipeStartRef.current = {
+                      x: e.touches[0].clientX,
+                      y: e.touches[0].clientY,
+                    };
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  const start = calendarSwipeStartRef.current;
+                  calendarSwipeStartRef.current = null;
+                  if (!start || e.changedTouches.length !== 1) return;
+                  const dx = e.changedTouches[0].clientX - start.x;
+                  const dy = e.changedTouches[0].clientY - start.y;
+                  if (Math.abs(dx) >= 70 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+                    triggerHaptic('light');
+                    if (dx < 0) handleNavigateNext();
+                    else handleNavigatePrev();
+                  }
+                }}
+              >
                 {view === 'month' && (
                   <MonthView
                     currentDate={currentDate}
@@ -1974,7 +2070,10 @@ export default function App() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => handleViewChange(item.id)}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    handleViewChange(item.id);
+                  }}
                   className={`flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-xl transition-all cursor-pointer ${
                     item.active
                       ? 'text-rose-500 bg-rose-500/10 font-bold'

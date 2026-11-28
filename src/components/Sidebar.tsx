@@ -287,16 +287,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         aria-hidden="true"
       />
 
-      <aside className="fixed lg:static top-0 bottom-0 left-0 w-72 bg-[#080205] backdrop-blur-2xl border-r border-white/[0.08] z-40 flex flex-col justify-between p-4 sm:p-5 shrink-0 select-none shadow-2xl lg:shadow-none transition-all overflow-y-auto">
+      <aside className="fixed lg:static top-0 bottom-0 left-0 w-72 bg-[#080205] backdrop-blur-2xl border-r border-white/[0.08] z-50 lg:z-auto flex flex-col justify-between p-4 sm:p-5 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] lg:pt-5 lg:pb-5 shrink-0 select-none shadow-2xl lg:shadow-none transition-all overflow-y-auto">
         {/* Top: Brand Header & Primary Navigation */}
         <div className="space-y-6">
           {/* Brand header */}
           <div className="space-y-2.5 px-1">
             <div className="flex items-center justify-between">
               <div
-                onClick={() => onViewChange && onViewChange('landing')}
+                onClick={() => {
+                  if (onViewChange) onViewChange('dashboard');
+                  if (window.innerWidth < 1024) onCloseMobile();
+                }}
                 className="flex items-center cursor-pointer group py-1 transition-transform duration-200 hover:scale-[1.02]"
-                title="ZENOX - Quay về Trang chủ"
+                title="ZENOX - Tổng quan"
               >
                 <img
                   src="/zenox-logo.png"

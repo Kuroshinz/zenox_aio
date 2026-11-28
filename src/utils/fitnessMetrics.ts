@@ -5939,3 +5939,88 @@ export function buildJourneyCalendarPeriod(params: {
     cells,
   };
 }
+
+export interface WeeklyCorrelationPoint {
+  weekLabel: string;
+  rangeLabel: string;
+  avgWeightKg: number | null;
+  avgDailyKcal: number;
+  sessionsCount: number;
+  totalTonnageKg: number;
+}
+
+/**
+ * Computes a 4-week rolling correlation series combining Bodyweight, Average Daily Calories,
+ * and Training Frequency/Tonnage for the Overview insights card.
+ */
+export function calculateWeeklyCorrelationSeries(params: {
+  todayDateStr: string;
+  weeksCount?: number;
+  bodyPoints?: BodyPoint[];
+  meals?: MealLog[];
+  workoutSessions?: WorkoutSession[];
+  sportSessions?: SportSession[];
+}): WeeklyCorrelationPoint[] {
+  const {
+    todayDateStr,
+    weeksCount = 4,
+    bodyPoints = [],
+    meals = [],
+    workoutSessions = [],
+    sportSessions = [],
+  } = params;
+
+  const anchor = parseVnDate(todayDateStr);
+  const safeAnchor = Number.isFinite(anchor.getTime()) ? anchor : new Date();
+  safeAnchor.setHours(0, 0, 0, 0);
+
+  const count = Math.max(1, Math.min(12, weeksCount));
+  const result: WeeklyCorrelationPoint[] = [];
+
+  for (let w = count - 1; w >= 0; w--) {
+    const weekEndOffset = -w * 7;
+    const weekStartOffset = weekEndOffset - 6;
+    const weekStartStr = shiftDateYmd(toIsoDate(safeAnchor), weekStartOffset);
+    const weekEndStr = shiftDateYmd(toIsoDate(safeAnchor), weekEndOffset);
+
+    const weekPoints = bodyPoints.filter((bp) => bp.date >= weekStartStr && bp.date <= weekEndStr && bp.weightKg > 0);
+    const avgWeightKg =
+      weekPoints.length > 0
+        ? Math.round((weekPoints.reduce((sum, bp) => sum + bp.weightKg, 0) / weekPoints.length) * 10) / 10
+        : null;
+
+    const kcalByDate = new Map<string, number>();
+    for (const m of meals) {
+      if (m.date >= weekStartStr && m.date <= weekEndStr && (m.items || []).length > 0) {
+        const mealKcal = m.items.reduce((s, it) => s + (it.kcal || 0), 0);
+        kcalByDate.set(m.date, (kcalByDate.get(m.date) || 0) + mealKcal);
+      }
+    }
+    const avgDailyKcal =
+      kcalByDate.size > 0
+        ? Math.round(Array.from(kcalByDate.values()).reduce((a, b) => a + b, 0) / kcalByDate.size)
+        : 0;
+
+    const weekWorkouts = workoutSessions.filter((wo) => wo.date >= weekStartStr && wo.date <= weekEndStr);
+    const weekSports = sportSessions.filter((sp) => sp.date >= weekStartStr && sp.date <= weekEndStr);
+    const totalTonnageKg = Math.round(
+      weekWorkouts.reduce(
+        (sum, wo) =>
+          sum +
+          (wo.sets || []).reduce((s, st) => s + (st.weightKg || 0) * (st.reps || 0), 0),
+        0
+      )
+    );
+
+    result.push({
+      weekLabel: w === 0 ? 'Tuần này' : `T-${w}`,
+      rangeLabel: `${weekStartStr.slice(8)}/${weekStartStr.slice(5, 7)}–${weekEndStr.slice(8)}/${weekEndStr.slice(5, 7)}`,
+      avgWeightKg,
+      avgDailyKcal,
+      sessionsCount: weekWorkouts.length + weekSports.length,
+      totalTonnageKg,
+    });
+  }
+
+  return result;
+}

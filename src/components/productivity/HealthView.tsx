@@ -77,6 +77,7 @@ import {
   resolveAutoPhaseTransition,
   calculatePhaseJourneyHeatmap,
   buildJourneyCalendarPeriod,
+  calculateWeeklyCorrelationSeries,
 } from '../../utils/fitnessMetrics';
 import { formatDateString } from '../../utils/calendarUtils';
 import { notifyInfo } from '../../utils/notify';
@@ -453,6 +454,19 @@ export const HealthView: React.FC<HealthViewProps> = ({
     [bodyPoints, healthLogs, effectiveWeight, selectedDate]
   );
 
+  const weeklyCorrelation = useMemo(
+    () =>
+      calculateWeeklyCorrelationSeries({
+        todayDateStr: selectedDate,
+        weeksCount: 4,
+        bodyPoints: bodyPoints || [],
+        meals: meals || [],
+        workoutSessions: workoutSessions || [],
+        sportSessions: sportSessions || [],
+      }),
+    [selectedDate, bodyPoints, meals, workoutSessions, sportSessions]
+  );
+
   const fixNextActions = useMemo(
     () =>
       generateHealthFixNextActions({
@@ -673,7 +687,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="text-xs px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 dark:[color-scheme:dark] text-slate-700 dark:text-slate-200"
+            className="text-base sm:text-xs px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 dark:[color-scheme:dark] text-slate-700 dark:text-slate-200"
           />
           <button
             type="button"
@@ -1072,7 +1086,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
                       setStartDateDraft(journeyHeatmap.startDate);
                     }
                   }}
-                  className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white dark:[color-scheme:dark] font-mono text-xs focus:outline-none focus:border-rose-500 cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white dark:[color-scheme:dark] font-mono text-base sm:text-xs focus:outline-none focus:border-rose-500 cursor-pointer"
                 />
                 {ctgActivePhase?.startDate && (
                   <button
@@ -1633,6 +1647,63 @@ export const HealthView: React.FC<HealthViewProps> = ({
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 4-Week Multi-Metric Correlation Insight Card */}
+      <div className="bg-white dark:bg-[#070205] backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 p-4 sm:p-5 mb-6 shadow-xs space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-500">
+              Multi-Metric Weekly Correlation
+            </span>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
+              Tương Quan 4 Tuần: Cân Nặng · Calo Trung Bình · Tần Suất Tập
+            </h3>
+          </div>
+          <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+            Tính tới {selectedDate}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {weeklyCorrelation.map((wk) => {
+            const maxKcal = Math.max(1, ...weeklyCorrelation.map((x) => x.avgDailyKcal), ctgActivePhase?.targetKcal || targetCalories);
+            const kcalPct = Math.min(100, Math.round((wk.avgDailyKcal / maxKcal) * 100));
+            return (
+              <div
+                key={wk.weekLabel}
+                className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-2"
+              >
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="font-bold text-slate-900 dark:text-white">{wk.weekLabel}</span>
+                  <span className="text-[10px] text-slate-400">{wk.rangeLabel}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+                  <div>
+                    <span className="text-[9px] uppercase text-slate-400 block">Cân TB</span>
+                    <strong className="text-emerald-600 dark:text-emerald-400">
+                      {wk.avgWeightKg !== null ? `${wk.avgWeightKg}kg` : '--'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] uppercase text-slate-400 block">Buổi tập</span>
+                    <strong className="text-rose-500">
+                      {wk.sessionsCount} buổi
+                    </strong>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400 mb-1">
+                    <span>Calo TB</span>
+                    <span className="font-bold text-sky-600 dark:text-sky-400">
+                      {wk.avgDailyKcal > 0 ? `${wk.avgDailyKcal} kcal` : '--'}
+                    </span>
+                  </div>
+                  <ProgressBar percent={kcalPct} color="#0ea5e9" height={4} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -86,6 +86,15 @@ export function requestRealGoogleOAuthToken(customClientId?: string): Promise<st
       return;
     }
 
+    if (!customClientId && !hasOwnClientId()) {
+      reject(
+        new Error(
+          `Tên miền hiện tại (${window.location.hostname}) chưa được cấp phép cho Google OAuth Client mặc định. Vui lòng nhập Google Client ID riêng hoặc dùng Đăng ký / Đăng nhập bằng Email.`
+        )
+      );
+      return;
+    }
+
     if (!window.google?.accounts?.oauth2) {
       reject(
         new Error(
@@ -95,16 +104,31 @@ export function requestRealGoogleOAuthToken(customClientId?: string): Promise<st
       return;
     }
 
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(
+          new Error(
+            'Cửa sổ đăng nhập Google không phản hồi hoặc bị trình duyệt chặn pop-up. Vui lòng cho phép pop-up hoặc đăng nhập bằng tài khoản Email.'
+          )
+        );
+      }
+    }, 45000);
+
     try {
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid',
         callback: (response: any) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeoutId);
           if (response.error) {
             reject(
               new Error(
                 response.error_description ||
-                  `Lỗi xác thực Google: ${response.error} (Có thể do origin localhost chưa được đăng ký trong Client ID)`
+                  `Lỗi xác thực Google: ${response.error} (Có thể do origin chưa được đăng ký trong Client ID)`
               )
             );
             return;
@@ -118,14 +142,17 @@ export function requestRealGoogleOAuthToken(customClientId?: string): Promise<st
           }
         },
         error_callback: (nonOAuthError: any) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeoutId);
           if (nonOAuthError?.type === 'popup_failed_to_open') {
             reject(
               new Error(
-                'Trình duyệt đang chặn cửa sổ đăng nhập Google (Pop-up blocked). Hãy bấm vào biểu tượng chặn cửa sổ bật lên trên thanh địa chỉ URL để Cho phép mở.'
+                'Trình duyệt đang chặn cửa sổ đăng nhập Google (Pop-up blocked). Hãy bấm cho phép Pop-up hoặc dùng Đăng nhập bằng Email.'
               )
             );
           } else {
-            reject(new Error(nonOAuthError?.message || 'Người dùng đã đóng cửa sổ đăng nhập Google'));
+            reject(new Error(nonOAuthError?.message || 'Cửa sổ đăng nhập Google đã bị đóng.'));
           }
         },
       });

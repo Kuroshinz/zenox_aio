@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main, master]
+    tags: ['v*']
     paths:
       - 'src/**'
       - 'public/**'
@@ -75,3 +76,44 @@ jobs:
           name: ZENOX-iOS-IPA
           path: build/ZENOX-unsigned.ipa
           retention-days: 30
+
+      - name: Generate AltStore / SideStore source feed (on tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME#v}"
+          IPA_SIZE=$(stat -f%z build/ZENOX-unsigned.ipa)
+          RELEASE_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          cat > build/altstore-source.json <<EOF
+          {
+            "name": "ZENOX Official Source",
+            "identifier": "io.zenox.source",
+            "sourceURL": "https://github.com/${{ github.repository }}/releases/latest/download/altstore-source.json",
+            "apps": [
+              {
+                "name": "ZENOX",
+                "bundleIdentifier": "io.zenox.app",
+                "developerName": "Zenox Development",
+                "localizedDescription": "ZENOX - Hệ điều hành hiệu suất cá nhân, lịch thông minh và thể hình chu kỳ hóa khoa học.",
+                "iconURL": "https://raw.githubusercontent.com/${{ github.repository }}/main/public/icon-512.png",
+                "tintColor": "E11D48",
+                "versions": [
+                  {
+                    "version": "${TAG_NAME}",
+                    "date": "${RELEASE_DATE}",
+                    "size": ${IPA_SIZE},
+                    "downloadURL": "https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF_NAME}/ZENOX-unsigned.ipa"
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+
+      - name: Attach IPA & AltStore feed to GitHub Release (on tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/ZENOX-unsigned.ipa
+            build/altstore-source.json
+          generate_release_notes: true

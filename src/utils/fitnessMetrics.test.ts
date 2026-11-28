@@ -34,6 +34,7 @@ import {
   resolveAutoPhaseTransition,
   calculatePhaseJourneyHeatmap,
   buildJourneyCalendarPeriod,
+  calculateWeeklyCorrelationSeries,
 } from './fitnessMetrics';
 import { BodyPoint, CtgProfile, HealthDayLog, MealLog, NutritionSettings, SetLog, SportSession, WorkoutSession } from '../types/productivity';
 
@@ -825,6 +826,36 @@ assert(
   twentyOneDayRes.journeyWeeks[2][6].dayNumber === 21 && twentyOneDayRes.journeyWeeks[2][6].isToday,
   'Journey timeline must end at Day 21 (Today)'
 );
+
+const corrSeries = calculateWeeklyCorrelationSeries({
+  todayDateStr: '2026-11-28',
+  weeksCount: 4,
+  bodyPoints: [
+    { id: 'bp-c1', date: '2026-11-28', weightKg: 68.4, bodyFatPct: 16.5, createdAt: 1 },
+    { id: 'bp-c2', date: '2026-11-18', weightKg: 69.2, bodyFatPct: 17.0, createdAt: 2 },
+  ],
+  meals: [
+    {
+      id: 'mc-1',
+      date: '2026-11-28',
+      slot: 'lunch',
+      description: 'Cơm gà',
+      items: [{ name: 'cơm gà', amount: 350, unit: 'g', kcal: 650, protein: 40, carbs: 70, fat: 20 }],
+      createdAt: 1,
+    },
+  ],
+  workoutSessions: [
+    {
+      id: 'wc-1',
+      date: '2026-11-28',
+      title: 'Push',
+      startedAt: 1,
+      sets: [{ id: 's-c1', exerciseId: 'bench-press', setIndex: 0, weightKg: 80, reps: 8 }],
+    },
+  ],
+});
+assert(corrSeries.length === 4, 'Should return 4 weekly correlation points');
+assert(corrSeries[3].weekLabel === 'Tuần này' && corrSeries[3].avgWeightKg === 68.4 && corrSeries[3].avgDailyKcal === 650 && corrSeries[3].totalTonnageKg === 640, 'Latest correlation week must aggregate weight, kcal, and tonnage');
 
 console.log('All fitness metrics & world-class nutrition tests passed successfully!');
 

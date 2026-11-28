@@ -33,6 +33,11 @@ import { playNotificationSound } from '../../utils/sound';
 import { formatDateString } from '../../utils/calendarUtils';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import {
+  triggerHaptic,
+  scheduleRestTimerNotification,
+  cancelRestTimerNotification,
+} from '../../utils/nativeBridge';
+import {
   AMBIENT_TRACKS,
   AmbientTrack,
   startAmbientSound,
@@ -302,17 +307,25 @@ export const StudyFocusView: React.FC<StudyFocusViewProps> = ({
     if (!running || mode === 'stopwatch' || remaining > 0) return;
 
     if (soundOn) playNotificationSound();
+    triggerHaptic('success');
+    cancelRestTimerNotification();
     handleFinishAndReflect(phaseSeconds, true);
 
     if (mode === 'pomodoro') {
       const nextPhase: PomodoroPhase = phase === 'focus' ? 'shortBreak' : 'focus';
+      const nextSecs = getIntervalSeconds(nextPhase);
       setTimer((prev) => ({
         ...prev,
         phase: nextPhase,
-        remaining: getIntervalSeconds(nextPhase),
+        remaining: nextSecs,
         runStartedAt: Date.now(),
         completedPomodoros: prev.completedPomodoros + (phase === 'focus' ? 1 : 0),
       }));
+      scheduleRestTimerNotification(
+        nextSecs,
+        nextPhase === 'focus' ? 'Hết giờ nghỉ — vào phiên tập trung!' : 'Hoàn thành phiên Pomodoro!',
+        nextPhase === 'focus' ? 'Quay lại hoàn thành mục tiêu ngay trên ZENOX.' : 'Đã tới lúc nghỉ giải lao ngắn.'
+      );
     } else {
       // Countdown finished: keep the zeroed display until the user starts again.
       setTimer((prev) => ({ ...prev, remaining: 0, running: false, runStartedAt: null }));
@@ -322,10 +335,19 @@ export const StudyFocusView: React.FC<StudyFocusViewProps> = ({
 
   const start = () => {
     if (linkedTask && linkedTask.status === 'todo') onStartTask?.(linkedTask.id);
+    triggerHaptic('light');
+    if (mode !== 'stopwatch' && remaining > 0) {
+      scheduleRestTimerNotification(
+        remaining,
+        phase === 'focus' ? 'Hoàn thành phiên tập trung!' : 'Hết giờ nghỉ Pomodoro!',
+        'Quay lại ZENOX để lưu phiên học tập và phản hồi.'
+      );
+    }
     setTimer((prev) => ({ ...prev, running: true, runStartedAt: Date.now() }));
   };
 
-  const pause = () =>
+  const pause = () => {
+    cancelRestTimerNotification();
     setTimer((prev) => ({
       ...prev,
       running: false,
@@ -333,8 +355,10 @@ export const StudyFocusView: React.FC<StudyFocusViewProps> = ({
       remaining,
       elapsed,
     }));
+  };
 
-  const reset = () =>
+  const reset = () => {
+    cancelRestTimerNotification();
     setTimer((prev) => ({
       ...prev,
       running: false,
@@ -347,8 +371,10 @@ export const StudyFocusView: React.FC<StudyFocusViewProps> = ({
           : prev.remaining,
       elapsed: 0,
     }));
+  };
 
   const stopAndSave = () => {
+    cancelRestTimerNotification();
     handleFinishAndReflect(mode === 'stopwatch' ? elapsed : Math.max(0, phaseSeconds - remaining), false);
   };
 

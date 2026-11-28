@@ -18,6 +18,7 @@ import {
   Clock,
   Dumbbell,
   AlertTriangle,
+  Mic,
 } from 'lucide-react';
 import { CalendarEvent, CalendarViewType } from '../../types/calendar';
 import { MealSlot } from '../../types/productivity';
@@ -495,26 +496,55 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
 
         {/* Input Omnibox Area */}
         <div className="p-4 sm:p-5 space-y-3.5 border-b border-slate-100 dark:border-slate-800">
-          <form onSubmit={handleExecute} className="relative">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                setCalendarOverride(null);
-              }}
-              placeholder="Bạn muốn trợ lý ghi nhận điều gì? (vd: Tiêu 50k ăn trưa, Họp 15h chiều mai...)"
-              className="w-full text-xs sm:text-sm pl-4 pr-24 py-3.5 rounded-2xl border-2 border-indigo-500/30 focus:border-indigo-500 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-hidden transition-all shadow-inner"
-            />
-            <button
-              type="submit"
-              disabled={!parsedIntent || parsedIntent.type === 'advice'}
-              className="absolute right-2 top-2 bottom-2 px-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
-            >
-              <span>Thực Hiện</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+          <form onSubmit={handleExecute} className="relative flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setCalendarOverride(null);
+                }}
+                placeholder="Ghi nhanh (vd: Tiêu 50k ăn trưa, Họp 15h mai...)"
+                className="w-full text-base sm:text-sm pl-4 pr-24 sm:pr-28 py-3 rounded-2xl border-2 border-indigo-500/30 focus:border-indigo-500 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-hidden transition-all shadow-inner"
+              />
+              <button
+                type="submit"
+                disabled={!parsedIntent || parsedIntent.type === 'advice'}
+                className="absolute right-1.5 top-1.5 bottom-1.5 px-3 sm:px-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-xs"
+              >
+                <span>Thực Hiện</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {typeof window !== 'undefined' &&
+              Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+                    if (!SR) return;
+                    try {
+                      const rec = new SR();
+                      rec.lang = lang === 'vi' ? 'vi-VN' : 'en-US';
+                      rec.interimResults = false;
+                      rec.maxAlternatives = 1;
+                      rec.onresult = (ev: any) => {
+                        const transcript = ev?.results?.[0]?.[0]?.transcript;
+                        if (transcript) setInput(transcript);
+                      };
+                      rec.start();
+                    } catch {
+                      // Ignore speech init errors
+                    }
+                  }}
+                  title={lang === 'vi' ? 'Nhập nhanh bằng giọng nói' : 'Voice dictation'}
+                  className="p-3 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 dark:text-indigo-300 shrink-0 cursor-pointer transition-colors"
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+              )}
           </form>
 
           {/* Quick Suggestion Chips */}

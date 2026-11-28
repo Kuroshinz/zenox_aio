@@ -6,6 +6,7 @@
 
 import { accountStorage } from './accountStorage';
 import { mergeSyncedGoogleEvents } from '../utils/calendarUtils';
+import { fetchGoogleCalendarEvents } from './googleCalendarSync';
 
 export interface ZenoxAccount {
   id: string;
@@ -183,10 +184,37 @@ export async function registerZenoxAccount(
     };
   }
 
+  let firebaseUid: string | undefined;
+  if (typeof window !== 'undefined') {
+    try {
+      const { registerWithFirebaseEmail } = await import('./auth');
+      const fbUser = await registerWithFirebaseEmail(cleanName, cleanEmail, password);
+      firebaseUid = fbUser.uid;
+    } catch (fbErr: any) {
+      const code = fbErr?.code || '';
+      if (code === 'auth/email-already-in-use') {
+        return {
+          success: false,
+          error: 'Email này đã tồn tại trên hệ thống đám mây. Vui lòng chuyển sang Đăng Nhập.',
+        };
+      }
+      if (code === 'auth/weak-password') {
+        return {
+          success: false,
+          error: 'Mật khẩu bảo mật phải có tối thiểu 6 ký tự.',
+        };
+      }
+      if (code === 'auth/invalid-email') {
+        return { success: false, error: 'Địa chỉ Email không hợp lệ.' };
+      }
+      // Graceful offline / disabled-provider fallback to local vault
+    }
+  }
+
   const salt = generateRandomSalt();
   const passwordHash = await hashWithSalt(password, salt);
   const newAccount: ZenoxAccount = {
-    id: 'zenox-usr-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+    id: firebaseUid || 'zenox-usr-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
     name: cleanName,
     email: cleanEmail,
     passwordHash,
@@ -204,6 +232,7 @@ export async function registerZenoxAccount(
       displayName: cleanName,
       email: cleanEmail,
       photoURL: null,
+      firebaseUid,
     },
     'zenox_vault',
     true
@@ -228,7 +257,43 @@ export async function loginZenoxAccount(
   }
 
   const accounts = getVaultAccounts();
-  const account = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+  let account = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+  let firebaseUid: string | undefined;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const { loginWithFirebaseEmail } = await import('./auth');
+      const fbUser = await loginWithFirebaseEmail(cleanEmail, password);
+      firebaseUid = fbUser.uid;
+      // Sync cloud account into local vault if this device hasn't seen it yet
+      if (!account) {
+        const salt = generateRandomSalt();
+        const passwordHash = await hashWithSalt(password, salt);
+        account = {
+          id: fbUser.uid,
+          name: fbUser.displayName || cleanEmail.split('@')[0],
+          email: cleanEmail,
+          passwordHash,
+          salt,
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+        };
+        accounts.push(account);
+        saveVaultAccounts(accounts);
+      }
+    } catch (fbErr: any) {
+      const code = fbErr?.code || '';
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        if (!account) {
+          return {
+            success: false,
+            error: 'Email hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại.',
+          };
+        }
+      }
+      // Fall back cleanly to local vault verification when offline or local-only account
+    }
+  }
 
   if (!account) {
     return {
@@ -244,12 +309,14 @@ export async function loginZenoxAccount(
     };
   }
 
-  const inputHash = await hashWithSalt(password, account.salt);
-  if (inputHash !== account.passwordHash) {
-    return {
-      success: false,
-      error: 'Mật khẩu không chính xác. Vui lòng kiểm tra lại.',
-    };
+  if (!firebaseUid) {
+    const inputHash = await hashWithSalt(password, account.salt);
+    if (inputHash !== account.passwordHash) {
+      return {
+        success: false,
+        error: 'Mật khẩu không chính xác. Vui lòng kiểm tra lại.',
+      };
+    }
   }
 
   // Update last login
@@ -262,6 +329,7 @@ export async function loginZenoxAccount(
       displayName: account.name,
       email: account.email,
       photoURL: null,
+      firebaseUid,
     },
     'zenox_vault',
     rememberMe
@@ -352,16 +420,109 @@ export function verifyZenoxSession(): ZenoxUser | null {
   }
 }
 
+export async function completeGoogleRedirectLogin(): Promise<{
+  success: boolean;
+  user?: ZenoxUser;
+  error?: string;
+}> {
+  try {
+    const { resolveGoogleRedirectResult } = await import('./auth');
+    const res = await resolveGoogleRedirectResult();
+    if (!res?.user?.email) return { success: false };
+    return finalizeGoogleVaultUser(res.user, res.accessToken, res.user.uid);
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Không thể hoàn tất đăng nhập Google.' };
+  }
+}
+
+function finalizeGoogleVaultUser(
+  appUser: { uid: string; email: string | null; displayName: string | null; photoURL: string | null },
+  accessToken: string | null,
+  firebaseUid?: string
+): { success: boolean; user?: ZenoxUser; error?: string } {
+  if (!appUser?.email) {
+    return { success: false, error: 'Không nhận được thông tin tài khoản từ Google.' };
+  }
+  const cleanEmail = appUser.email.trim().toLowerCase();
+  const cleanName = appUser.displayName?.trim() || cleanEmail.split('@')[0];
+  const safeSub = appUser.uid || 'g_' + cleanEmail.replace(/[^a-z0-9]/g, '_');
+  const googleUid = 'google-' + safeSub;
+
+  const accounts = getVaultAccounts();
+  let existing = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+  if (!existing) {
+    existing = {
+      id: googleUid,
+      name: cleanName,
+      email: cleanEmail,
+      passwordHash: 'google_oauth_managed',
+      salt: 'google_salt',
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+    };
+    accounts.push(existing);
+    saveVaultAccounts(accounts);
+  } else {
+    existing.lastLoginAt = new Date().toISOString();
+    saveVaultAccounts(accounts);
+  }
+
+  const user = establishZenoxSession(
+    {
+      uid: existing.id || googleUid,
+      displayName: cleanName,
+      email: cleanEmail,
+      photoURL:
+        appUser.photoURL ||
+        'https://ui-avatars.com/api/?name=' + encodeURIComponent(cleanName) + '&background=27272a&color=fff',
+      firebaseUid,
+    },
+    'google',
+    true
+  );
+
+  if (accessToken && typeof localStorage !== 'undefined') {
+    localStorage.setItem('gcal_real_access_token', accessToken);
+    localStorage.setItem('gcal_real_token_expires_at', String(Date.now() + 3500 * 1000));
+  }
+
+  return { success: true, user };
+}
+
 /**
  * Sign in or authenticate with a Google Account
  * Dev By Zenox Development
  */
 export async function loginWithGoogleAccount(): Promise<{
   success: boolean;
+  redirecting?: boolean;
   error?: string;
   user?: ZenoxUser;
 }> {
   try {
+    if (typeof window !== 'undefined') {
+      const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+      const isNative = Boolean(cap?.isNativePlatform?.() || window.location.protocol === 'capacitor:');
+      const host = window.location.hostname || '';
+      const isPrivateLanIp =
+        /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+
+      if (isNative) {
+        return {
+          success: false,
+          error:
+            'Trong bản app iOS cài qua file .ipa, Google Web OAuth bị giới hạn trên WebView cục bộ. Vui lòng đăng ký / đăng nhập bằng Email & Mật khẩu bên dưới (hoạt động đầy đủ offline & trên iPhone).',
+        };
+      }
+
+      if (isPrivateLanIp) {
+        return {
+          success: false,
+          error: `Google OAuth không hỗ trợ địa chỉ IP mạng LAN (${host}). Hãy đăng nhập/đăng ký bằng Email bên dưới hoặc truy cập qua HTTPS.`,
+        };
+      }
+    }
+
     let appUser: { uid: string; email: string | null; displayName: string | null; photoURL: string | null } | null = null;
     let accessToken: string | null = null;
     let firebaseUid: string | undefined;
@@ -388,8 +549,24 @@ export async function loginWithGoogleAccount(): Promise<{
         const domain = typeof window !== 'undefined' ? window.location.hostname : 'domain';
         return {
           success: false,
-          error: `Domain web (${domain}) chưa được cấp phép trong Firebase Authentication. Bạn chỉ cần thêm "${domain}" vào Firebase Console > Authentication > Settings > Authorized Domains. Hoặc chuyển sang tab Đăng Ký bên dưới để tạo tài khoản cá nhân và vào Workspace ngay lập tức.`,
+          error: `Domain web (${domain}) chưa được cấp phép trong Firebase Authentication. Bạn cần thêm "${domain}" vào Firebase Console > Authentication > Settings > Authorized Domains, hoặc dùng tab Đăng Ký bên dưới để tạo tài khoản ngay.`,
         };
+      }
+
+      if (
+        fbErr?.code === 'auth/popup-blocked' ||
+        fbErr?.code === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        try {
+          const { googleSignInRedirect } = await import('./auth');
+          await googleSignInRedirect();
+          return { success: false, redirecting: true };
+        } catch (redirErr: any) {
+          return {
+            success: false,
+            error: redirErr?.message || 'Trình duyệt đang chặn pop-up Google. Vui lòng thử lại hoặc dùng Email.',
+          };
+        }
       }
 
       // 2. Secondary fallback via Google Identity Services (identity only; sync happens after consent)
@@ -403,7 +580,7 @@ export async function loginWithGoogleAccount(): Promise<{
       } catch (gisErr: any) {
         console.warn('GIS fallback encounter:', gisErr?.message);
         throw new Error(
-          fbErr?.message || gisErr?.message || 'Không thể mở cửa sổ đăng nhập Google.'
+          gisErr?.message || fbErr?.message || 'Không thể mở cửa sổ đăng nhập Google.'
         );
       }
     }
@@ -412,53 +589,7 @@ export async function loginWithGoogleAccount(): Promise<{
       return { success: false, error: 'Không nhận được thông tin tài khoản từ Google.' };
     }
 
-    const cleanEmail = appUser.email.trim().toLowerCase();
-    const cleanName = appUser.displayName?.trim() || cleanEmail.split('@')[0];
-    const safeSub = appUser.uid || 'g_' + cleanEmail.replace(/[^a-z0-9]/g, '_');
-    const googleUid = 'google-' + safeSub;
-
-    // 3. Register or update account in local vault
-    const accounts = getVaultAccounts();
-    let existing = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
-
-    if (!existing) {
-      existing = {
-        id: googleUid,
-        name: cleanName,
-        email: cleanEmail,
-        passwordHash: 'google_oauth_managed',
-        salt: 'google_salt',
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-      };
-      accounts.push(existing);
-      saveVaultAccounts(accounts);
-    } else {
-      existing.lastLoginAt = new Date().toISOString();
-      saveVaultAccounts(accounts);
-    }
-
-    const user = establishZenoxSession(
-      {
-        uid: existing.id || googleUid,
-        displayName: cleanName,
-        email: cleanEmail,
-        photoURL:
-          appUser.photoURL ||
-          'https://ui-avatars.com/api/?name=' + encodeURIComponent(cleanName) + '&background=27272a&color=fff',
-        firebaseUid,
-      },
-      'google',
-      true
-    );
-
-    if (accessToken && typeof localStorage !== 'undefined') {
-      localStorage.setItem('gcal_real_access_token', accessToken);
-      localStorage.setItem('gcal_real_token_expires_at', String(Date.now() + 3500 * 1000));
-    }
-
-    // Return authenticated user immediately so consent step can ask user whether to sync
-    return { success: true, user };
+    return finalizeGoogleVaultUser(appUser, accessToken, firebaseUid);
   } catch (err: any) {
     return {
       success: false,
@@ -475,7 +606,6 @@ export async function syncGoogleCalendarData(
   uid: string
 ): Promise<{ success: boolean; count: number; error?: string }> {
   try {
-    const { fetchGoogleCalendarEvents } = await import('./googleCalendarSync');
     const googleEvents = await fetchGoogleCalendarEvents(accessToken);
     if (googleEvents && googleEvents.length > 0) {
       const rawExisting = accountStorage.getItem('gcal_events', uid);

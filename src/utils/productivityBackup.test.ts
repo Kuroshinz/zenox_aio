@@ -63,4 +63,38 @@ const withTask = buildProductivityBackup({
 const restored = parseProductivityBackup(withTask);
 assert.strictEqual(restored!.tasks[0].title, 'Kiểm thử sao lưu');
 
+// Active periodized roadmap & saved roadmaps round-trip cleanly across Web <-> iPhone snapshots.
+const withRoadmap = buildProductivityBackup({
+  ...data,
+  ctgPeriodizedRoadmap: {
+    id: 'rm-sync-1',
+    title: 'Cut 2026',
+    createdAt: 100,
+    activePhaseId: 'p-1',
+    phases: [
+      {
+        id: 'p-1',
+        name: 'Giảm mỡ',
+        phaseType: 'cut',
+        startDate: '01/11/2026',
+        endDate: '28/11/2026',
+        startWeightKg: 70,
+        targetWeightKg: 68,
+        startBodyFatPct: 18,
+        targetBodyFatPct: 16,
+        startLbmKg: 57.4,
+        targetLbmKg: 57.1,
+        startFfmi: 19,
+        targetFfmi: 19,
+        targetKcal: 1850,
+        macros: { protein: 150, carbs: 190, fat: 50 },
+      },
+    ],
+  },
+  savedCtgRoadmaps: [],
+});
+const restoredRoadmap = parseProductivityBackup(JSON.parse(JSON.stringify(withRoadmap)));
+assert.strictEqual(restoredRoadmap!.ctgPeriodizedRoadmap?.id, 'rm-sync-1');
+assert.strictEqual(restoredRoadmap!.ctgPeriodizedRoadmap?.phases[0].targetKcal, 1850);
+
 console.log('All productivityBackup tests passed successfully!');

@@ -607,16 +607,16 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                 </div>
               )}
 
-              {/* SETS TABLE */}
-              <div className="space-y-2 overflow-x-auto">
-                {/* Table Header */}
-                <div className="grid grid-cols-12 gap-2 text-[10px] font-mono font-bold text-white/40 uppercase tracking-wider px-3 pb-1">
+              {/* SETS TABLE (Responsive: Stacked Card Rows on iPhone, 12-Col Grid on Desktop) */}
+              <div className="space-y-2">
+                {/* Table Header (Desktop) */}
+                <div className="hidden md:grid grid-cols-12 gap-2 text-[10px] font-mono font-bold text-white/40 uppercase tracking-wider px-3 pb-1">
                   <div className="col-span-2">Hiệp / Loại</div>
                   <div className="col-span-2 text-center">Lần Trước</div>
                   <div className="col-span-3 text-center">Mức Tạ (KG)</div>
                   <div className="col-span-2 text-center">Số Reps</div>
-                  <div className="col-span-2 text-center hidden md:block">1RM Dự Kiến</div>
-                  <div className="col-span-3 md:col-span-1 text-right">Xong</div>
+                  <div className="col-span-2 text-center">1RM Dự Kiến</div>
+                  <div className="col-span-1 text-right">Xong</div>
                 </div>
 
                 {/* Table Rows */}
@@ -655,13 +655,13 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                           : 'bg-white/[0.03] border-white/5 hover:border-white/15'
                         }`}
                     >
-                      {/* 1. Hiệp & Loại Hiệp */}
-                      <div className="col-span-2 flex items-center gap-1.5">
+                      {/* 1. Hiệp & Loại Hiệp (cùng Lần trước thu gọn trên mobile) */}
+                      <div className="col-span-6 md:col-span-2 flex items-center gap-1.5 min-w-0">
                         <button
                           type="button"
                           onClick={() => onCycleSetType(pres.exerciseId, sIdx)}
                           disabled={setItem.completed}
-                          className={`px-2 py-1 rounded-xl text-xs font-mono font-black border transition-colors cursor-pointer ${setItem.setType === 'warmup'
+                          className={`px-2.5 py-1 rounded-xl text-xs font-mono font-black border transition-colors cursor-pointer shrink-0 ${setItem.setType === 'warmup'
                             ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                             : setItem.setType === 'dropset'
                               ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
@@ -673,110 +673,122 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                         >
                           {setItem.setType === 'warmup' ? 'W' : setItem.setType === 'dropset' ? 'D' : setItem.setType === 'failure' ? 'F' : `#${sIdx + 1}`}
                         </button>
-                        <span className="text-[10px] text-white/50 font-mono hidden sm:inline">
+                        <span className="text-[10px] text-white/50 font-mono hidden md:inline">
                           {setItem.setType === 'warmup' ? 'Warmup' : setItem.setType === 'dropset' ? 'Dropset' : setItem.setType === 'failure' ? 'Fail' : 'Working'}
+                        </span>
+                        <span className="text-[10px] text-white/45 font-mono truncate md:hidden">
+                          {curPr ? `Trước: ${curPr.weightKg}k×${curPr.reps}` : 'Mới'}
                         </span>
                       </div>
 
-                      {/* 2. Lần Trước */}
-                      <div className="col-span-2 text-center text-xs font-mono text-white/40">
+                      {/* Mobile row 1 right: E1RM + Hoàn thành button */}
+                      <div className="col-span-6 md:col-span-1 flex items-center justify-end gap-2 md:order-last">
+                        <span className="md:hidden font-mono text-[10px] text-white/55">
+                          ~{e1rm}kg
+                          {isPr && <span className="ml-1 text-amber-300 font-bold">PR</span>}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onToggleSet(pres.exerciseId, sIdx, pres.restSeconds)}
+                          className={`px-3 py-2 md:p-2.5 rounded-xl font-bold text-xs cursor-pointer transition-all flex items-center justify-center gap-1 ${setItem.completed
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-950/50'
+                            : 'bg-white/10 hover:bg-emerald-600 hover:text-white text-white/75'
+                            }`}
+                          title={setItem.completed ? 'Bấm để hủy hoàn thành' : 'Ghi nhận hoàn thành hiệp'}
+                        >
+                          <Check className="w-4 h-4 stroke-[3]" />
+                          <span className="md:hidden text-[11px]">{setItem.completed ? 'Xong' : 'Đánh dấu'}</span>
+                        </button>
+                      </div>
+
+                      {/* 2. Lần Trước (Desktop column) */}
+                      <div className="hidden md:block md:col-span-2 text-center text-xs font-mono text-white/40">
                         {curPr ? `${curPr.weightKg}k × ${curPr.reps}` : '--'}
                       </div>
 
                       {/* 3. Mức Tạ (KG) */}
-                      <div className="col-span-3 flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => onUpdateSet(pres.exerciseId, sIdx, Math.max(0, setItem.weightKg - 2.5), setItem.reps)}
-                          disabled={setItem.completed}
-                          className="w-6 h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.5"
-                          min="0"
-                          value={setItem.weightKg}
-                          onChange={(e) => onUpdateSet(pres.exerciseId, sIdx, Number(e.target.value) || 0, setItem.reps)}
-                          disabled={setItem.completed}
-                          className="w-14 sm:w-16 text-center py-1 px-1.5 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm tabular-nums disabled:opacity-70 focus:border-rose-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg + 2.5, setItem.reps)}
-                          disabled={setItem.completed}
-                          className="w-6 h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
-                        >
-                          +
-                        </button>
-
-                        {/* Barbell Plate Calc */}
-                        {setItem.weightKg >= 20 && (
+                      <div className="col-span-7 md:col-span-3 flex items-center justify-between md:justify-center gap-1 bg-black/25 md:bg-transparent p-1.5 md:p-0 rounded-xl">
+                        <span className="text-[10px] font-mono text-white/45 md:hidden pl-1">KG</span>
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            onClick={() => onOpenPlateCalculator(setItem.weightKg)}
-                            className="p-1 text-white/40 hover:text-rose-400 cursor-pointer text-xs ml-0.5 shrink-0"
-                            title="Xếp bánh tạ đòn Olympic"
+                            onClick={() => onUpdateSet(pres.exerciseId, sIdx, Math.max(0, setItem.weightKg - 2.5), setItem.reps)}
+                            disabled={setItem.completed}
+                            className="w-7 h-7 md:w-6 md:h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
                           >
-                            <Scale className="w-3.5 h-3.5" />
+                            -
                           </button>
-                        )}
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.5"
+                            min="0"
+                            value={setItem.weightKg}
+                            onChange={(e) => onUpdateSet(pres.exerciseId, sIdx, Number(e.target.value) || 0, setItem.reps)}
+                            disabled={setItem.completed}
+                            className="w-14 sm:w-16 text-center py-1 px-1 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-base md:text-sm tabular-nums disabled:opacity-70 focus:border-rose-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg + 2.5, setItem.reps)}
+                            disabled={setItem.completed}
+                            className="w-7 h-7 md:w-6 md:h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
+                          >
+                            +
+                          </button>
+                          {setItem.weightKg >= 20 && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenPlateCalculator(setItem.weightKg)}
+                              className="p-1 text-white/45 hover:text-rose-400 cursor-pointer text-xs shrink-0"
+                              title="Xếp bánh tạ đòn Olympic"
+                            >
+                              <Scale className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* 4. Số Reps */}
-                      <div className="col-span-2 flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, Math.max(1, setItem.reps - 1))}
-                          disabled={setItem.completed}
-                          className="w-6 h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min="1"
-                          value={setItem.reps}
-                          onChange={(e) => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, Number(e.target.value) || 1)}
-                          disabled={setItem.completed}
-                          className="w-12 text-center py-1 px-1.5 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm tabular-nums disabled:opacity-70 focus:border-rose-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, setItem.reps + 1)}
-                          disabled={setItem.completed}
-                          className="w-6 h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
-                        >
-                          +
-                        </button>
+                      <div className="col-span-5 md:col-span-2 flex items-center justify-between md:justify-center gap-1 bg-black/25 md:bg-transparent p-1.5 md:p-0 rounded-xl">
+                        <span className="text-[10px] font-mono text-white/45 md:hidden pl-1">Reps</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, Math.max(1, setItem.reps - 1))}
+                            disabled={setItem.completed}
+                            className="w-7 h-7 md:w-6 md:h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            value={setItem.reps}
+                            onChange={(e) => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, Number(e.target.value) || 1)}
+                            disabled={setItem.completed}
+                            className="w-11 sm:w-12 text-center py-1 px-1 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-base md:text-sm tabular-nums disabled:opacity-70 focus:border-rose-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, setItem.reps + 1)}
+                            disabled={setItem.completed}
+                            className="w-7 h-7 md:w-6 md:h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
 
-                      {/* 5. 1RM Dự kiến */}
-                      <div className="col-span-2 text-center font-mono text-xs hidden md:block">
+                      {/* 5. 1RM Dự kiến (Desktop column) */}
+                      <div className="hidden md:block md:col-span-2 text-center font-mono text-xs">
                         <span className="text-white/60 font-bold">~{e1rm} kg</span>
                         {isPr && (
                           <span className="ml-1 text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
                             PR
                           </span>
                         )}
-                      </div>
-
-                      {/* 6. Nút Hoàn Thành */}
-                      <div className="col-span-3 md:col-span-1 flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => onToggleSet(pres.exerciseId, sIdx, pres.restSeconds)}
-                          className={`p-2.5 rounded-xl font-bold cursor-pointer transition-all flex items-center justify-center ${setItem.completed
-                            ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-950/50'
-                            : 'bg-white/10 hover:bg-emerald-600 hover:text-white text-white/60'
-                            }`}
-                          title={setItem.completed ? 'Bấm để hủy hoàn thành' : 'Ghi nhận hoàn thành hiệp'}
-                        >
-                          <Check className="w-4 h-4 stroke-[3]" />
-                        </button>
                       </div>
                     </div>
                   );
