@@ -175,4 +175,38 @@ test('accountStorage and syncConsent stay strictly isolated from unscoped root g
   accountStorage.setItem('gcal_events', JSON.stringify([]), reg.user.uid);
   assert.equal(getAccountSyncConsent(reg.user.uid, reg.user.email), 'declined');
   assert.equal(accountStorage.getItem('gcal_events', reg.user.uid), '[]');
+
+  // Focus timer & weekly goals stay isolated per account UID
+  accountStorage.setItem('gcal_focus_timer', JSON.stringify({ linkedTaskId: 'task-999' }), reg.user.uid);
+  accountStorage.setItem('gcal_weekly_goals', JSON.stringify([{ id: 'g1', category: 'work', targetHours: 12 }]), reg.user.uid);
+  assert.equal(accountStorage.getItem('gcal_focus_timer', 'other-uid'), null);
+  assert.equal(accountStorage.getItem('gcal_weekly_goals', 'other-uid'), null);
+});
+
+test('loginCloneDemoAccount seeds full Phase 1-4 test data and supports password login', async () => {
+  const {
+    loginCloneDemoAccount,
+    CLONE_ACCOUNT_EMAIL,
+    CLONE_ACCOUNT_PASSWORD,
+    CLONE_ACCOUNT_UID,
+  } = await import('./cloneAccountSeed');
+
+  const cloneUser = await loginCloneDemoAccount(true);
+  assert.equal(cloneUser.uid, CLONE_ACCOUNT_UID);
+  assert.equal(cloneUser.email, CLONE_ACCOUNT_EMAIL);
+
+  const photosRaw = accountStorage.getItem('gcal_prod_body_photos', CLONE_ACCOUNT_UID);
+  const checkinsRaw = accountStorage.getItem('gcal_ctg_weekly_checkins', CLONE_ACCOUNT_UID);
+  const mealsRaw = accountStorage.getItem('gcal_ctg_meals', CLONE_ACCOUNT_UID);
+  const eventsRaw = accountStorage.getItem('gcal_events', CLONE_ACCOUNT_UID);
+  assert.ok(photosRaw && JSON.parse(photosRaw).length >= 2, 'Clone account should have before/after photos');
+  assert.ok(checkinsRaw && JSON.parse(checkinsRaw).length >= 2, 'Clone account should have weekly checkins');
+  assert.ok(mealsRaw && JSON.parse(mealsRaw).length >= 15, 'Clone account should have multi-week meals');
+  assert.ok(eventsRaw && JSON.parse(eventsRaw).length >= 4, 'Clone account should have calendar events');
+  assert.equal(getAccountSyncConsent(CLONE_ACCOUNT_UID, CLONE_ACCOUNT_EMAIL), 'declined');
+
+  // Also verify manual email/password sign-in works cleanly
+  const pwLogin = await loginZenoxAccount(CLONE_ACCOUNT_EMAIL, CLONE_ACCOUNT_PASSWORD);
+  assert.equal(pwLogin.success, true);
+  assert.equal(pwLogin.user?.uid, CLONE_ACCOUNT_UID);
 });

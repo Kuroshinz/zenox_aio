@@ -22,6 +22,10 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  RefreshCw,
+  ArrowUp,
+  ArrowDown,
+  TrendingUp,
 } from 'lucide-react';
 import {
   PlannedSession,
@@ -38,6 +42,7 @@ import {
   calculateProgressiveOverload,
   compareProgressiveOverload,
   calculateMesocycleWeekPlan,
+  getSwapCandidatesForExercise,
 } from '../../../utils/fitnessMetrics';
 
 export interface ActiveSessionState {
@@ -70,10 +75,18 @@ export interface LiveWorkoutSessionViewProps {
   onCycleSetType: (exerciseId: string, setIndex: number) => void;
   onUpdateRpe: (exerciseId: string, setIndex: number, rpe: number) => void;
   onCopyPrevSet: (exerciseId: string, setIndex: number) => void;
-  onApplyQuickScale: (exerciseId: string, setIndex: number, factor: number) => void;
+  onApplyQuickScale: (
+    exerciseId: string,
+    setIndex: number,
+    factor: number,
+    targetSetType?: 'normal' | 'warmup' | 'dropset' | 'failure'
+  ) => void;
   onAddSet: (exerciseId: string) => void;
   onRemoveSet: (exerciseId: string, setIndex: number) => void;
   onAddExercise: (exerciseId: string) => void;
+  onSwapExercise?: (oldExerciseId: string, newExerciseId: string) => void;
+  onMoveExercise?: (index: number, direction: 'up' | 'down') => void;
+  onInspectExercise?: (exerciseId: string) => void;
   onFinishSession: () => void;
   onCancelSession: () => void;
   onMinimize: () => void;
@@ -101,6 +114,9 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
   onAddSet,
   onRemoveSet,
   onAddExercise,
+  onSwapExercise,
+  onMoveExercise,
+  onInspectExercise,
   onFinishSession,
   onCancelSession,
   onMinimize,
@@ -115,8 +131,10 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
   const [extraExId, setExtraExId] = useState('');
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
   const [showAddExModal, setShowAddExModal] = useState(false);
+  const [swappingExId, setSwappingExId] = useState<string | null>(null);
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [selectedSetByEx, setSelectedSetByEx] = useState<Record<string, number>>({});
 
   const mesoPlan = useMemo(() => {
     return calculateMesocycleWeekPlan(activeMesoWeek);
@@ -206,11 +224,10 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
             <button
               type="button"
               onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}
-              className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors ${
-                isHeaderExpanded
-                  ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/70 hover:text-white'
-              }`}
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors ${isHeaderExpanded
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/70 hover:text-white'
+                }`}
               title={isHeaderExpanded ? 'Thu gọn bảng chỉ số' : 'Xem chi tiết chỉ số & RP Deload'}
             >
               <span className="hidden md:inline">{isHeaderExpanded ? 'Thu gọn' : 'Chỉ số'}</span>
@@ -280,13 +297,12 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                 key={pres.exerciseId}
                 type="button"
                 onClick={() => scrollToExercise(pres.exerciseId)}
-                className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer flex items-center gap-1.5 border ${
-                  isAllDone
-                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                    : completedSets > 0
+                className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer flex items-center gap-1.5 border ${isAllDone
+                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                  : completedSets > 0
                     ? 'bg-indigo-950/40 border-indigo-500/40 text-indigo-300'
                     : 'bg-white/5 border-white/10 text-white/70 hover:border-white/20 hover:text-white'
-                }`}
+                  }`}
               >
                 {isAllDone ? (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -421,7 +437,8 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
             <div
               key={pres.exerciseId}
               id={`exercise-${pres.exerciseId}`}
-              className="bg-[#0b040c] rounded-3xl border border-white/10 p-4 sm:p-5 shadow-xl space-y-4 relative overflow-hidden scroll-mt-24"
+              className={`bg-[#0b040c] rounded-3xl border p-4 sm:p-5 shadow-xl space-y-4 relative overflow-hidden scroll-mt-24 ${pres.supersetId ? 'border-purple-500/40' : 'border-white/10'
+                }`}
             >
               {/* Exercise Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
@@ -437,6 +454,11 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                       >
                         {ex ? MUSCLE_LABEL[ex.muscle as MuscleGroup] : 'Cơ'} • {ex?.equipment}
                       </span>
+                      {pres.supersetId && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 font-mono font-bold uppercase">
+                          Superset {pres.supersetId.toUpperCase()}
+                        </span>
+                      )}
                       <h3 className="font-black text-base sm:text-lg text-white">
                         {ex?.name || pres.exerciseId}
                       </h3>
@@ -446,10 +468,20 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                         💡 {ex.cue}
                       </p>
                     )}
+                    {ex?.equipment === 'barbell' && (() => {
+                      const refWeight = activeSession.sets[`${pres.exerciseId}-0`]?.weightKg || curPr?.weightKg || 40;
+                      const plates = calculateBarbellPlates(refWeight);
+                      if (plates.platesPerSide.length === 0) return null;
+                      return (
+                        <p className="text-[11px] font-mono text-amber-300/80 mt-0.5">
+                          Bánh tạ ({refWeight}kg · đòn 20kg): Mỗi bên {plates.platesPerSide.map((pl) => `${pl.count}×${pl.plateKg}kg`).join(' + ')}
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-center font-mono text-xs flex-wrap">
+                <div className="flex items-center gap-1.5 self-start sm:self-center font-mono text-xs flex-wrap">
                   <span className="text-white/40">
                     Mục tiêu: <strong className="text-white">{pres.reps} reps • RPE {pres.rpe}</strong>
                   </span>
@@ -459,8 +491,94 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                       PR: {curPr.weightKg}kg × {curPr.reps}
                     </span>
                   )}
+                  {onInspectExercise && (
+                    <button
+                      type="button"
+                      onClick={() => onInspectExercise(pres.exerciseId)}
+                      className="px-2 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-sans font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      title="Xem biểu đồ E1RM & lịch sử các buổi trước"
+                    >
+                      <TrendingUp className="w-3 h-3" />
+                      <span>1RM &amp; Lịch sử</span>
+                    </button>
+                  )}
+                  {onSwapExercise && (
+                    <button
+                      type="button"
+                      onClick={() => setSwappingExId(swappingExId === pres.exerciseId ? null : pres.exerciseId)}
+                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-white/80 font-sans font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      title="Đổi bài tập tương đương khi máy ở gym đang bận"
+                    >
+                      <RefreshCw className="w-3 h-3 text-rose-400" />
+                      <span>Đổi bài</span>
+                    </button>
+                  )}
+                  {onMoveExercise && (
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        disabled={pIdx === 0}
+                        onClick={() => onMoveExercise(pIdx, 'up')}
+                        className="p-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 disabled:opacity-30 cursor-pointer"
+                        title="Đưa lên trước"
+                      >
+                        <ArrowUp className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pIdx === activeSession.prescriptions.length - 1}
+                        onClick={() => onMoveExercise(pIdx, 'down')}
+                        className="p-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 disabled:opacity-30 cursor-pointer"
+                        title="Đưa xuống sau"
+                      >
+                        <ArrowDown className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Inline In-Gym Swap Exercise Selector ("Thay thế bài này bằng") */}
+              {swappingExId === pres.exerciseId && onSwapExercise && (
+                <div className="p-3 rounded-2xl bg-rose-950/25 border border-rose-500/35 space-y-2 text-xs animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-rose-300">
+                      Thay thế bài này bằng (ưu tiên cùng nhóm cơ):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSwappingExId(null)}
+                      className="text-white/50 hover:text-white cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+                    {getSwapCandidatesForExercise(
+                      pres.exerciseId,
+                      customExercises,
+                      activeSession.prescriptions.map((p) => p.exerciseId)
+                    )
+                      .slice(0, 10)
+                      .map((cand) => (
+                        <button
+                          key={cand.id}
+                          type="button"
+                          onClick={() => {
+                            onSwapExercise(pres.exerciseId, cand.id);
+                            setSwappingExId(null);
+                          }}
+                          className={`px-2.5 py-1 rounded-xl border text-[11px] font-semibold cursor-pointer transition-colors ${cand.muscle === ex?.muscle
+                            ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-200'
+                            : 'bg-white/5 hover:bg-white/15 border-white/10 text-white/75'
+                            }`}
+                        >
+                          {cand.name} ({MUSCLE_LABEL[cand.muscle]} · {cand.equipment})
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
 
               {/* Progressive Overload Anchor from Last Workout */}
               {liveOverload.hasPreviousData && (
@@ -515,15 +633,27 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
 
                   const isPr = curPr ? setItem.weightKg > curPr.weightKg : false;
                   const e1rm = Math.round(setItem.weightKg * (1 + setItem.reps / 30));
+                  const isTargetRow = selectedSetByEx[pres.exerciseId] === sIdx && !setItem.completed;
 
                   return (
                     <div
                       key={sIdx}
-                      className={`p-3 rounded-2xl border transition-all grid grid-cols-12 gap-2 items-center ${
-                        setItem.completed
-                          ? 'bg-emerald-950/20 border-emerald-500/40 shadow-xs'
+                      onMouseDown={() =>
+                        setSelectedSetByEx((prev) =>
+                          prev[pres.exerciseId] === sIdx ? prev : { ...prev, [pres.exerciseId]: sIdx }
+                        )
+                      }
+                      onFocus={() =>
+                        setSelectedSetByEx((prev) =>
+                          prev[pres.exerciseId] === sIdx ? prev : { ...prev, [pres.exerciseId]: sIdx }
+                        )
+                      }
+                      className={`p-3 rounded-2xl border transition-all grid grid-cols-12 gap-2 items-center ${setItem.completed
+                        ? 'bg-emerald-950/20 border-emerald-500/40 shadow-xs'
+                        : isTargetRow
+                          ? 'bg-rose-950/20 border-rose-500/40 shadow-xs'
                           : 'bg-white/[0.03] border-white/5 hover:border-white/15'
-                      }`}
+                        }`}
                     >
                       {/* 1. Hiệp & Loại Hiệp */}
                       <div className="col-span-2 flex items-center gap-1.5">
@@ -531,15 +661,14 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                           type="button"
                           onClick={() => onCycleSetType(pres.exerciseId, sIdx)}
                           disabled={setItem.completed}
-                          className={`px-2 py-1 rounded-xl text-xs font-mono font-black border transition-colors cursor-pointer ${
-                            setItem.setType === 'warmup'
-                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                              : setItem.setType === 'dropset'
+                          className={`px-2 py-1 rounded-xl text-xs font-mono font-black border transition-colors cursor-pointer ${setItem.setType === 'warmup'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : setItem.setType === 'dropset'
                               ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
                               : setItem.setType === 'failure'
-                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                              : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
-                          }`}
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                            }`}
                           title="Nhấp để đổi loại hiệp: [1] Chính • [W] Khởi động • [D] Drop set • [F] Thất bại"
                         >
                           {setItem.setType === 'warmup' ? 'W' : setItem.setType === 'dropset' ? 'D' : setItem.setType === 'failure' ? 'F' : `#${sIdx + 1}`}
@@ -560,24 +689,25 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                           type="button"
                           onClick={() => onUpdateSet(pres.exerciseId, sIdx, Math.max(0, setItem.weightKg - 2.5), setItem.reps)}
                           disabled={setItem.completed}
-                          className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
+                          className="w-6 h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
                         >
                           -
                         </button>
                         <input
                           type="number"
+                          inputMode="decimal"
                           step="0.5"
                           min="0"
                           value={setItem.weightKg}
                           onChange={(e) => onUpdateSet(pres.exerciseId, sIdx, Number(e.target.value) || 0, setItem.reps)}
                           disabled={setItem.completed}
-                          className="w-12 text-center py-1 px-1 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm disabled:opacity-70 focus:border-rose-500 outline-none"
+                          className="w-14 sm:w-16 text-center py-1 px-1.5 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm tabular-nums disabled:opacity-70 focus:border-rose-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none"
                         />
                         <button
                           type="button"
                           onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg + 2.5, setItem.reps)}
                           disabled={setItem.completed}
-                          className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
+                          className="w-6 h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
                         >
                           +
                         </button>
@@ -587,7 +717,7 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                           <button
                             type="button"
                             onClick={() => onOpenPlateCalculator(setItem.weightKg)}
-                            className="p-1 text-white/40 hover:text-rose-400 cursor-pointer text-xs ml-0.5"
+                            className="p-1 text-white/40 hover:text-rose-400 cursor-pointer text-xs ml-0.5 shrink-0"
                             title="Xếp bánh tạ đòn Olympic"
                           >
                             <Scale className="w-3.5 h-3.5" />
@@ -601,23 +731,24 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                           type="button"
                           onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, Math.max(1, setItem.reps - 1))}
                           disabled={setItem.completed}
-                          className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
+                          className="w-6 h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
                         >
                           -
                         </button>
                         <input
                           type="number"
+                          inputMode="numeric"
                           min="1"
                           value={setItem.reps}
                           onChange={(e) => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, Number(e.target.value) || 1)}
                           disabled={setItem.completed}
-                          className="w-11 text-center py-1 px-1 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm disabled:opacity-70 focus:border-rose-500 outline-none"
+                          className="w-12 text-center py-1 px-1.5 rounded-xl bg-black/40 border border-white/10 text-white font-mono font-black text-sm tabular-nums disabled:opacity-70 focus:border-rose-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none"
                         />
                         <button
                           type="button"
                           onClick={() => onUpdateSet(pres.exerciseId, sIdx, setItem.weightKg, setItem.reps + 1)}
                           disabled={setItem.completed}
-                          className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
+                          className="w-6 h-6 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer disabled:opacity-30"
                         >
                           +
                         </button>
@@ -638,11 +769,10 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                         <button
                           type="button"
                           onClick={() => onToggleSet(pres.exerciseId, sIdx, pres.restSeconds)}
-                          className={`p-2.5 rounded-xl font-bold cursor-pointer transition-all flex items-center justify-center ${
-                            setItem.completed
-                              ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-950/50'
-                              : 'bg-white/10 hover:bg-emerald-600 hover:text-white text-white/60'
-                          }`}
+                          className={`p-2.5 rounded-xl font-bold cursor-pointer transition-all flex items-center justify-center ${setItem.completed
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-950/50'
+                            : 'bg-white/10 hover:bg-emerald-600 hover:text-white text-white/60'
+                            }`}
                           title={setItem.completed ? 'Bấm để hủy hoàn thành' : 'Ghi nhận hoàn thành hiệp'}
                         >
                           <Check className="w-4 h-4 stroke-[3]" />
@@ -689,22 +819,73 @@ export const LiveWorkoutSessionView: React.FC<LiveWorkoutSessionViewProps> = ({
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5 text-xs font-mono">
-                  <button
-                    type="button"
-                    onClick={() => onApplyQuickScale(pres.exerciseId, pres.sets - 1, 0.8)}
-                    className="px-2.5 py-1 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold cursor-pointer transition-colors"
-                  >
-                    🔥 Drop-set (-20%)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onApplyQuickScale(pres.exerciseId, pres.sets - 1, 0.6)}
-                    className="px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold cursor-pointer transition-colors"
-                  >
-                    🏋️ Khởi động (60%)
-                  </button>
-                </div>
+                {(() => {
+                  const explicitIdx = selectedSetByEx[pres.exerciseId];
+                  const hasExplicit = explicitIdx !== undefined && explicitIdx >= 0 && explicitIdx < pres.sets;
+                  const uncompletedIndices = Array.from({ length: pres.sets }, (_, i) => i).filter(
+                    (i) => !activeSession.sets[`${pres.exerciseId}-${i}`]?.completed
+                  );
+                  const dropTargetIdx = hasExplicit
+                    ? explicitIdx
+                    : (uncompletedIndices[uncompletedIndices.length - 1] ?? Math.max(0, pres.sets - 1));
+                  const warmupTargetIdx = hasExplicit
+                    ? explicitIdx
+                    : (uncompletedIndices[0] ?? 0);
+
+                  return (
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs font-mono">
+                      <select
+                        value={hasExplicit ? String(explicitIdx) : 'auto'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedSetByEx((prev) => {
+                            const next = { ...prev };
+                            if (val === 'auto') {
+                              delete next[pres.exerciseId];
+                            } else {
+                              next[pres.exerciseId] = Number(val);
+                            }
+                            return next;
+                          });
+                        }}
+                        className="px-2 py-1 rounded-xl bg-white/5 border border-white/15 text-white/80 text-[11px] font-mono focus:outline-none focus:border-rose-500 cursor-pointer"
+                        title="Chọn hiệp mục tiêu để áp dụng Drop-set hoặc Khởi động (nhấp vào hàng bất kỳ để chọn nhanh)"
+                      >
+                        <option value="auto" className="bg-gray-900 text-white">
+                          Hiệp tự động
+                        </option>
+                        {Array.from({ length: pres.sets }, (_, i) => (
+                          <option key={`tgt-${pres.exerciseId}-${i}`} value={String(i)} className="bg-gray-900 text-white">
+                            Hiệp #{i + 1}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onApplyQuickScale(pres.exerciseId, dropTargetIdx, 0.8, 'dropset');
+                          setSelectedSetByEx((prev) => ({ ...prev, [pres.exerciseId]: dropTargetIdx }));
+                        }}
+                        className="px-2.5 py-1 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold cursor-pointer transition-colors"
+                        title={`Giảm 20% mức tạ & đánh dấu Dropset cho Hiệp #${dropTargetIdx + 1}`}
+                      >
+                        🔥 Drop-set #{dropTargetIdx + 1} (-20%)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onApplyQuickScale(pres.exerciseId, warmupTargetIdx, 0.6, 'warmup');
+                          setSelectedSetByEx((prev) => ({ ...prev, [pres.exerciseId]: warmupTargetIdx }));
+                        }}
+                        className="px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold cursor-pointer transition-colors"
+                        title={`Đặt mức tạ 60% & đánh dấu Khởi động (Warmup) cho Hiệp #${warmupTargetIdx + 1}`}
+                      >
+                        🏋️ Khởi động #{warmupTargetIdx + 1} (60%)
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           );

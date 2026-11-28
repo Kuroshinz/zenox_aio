@@ -31,13 +31,19 @@ import {
   CtgPeriodizedRoadmap,
   CtgProfile,
   GOAL_LABEL,
+  MealLog,
   NutritionSettings,
   PhotoPose,
+  PlannedSession,
+  WeeklyCheckinRecord,
+  WorkoutSession,
 } from '../../../types/productivity';
 import {
   bmi,
   bmiLabel,
   bmr,
+  buildWeeklyCheckinDraft,
+  calorieTarget,
   deltaSummary,
   etaWeeks,
   fatMassKg,
@@ -46,8 +52,10 @@ import {
   fmt1,
   fmtSigned,
   leanMassKg,
+  macroTargets,
   sortPoints,
   tdee,
+  todayString,
   withUnit,
 } from '../../../utils/fitnessMetrics';
 import { ChartSeries, MultiSeriesLineChart } from '../../charts/SimpleCharts';
@@ -67,6 +75,12 @@ interface InBodyTabProps {
   onUpdateCtgPeriodizedRoadmap?: (roadmap: CtgPeriodizedRoadmap | null) => void;
   nutritionSettings?: NutritionSettings;
   onUpdateNutritionSettings?: (patch: Partial<NutritionSettings>) => void;
+  weeklyCheckins?: WeeklyCheckinRecord[];
+  onAddWeeklyCheckin?: (checkin: Omit<WeeklyCheckinRecord, 'id' | 'createdAt'>) => WeeklyCheckinRecord;
+  onDeleteWeeklyCheckin?: (id: string) => void;
+  plannedSessions?: PlannedSession[];
+  workoutSessions?: WorkoutSession[];
+  meals?: MealLog[];
 }
 
 const POSE_LABELS: Record<PhotoPose, { label: string; badgeClass: string }> = {
@@ -129,6 +143,12 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
   onUpdateCtgPeriodizedRoadmap,
   nutritionSettings,
   onUpdateNutritionSettings,
+  weeklyCheckins = [],
+  onAddWeeklyCheckin,
+  onDeleteWeeklyCheckin,
+  plannedSessions = [],
+  workoutSessions = [],
+  meals = [],
 }) => {
   const sorted = useMemo(() => sortPoints(points), [points]);
   const first = useMemo(() => (sorted.length > 0 ? sorted[0] : null), [sorted]);
@@ -152,8 +172,40 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
   // Lightbox & Compare states
   const [lightboxPhoto, setLightboxPhoto] = useState<BodyCheckPhoto | null>(null);
   const [compareMode, setCompareMode] = useState(false);
+  const [compareStyle, setCompareStyle] = useState<'slider' | 'side_by_side'>('slider');
+  const [sliderPct, setSliderPct] = useState(50);
   const [beforePhotoId, setBeforePhotoId] = useState<string | null>(null);
   const [afterPhotoId, setAfterPhotoId] = useState<string | null>(null);
+  const [checkinEnergy, setCheckinEnergy] = useState<number>(4);
+  const [checkinNote, setCheckinNote] = useState<string>('');
+
+  const curEffectiveWeight = latest?.weightKg ?? profile.targetWeightKg ?? 65;
+  const curTargetKcal =
+    nutritionSettings?.appliedTdeeKcal
+      ? calorieTarget(nutritionSettings.appliedTdeeKcal, profile.goal)
+      : calorieTarget(tdee(profile, curEffectiveWeight), profile.goal);
+  const curMacroTargets = macroTargets(
+    curTargetKcal,
+    curEffectiveWeight,
+    profile.goal,
+    nutritionSettings ?? { overrides: {}, tdeeOffset: 0 }
+  );
+  const weeklyCheckinDraft = useMemo(
+    () =>
+      buildWeeklyCheckinDraft({
+        weekEndDateStr: todayString(),
+        bodyPoints: points,
+        plannedSessions,
+        workoutSessions,
+        meals,
+        currentTargets: { kcal: curTargetKcal, protein: curMacroTargets.protein },
+        targetSnapshots: nutritionSettings?.targetSnapshots,
+        bodyPhotos,
+        energyScore: checkinEnergy,
+        adherenceNote: checkinNote.trim() || undefined,
+      }),
+    [points, plannedSessions, workoutSessions, meals, curTargetKcal, curMacroTargets.protein, nutritionSettings?.targetSnapshots, bodyPhotos, checkinEnergy, checkinNote]
+  );
 
   const sortedPhotos = useMemo(() => {
     return [...bodyPhotos].sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : 0));
@@ -418,6 +470,9 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
             fat: activePhase.macros.fat,
           },
         },
+        appliedTdeeKcal: undefined,
+        appliedTdeeAt: undefined,
+        appliedTdeeStartWeightKg: undefined,
       });
     }
 
@@ -465,19 +520,22 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     const w = Number(weightKg);
-    const bf = Number(bodyFatPct);
-    if (!weightKg || !bodyFatPct || isNaN(w) || isNaN(bf)) {
-      notifyError('Lỗi dữ liệu!', 'Vui lòng nhập đầy đủ cân nặng và % mỡ hợp lệ.');
+    if (!weightKg || isNaN(w)) {
+      notifyError('Lỗi dữ liệu!', 'Vui lòng nhập cân nặng hợp lệ.');
       return;
     }
     if (w < 30 || w > 250) {
       notifyWarning('Cảnh báo cân nặng!', 'Cân nặng cần nằm trong khoảng 30kg đến 250kg.');
       return;
     }
-    if (bf < 3 || bf > 60) {
-      notifyWarning('Cảnh báo % mỡ!', '% mỡ cơ thể cần nằm trong khoảng 3% đến 60%.');
+    const rawBf = bodyFatPct.trim();
+    const fallbackBf = latest?.bodyFatPct ?? profile.targetBodyFatPct ?? 18;
+    const parsedBf = rawBf === '' ? fallbackBf : Number(rawBf);
+    if (isNaN(parsedBf)) {
+      notifyError('Lỗi dữ liệu!', '% mỡ ước chừng không hợp lệ (hoặc để trống để giữ mức ước tính hiện tại).');
       return;
     }
+    const bf = Math.max(3, Math.min(65, Math.round(parsedBf * 10) / 10));
     onAddPoint({
       date,
       weightKg: w,
@@ -485,14 +543,20 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
       chestCm: chestCm ? Number(chestCm) : undefined,
       armCm: armCm ? Number(armCm) : undefined,
       thighCm: thighCm ? Number(thighCm) : undefined,
-      note: note.trim() || undefined,
+      note: note.trim() || (rawBf === '' ? 'Cân nhanh (giữ % mỡ ước tính)' : undefined),
     });
     setShowForm(false);
     setNote('');
-    notifySuccess('Đã lưu chỉ số cơ thể!', `Cân nặng ${w}kg · ${bf}% mỡ đã được ghi nhận.`, {
-      category: 'fitness',
-      targetView: 'health',
-    });
+    notifySuccess(
+      'Đã lưu chỉ số cơ thể!',
+      rawBf === ''
+        ? `Cân nặng ${w}kg (giữ ~${bf}% mỡ ước tính) đã được ghi nhận.`
+        : `Cân nặng ${w}kg · ~${bf}% mỡ ước tính đã được ghi nhận.`,
+      {
+        category: 'fitness',
+        targetView: 'health',
+      }
+    );
   };
 
   return (
@@ -761,10 +825,10 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
             <div>
               <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
                 <Eye className="w-4 h-4 text-blue-500" />
-                Bảng Đối Chiếu Hình Thể & Phân Khúc % Mỡ ({profile.sex === 'male' ? 'Nam Giới' : 'Nữ Giới'})
+                Bảng Ước Lượng % Mỡ Tham Khảo ({profile.sex === 'male' ? 'Nam Giới' : 'Nữ Giới'})
               </h3>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                Chạm vào phân khúc tương ứng với vóc dáng hiện tại của bạn để điền nhanh % mỡ vào nhật ký.
+                % mỡ chỉ mang tính ước chừng tương đối (mắt thường / máy InBody có sai số ±3–5%). Chạm để điền nhanh hoặc bỏ trống khi chỉ cân nặng.
               </p>
             </div>
             <button
@@ -855,13 +919,13 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-semibold text-gray-400 uppercase">% Mỡ (Fat %)</label>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase">% Mỡ ước chừng (tùy chọn)</label>
               <input
                 type="number"
                 step="0.1"
-                required
                 value={bodyFatPct}
                 onChange={(e) => setBodyFatPct(e.target.value)}
+                placeholder={`~${latest?.bodyFatPct ?? profile.targetBodyFatPct ?? 18}%`}
                 className="mt-1 w-full text-xs px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
               />
             </div>
@@ -1163,6 +1227,12 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-600/15 text-rose-400 border border-[#2563EB]/25">
                 {bodyPhotos.length} ảnh
               </span>
+              <span
+                className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/25"
+                title="Ảnh Check Body được lưu độc lập: xóa hoặc chỉnh sửa mốc đo cân nặng/InBody không làm mất ảnh."
+              >
+                Tách rời số đo
+              </span>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Hình ảnh trực quan không bao giờ nói dối: theo dõi cơ bắp, độ nét múi bụng và tỉ lệ cơ thể thực tế
@@ -1213,6 +1283,56 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
                 </span>
               </div>
 
+              <div className="flex items-center flex-wrap gap-2">
+                <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/10 border border-white/10 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setCompareStyle('slider')}
+                    className={`px-2 py-1 rounded-md font-bold cursor-pointer transition-colors ${
+                      compareStyle === 'slider' ? 'bg-indigo-600 text-white' : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    Thanh kéo Slider
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompareStyle('side_by_side')}
+                    className={`px-2 py-1 rounded-md font-bold cursor-pointer transition-colors ${
+                      compareStyle === 'side_by_side' ? 'bg-indigo-600 text-white' : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    Song song
+                  </button>
+                </div>
+
+                {(['front', 'side', 'back'] as PhotoPose[]).map((poseKey) => {
+                  const samePose = sortedPhotos.filter((p) => p.pose === poseKey);
+                  return (
+                    <button
+                      key={`pair-${poseKey}`}
+                      type="button"
+                      disabled={samePose.length < 2}
+                      onClick={() => {
+                        setBeforePhotoId(samePose[0].id);
+                        setAfterPhotoId(samePose[samePose.length - 1].id);
+                      }}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition-colors ${
+                        samePose.length >= 2
+                          ? 'bg-white/10 hover:bg-white/20 text-white border-white/20 cursor-pointer'
+                          : 'bg-white/5 text-white/30 border-white/5 cursor-not-allowed'
+                      }`}
+                      title={
+                        samePose.length >= 2
+                          ? `Ghép cặp ${samePose.length} ảnh góc ${POSE_LABELS[poseKey].label}`
+                          : `Cần ≥ 2 ảnh góc ${POSE_LABELS[poseKey].label} để ghép cặp`
+                      }
+                    >
+                      Ghép {POSE_LABELS[poseKey].label} ({samePose.length})
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* Quick diff badges */}
               <div className="flex items-center flex-wrap gap-2 text-xs">
                 {(() => {
@@ -1257,8 +1377,98 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
               </div>
             </div>
 
-            {/* Side-by-Side Dual Photos */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Interactive Overlay Slider OR Side-by-Side Dual Photos */}
+            {compareStyle === 'slider' ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-white/20 text-white">
+                      Mốc Trước (Trái)
+                    </span>
+                    <select
+                      value={beforePhoto.id}
+                      onChange={(e) => setBeforePhotoId(e.target.value)}
+                      className="text-[11px] bg-white/10 text-white px-2 py-1 rounded-lg border border-white/20 focus:outline-none"
+                    >
+                      {sortedPhotos.map((p) => (
+                        <option key={`sl-bf-${p.id}`} value={p.id} className="bg-gray-900 text-white">
+                          {p.date} · {POSE_LABELS[p.pose].label} {p.weightKg ? `(${p.weightKg}kg)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-rose-600 text-white">
+                      Mốc Sau (Phải)
+                    </span>
+                    <select
+                      value={afterPhoto.id}
+                      onChange={(e) => setAfterPhotoId(e.target.value)}
+                      className="text-[11px] bg-white/10 text-white px-2 py-1 rounded-lg border border-white/20 focus:outline-none"
+                    >
+                      {sortedPhotos.map((p) => (
+                        <option key={`sl-af-${p.id}`} value={p.id} className="bg-gray-900 text-white">
+                          {p.date} · {POSE_LABELS[p.pose].label} {p.weightKg ? `(${p.weightKg}kg)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="relative max-w-md mx-auto aspect-[3/4] rounded-2xl overflow-hidden border border-white/15 bg-slate-950 select-none">
+                  {/* Base image: After */}
+                  <img
+                    src={afterPhoto.photoUrl}
+                    alt="After Check Body"
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  {/* Clipped overlay: Before */}
+                  <img
+                    src={beforePhoto.photoUrl}
+                    alt="Before Check Body"
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ clipPath: `inset(0 ${100 - sliderPct}% 0 0)` }}
+                  />
+                  {/* Divider Handle */}
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_8px_rgba(0,0,0,0.9)] pointer-events-none"
+                    style={{ left: `${sliderPct}%` }}
+                  >
+                    <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-rose-600 border-2 border-white shadow-lg flex items-center justify-center text-[10px] font-bold text-white">
+                      ↔
+                    </div>
+                  </div>
+                  {/* Corner Date Badges */}
+                  <div className="absolute bottom-3 left-3 px-2 py-1 rounded-lg bg-black/70 text-[10px] font-mono text-white pointer-events-none">
+                    Trước: {beforePhoto.date} {beforePhoto.weightKg ? `· ${beforePhoto.weightKg}kg` : ''}
+                  </div>
+                  <div className="absolute bottom-3 right-3 px-2 py-1 rounded-lg bg-rose-600/90 text-[10px] font-mono text-white pointer-events-none">
+                    Sau: {afterPhoto.date} {afterPhoto.weightKg ? `· ${afterPhoto.weightKg}kg` : ''}
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={sliderPct}
+                    onChange={(e) => setSliderPct(Number(e.target.value))}
+                    aria-label="Thanh kéo so sánh trước và sau"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-10"
+                  />
+                </div>
+                <div className="flex items-center justify-center gap-3 text-[11px] text-white/60">
+                  <span>Kéo thanh trượt trên ảnh hoặc bên dưới ({sliderPct}%)</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={sliderPct}
+                    onChange={(e) => setSliderPct(Number(e.target.value))}
+                    className="w-36 accent-rose-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Before Column */}
               <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-3 border border-white/10 space-y-2">
                 <div className="flex items-center justify-between">
@@ -1355,6 +1565,7 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
                 </div>
               </div>
             </div>
+            )}
           </div>
         )}
 
@@ -1529,6 +1740,137 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* Weekly Check-in Inbox (Phase 4 CTG / Tracked.gg Integration) */}
+      <div className="bg-white dark:bg-white/[0.03] backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-xs p-4 sm:p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 dark:border-white/[0.08] pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-500" />
+              <h3 className="text-xs sm:text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">
+                Weekly Check-in Inbox ({weeklyCheckins.length} tuần đã lưu)
+              </h3>
+            </div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              Tổng hợp cân nặng trung bình 7 ngày ({weeklyCheckinDraft.weekStart} → {weeklyCheckinDraft.weekEnd}), độ bám lịch tập &amp; Macro 90–110%.
+            </p>
+          </div>
+          {onAddWeeklyCheckin && (
+            <button
+              type="button"
+              onClick={() => {
+                onAddWeeklyCheckin(weeklyCheckinDraft);
+                setCheckinNote('');
+                notifySuccess('Đã lưu Weekly Check-in!', `Tổng kết tuần ${weeklyCheckinDraft.weekStart} → ${weeklyCheckinDraft.weekEnd}.`);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-xs cursor-pointer transition-colors shrink-0"
+            >
+              Chốt Check-in Tuần Này
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
+            <div className="text-[10px] uppercase font-semibold text-gray-400">TB Cân / %Mỡ 7N</div>
+            <div className="font-bold font-mono text-gray-900 dark:text-white mt-0.5">
+              {weeklyCheckinDraft.avgWeightKg !== null ? `${weeklyCheckinDraft.avgWeightKg} kg` : '—'}
+              {weeklyCheckinDraft.avgBodyFatPct !== null ? ` · ${weeklyCheckinDraft.avgBodyFatPct}%` : ''}
+            </div>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
+            <div className="text-[10px] uppercase font-semibold text-gray-400">Tuân thủ Tập luyện</div>
+            <div className="font-bold font-mono text-orange-500 mt-0.5">
+              {weeklyCheckinDraft.completedWorkoutsCount}/{weeklyCheckinDraft.plannedWorkoutsCount} buổi ({weeklyCheckinDraft.trainingAdherencePct}%)
+            </div>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
+            <div className="text-[10px] uppercase font-semibold text-gray-400">Macro 90–110%</div>
+            <div className="font-bold font-mono text-emerald-500 mt-0.5">
+              {weeklyCheckinDraft.macroAdherencePct}% ({weeklyCheckinDraft.proteinAdherencePct}% đạt Đạm)
+            </div>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
+            <div className="text-[10px] uppercase font-semibold text-gray-400">Năng lượng tuần (1–5)</div>
+            <div className="flex items-center gap-1 mt-1">
+              {[1, 2, 3, 4, 5].map((lv) => (
+                <button
+                  key={lv}
+                  type="button"
+                  onClick={() => setCheckinEnergy(lv)}
+                  className={`w-6 h-6 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
+                    checkinEnergy === lv
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  {lv}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2 text-xs">
+          <input
+            type="text"
+            value={checkinNote}
+            onChange={(e) => setCheckinNote(e.target.value)}
+            placeholder="Ghi chú tuần (ví dụ: Giấc ngủ tốt, kẹt công tác thứ 4, tăng tạ bench...)"
+            className="flex-1 rounded-xl border border-slate-200 dark:border-white/[0.1] bg-slate-50 dark:bg-gray-900 px-3 py-2 text-xs text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+          />
+          <div className="px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/50 text-[11px] text-indigo-800 dark:text-indigo-200">
+            🤖 {weeklyCheckinDraft.coachFeedback}
+          </div>
+        </div>
+
+        {weeklyCheckins.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-white/[0.08]">
+            {weeklyCheckins.slice(0, 6).map((ci) => (
+              <div
+                key={ci.id}
+                className="p-3 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.02] flex flex-wrap items-center justify-between gap-2 text-xs"
+              >
+                <div className="space-y-0.5 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                    <span className="font-bold text-gray-900 dark:text-white">
+                      {ci.weekStart} → {ci.weekEnd}
+                    </span>
+                    {ci.avgWeightKg !== null && (
+                      <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500 font-semibold">
+                        TB {ci.avgWeightKg}kg
+                      </span>
+                    )}
+                    <span className="px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-500 font-semibold">
+                      Tập {ci.trainingAdherencePct}%
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-500 font-semibold">
+                      Macro {ci.macroAdherencePct}%
+                    </span>
+                    {ci.energyScore && (
+                      <span className="text-gray-400">⚡ {ci.energyScore}/5</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-600 dark:text-gray-300">
+                    {ci.adherenceNote ? `${ci.adherenceNote} — ` : ''}
+                    <span className="italic text-indigo-600 dark:text-indigo-300">{ci.coachFeedback}</span>
+                  </p>
+                </div>
+                {onDeleteWeeklyCheckin && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteWeeklyCheckin(ci.id)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-rose-500 cursor-pointer"
+                    title="Xóa bản ghi check-in tuần này"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -1946,16 +2288,21 @@ export const InBodyTab: React.FC<InBodyTabProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-semibold uppercase text-gray-400">% Mỡ cơ thể</label>
+                  <label className="text-[10px] font-semibold uppercase text-gray-400">% Mỡ ước chừng (tùy chọn)</label>
                   <input
                     type="number"
                     step="0.1"
-                    value={editingPoint.bodyFatPct}
-                    onChange={(e) =>
-                      setEditingPoint({ ...editingPoint, bodyFatPct: Number(e.target.value) || 0 })
-                    }
+                    min="3"
+                    max="65"
+                    value={editingPoint.bodyFatPct || ''}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (!isNaN(val)) {
+                        setEditingPoint({ ...editingPoint, bodyFatPct: val });
+                      }
+                    }}
+                    placeholder="Ước chừng %"
                     className="mt-1 w-full text-xs px-3 py-2 rounded-xl border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 font-bold"
-                    required
                   />
                 </div>
                 <div>

@@ -1,11 +1,11 @@
 import { parseAppleHealthShortcutJson, parseAppleHealthXml } from './appleHealthSync';
-import { parseGeminiMacroResponse } from './geminiSync';
+import { parseMacroTextResponse } from '../utils/fitnessMetrics';
 
 function assert(condition: boolean, msg: string) {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-console.log('Running Apple Health and Gemini Sync tests...');
+console.log('Running Apple Health and Macro Parser tests...');
 
 // 1. Apple Health Shortcut JSON parsing
 const mockShortcutJson = JSON.stringify({
@@ -41,8 +41,8 @@ assert(parsedXml[0].activeEnergyKcal === 320, `Expected 320 kcal, got ${parsedXm
 assert(parsedXml[0].weightKg === 68.2, `Expected 68.2kg, got ${parsedXml[0].weightKg}`);
 assert(parsedXml[0].sleepHours === 8, `Expected 8h sleep, got ${parsedXml[0].sleepHours}`);
 
-// 3. Gemini Macro JSON parsing (Markdown block)
-const mockGeminiJsonBlock = `
+// 3. Structured Macro JSON parsing (Markdown block)
+const mockMacroJsonBlock = `
 Dưới đây là phân tích khẩu phần theo yêu cầu:
 
 \`\`\`json
@@ -73,22 +73,22 @@ Dưới đây là phân tích khẩu phần theo yêu cầu:
 Chúc bạn tập luyện tốt!
 `;
 
-const parsedGemini = parseGeminiMacroResponse(mockGeminiJsonBlock);
-assert(parsedGemini.length === 2, `Expected 2 Gemini items, got ${parsedGemini.length}`);
-assert(parsedGemini[0].name === 'Phở Bò Tái Gầu', `Expected Pho, got ${parsedGemini[0].name}`);
-assert(parsedGemini[0].protein === 35, `Expected 35g protein, got ${parsedGemini[0].protein}`);
-assert(parsedGemini[1].slot === 'lunch', `Expected lunch slot, got ${parsedGemini[1].slot}`);
+const parsedMacroJson = parseMacroTextResponse(mockMacroJsonBlock);
+assert(parsedMacroJson.length === 2, `Expected 2 items, got ${parsedMacroJson.length}`);
+assert(parsedMacroJson[0].name === 'Phở Bò Tái Gầu', `Expected Pho, got ${parsedMacroJson[0].name}`);
+assert(parsedMacroJson[0].protein === 35, `Expected 35g protein, got ${parsedMacroJson[0].protein}`);
+assert(parsedMacroJson[1].slot === 'lunch', `Expected lunch slot, got ${parsedMacroJson[1].slot}`);
 
-// 4. Gemini Macro heuristic bullet list parsing
-const mockGeminiBullets = `
+// 4. Heuristic bullet list parsing
+const mockMacroBullets = `
 1. Ức gà áp chảo (200g): 330 kcal, 62g protein, 0g carb, 7g fat
 2. Bát cơm trắng: 200 calo, 4g đạm, 44g carb, 0.5g béo
 `;
-const parsedBullets = parseGeminiMacroResponse(mockGeminiBullets, 'dinner');
+const parsedBullets = parseMacroTextResponse(mockMacroBullets, 'dinner');
 assert(parsedBullets.length === 2, `Expected 2 bullet items, got ${parsedBullets.length}`);
 assert(parsedBullets[0].kcal === 330, `Expected 330 kcal, got ${parsedBullets[0].kcal}`);
 assert(parsedBullets[0].protein === 62, `Expected 62g protein, got ${parsedBullets[0].protein}`);
 assert(parsedBullets[0].slot === 'dinner', `Expected dinner slot, got ${parsedBullets[0].slot}`);
 
-console.log('All Apple Health and Gemini Sync tests passed successfully!');
+console.log('All Apple Health and Macro Parser tests passed successfully!');
 

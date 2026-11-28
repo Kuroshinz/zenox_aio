@@ -285,9 +285,8 @@ export function mockGoogleHealthMetrics(date: string): GoogleHealthMetrics {
 /**
  * Single entry point used by the Health dashboard.
  *
- * - `accessToken` present **and** `VITE_GOOGLE_HEALTH_ENABLED` on → real API.
- * - Real call fails → mock, with `error` explaining why.
- * - No token → mock immediately, labelled as such.
+ * - `accessToken` present **and** `VITE_GOOGLE_HEALTH_ENABLED` not `'false'` → real API.
+ * - Missing token, disabled flag, or API failure → fails closed with empty metrics and `error`.
  */
 export async function syncGoogleHealth(opts: {
   date: string;

@@ -154,11 +154,26 @@ export const DayPlannerDrawer: React.FC<DayPlannerDrawerProps> = ({
           {displayHours.map((hour) => {
             const hourStr = `${String(hour).padStart(2, '0')}:00`;
             const nextHourStr = `${String(hour + 1).padStart(2, '0')}:00`;
+            const hourMins = hour * 60;
+            const nextHourMins = (hour + 1) * 60;
+
+            const toMins = (t?: string) => {
+              if (!t) return 0;
+              const [hh, mm] = t.split(':').map(Number);
+              return (hh || 0) * 60 + (mm || 0);
+            };
 
             const slotEvents = dayEvents.filter((ev) => {
               if (ev.allDay) return false;
               const s = ev.startTime || '00:00';
               return s >= hourStr && s < nextHourStr;
+            });
+
+            const overlappingEvents = dayEvents.filter((ev) => {
+              if (ev.allDay || !ev.startTime || !ev.endTime) return false;
+              const s = toMins(ev.startTime);
+              const e = toMins(ev.endTime);
+              return s < nextHourMins && e > hourMins;
             });
 
             return (
@@ -174,25 +189,52 @@ export const DayPlannerDrawer: React.FC<DayPlannerDrawerProps> = ({
                 {/* Slot Area */}
                 <div className="flex-1 flex flex-col gap-1.5">
                   {slotEvents.length === 0 ? (
-                    <div
-                      onClick={() => onAddEventClick(selectedDateStr, hourStr)}
-                      className="h-9 rounded-xl border border-dashed border-gray-200 dark:border-gray-800 group-hover/slot:border-blue-400 dark:group-hover/slot:border-blue-500 group-hover/slot:bg-blue-50/40 dark:group-hover/slot:bg-blue-950/20 transition-all flex items-center px-3 cursor-pointer text-xs text-gray-400 group-hover/slot:text-blue-600 dark:group-hover/slot:text-blue-400"
-                    >
-                      <Plus className="w-3.5 h-3.5 mr-1.5 opacity-60 group-hover/slot:opacity-100" />
-                      <span>{lang === 'vi' ? `Trống - Bấm để xếp lịch lúc ${hourStr}` : `Available - Click to schedule at ${hourStr}`}</span>
-                    </div>
+                    overlappingEvents.length > 0 ? (
+                      <div
+                        onClick={() => onAddEventClick(selectedDateStr, hourStr)}
+                        className="min-h-9 px-3 py-1.5 rounded-xl border border-dashed border-amber-300 dark:border-amber-700/70 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-100/60 dark:hover:bg-amber-900/30 transition-all flex items-center justify-between gap-2 cursor-pointer text-xs text-amber-700 dark:text-amber-300"
+                      >
+                        <span className="truncate font-medium">
+                          {lang === 'vi'
+                            ? `Đang bận: ${overlappingEvents.map((e) => `${e.title} (${e.startTime}–${e.endTime})`).join(', ')}`
+                            : `Busy: ${overlappingEvents.map((e) => `${e.title} (${e.startTime}–${e.endTime})`).join(', ')}`}
+                        </span>
+                        <span className="text-[10px] shrink-0 opacity-75">
+                          {lang === 'vi' ? '+ Thêm xen vào' : '+ Overlap anyway'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => onAddEventClick(selectedDateStr, hourStr)}
+                        className="h-9 rounded-xl border border-dashed border-gray-200 dark:border-gray-800 group-hover/slot:border-blue-400 dark:group-hover/slot:border-blue-500 group-hover/slot:bg-blue-50/40 dark:group-hover/slot:bg-blue-950/20 transition-all flex items-center px-3 cursor-pointer text-xs text-gray-400 group-hover/slot:text-blue-600 dark:group-hover/slot:text-blue-400"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5 opacity-60 group-hover/slot:opacity-100" />
+                        <span>{lang === 'vi' ? `Trống - Bấm để xếp lịch lúc ${hourStr}` : `Available - Click to schedule at ${hourStr}`}</span>
+                      </div>
+                    )
                   ) : (
-                    slotEvents.map((ev) => (
+                    slotEvents.map((ev) => {
+                      const hasConflictInSlot = overlappingEvents.length > 1;
+                      return (
                       <div
                         key={ev.id}
                         onClick={(e) => onSelectEvent(ev, e.currentTarget)}
-                        className="p-3 rounded-xl border-l-4 shadow-xs hover:shadow-md cursor-pointer transition-all hover:translate-x-0.5 flex flex-col gap-1.5 bg-gray-50/90 dark:bg-[#1e232b] border border-gray-200/80 dark:border-gray-700/60"
+                        className={`p-3 rounded-xl border-l-4 shadow-xs hover:shadow-md cursor-pointer transition-all hover:translate-x-0.5 flex flex-col gap-1.5 bg-gray-50/90 dark:bg-[#1e232b] border ${
+                          hasConflictInSlot
+                            ? 'border-amber-400/80 dark:border-amber-500/60'
+                            : 'border-gray-200/80 dark:border-gray-700/60'
+                        }`}
                         style={{ borderLeftColor: ev.color }}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-semibold text-xs text-gray-900 dark:text-gray-100 truncate">
                             {ev.title}
                           </span>
+                          {hasConflictInSlot && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 shrink-0">
+                              {lang === 'vi' ? 'Trùng giờ' : 'Overlap'}
+                            </span>
+                          )}
                           <span
                             className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md text-white shrink-0 shadow-2xs"
                             style={{ backgroundColor: ev.color }}
@@ -215,7 +257,8 @@ export const DayPlannerDrawer: React.FC<DayPlannerDrawerProps> = ({
                           </div>
                         )}
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>

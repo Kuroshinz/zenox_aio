@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X,
   Clock,
@@ -19,6 +19,8 @@ import {
   ListOrdered,
   Link2,
   RemoveFormatting,
+  AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import {
   CalendarEvent,
@@ -28,12 +30,19 @@ import {
   GOOGLE_COLORS,
   EventGuest,
 } from '../types/calendar';
-import { generateGoogleMeetUrl } from '../utils/calendarUtils';
+import {
+  generateGoogleMeetUrl,
+  findConflictingEvents,
+  suggestAvailableSlots,
+  timeToMinutes,
+  doesEventOccurOnDate,
+} from '../utils/calendarUtils';
 
 interface EventModalProps {
   isOpen: boolean;
   onClose: () => void;
   eventToEdit: CalendarEvent | null;
+  events?: CalendarEvent[];
   initialDate?: string;
   initialTime?: string;
   initialEndTime?: string;
@@ -51,6 +60,7 @@ export const EventModal: React.FC<EventModalProps> = ({
   isOpen,
   onClose,
   eventToEdit,
+  events = [],
   initialDate,
   initialTime,
   initialEndTime,
@@ -82,6 +92,61 @@ export const EventModal: React.FC<EventModalProps> = ({
   const [showOtherActions, setShowOtherActions] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'find_time'>('details');
+  const descRef = useRef<HTMLTextAreaElement>(null);
+
+  const conflicts = useMemo(
+    () =>
+      findConflictingEvents(
+        { id: eventToEdit?.id, startDate, startTime, endTime, allDay },
+        events
+      ),
+    [eventToEdit?.id, startDate, startTime, endTime, allDay, events]
+  );
+
+  const durationMinutes = useMemo(() => {
+    const diff = timeToMinutes(endTime) - timeToMinutes(startTime);
+    return diff >= 15 ? diff : 60;
+  }, [startTime, endTime]);
+
+  const availableSlots = useMemo(
+    () => suggestAvailableSlots(startDate, durationMinutes, events, eventToEdit?.id),
+    [startDate, durationMinutes, events, eventToEdit?.id]
+  );
+
+  const sameDayEvents = useMemo(
+    () =>
+      events
+        .filter((ev) => ev.id !== eventToEdit?.id && !ev.allDay && doesEventOccurOnDate(ev, startDate))
+        .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
+    [events, eventToEdit?.id, startDate]
+  );
+
+  const applyDescriptionFormat = (mode: 'bold' | 'italic' | 'underline' | 'ul' | 'ol' | 'link' | 'clear') => {
+    const el = descRef.current;
+    const start = el?.selectionStart ?? description.length;
+    const end = el?.selectionEnd ?? description.length;
+    const selected = description.slice(start, end);
+
+    if (mode === 'clear') {
+      const cleaned = description
+        .replace(/(\*\*|__|\*|_|<u>|<\/u>)/g, '')
+        .replace(/^(\s*[-*•]|\s*\d+\.)\s+/gm, '')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
+      setDescription(cleaned);
+      return;
+    }
+
+    let insertion = '';
+    if (mode === 'bold') insertion = `**${selected || (lang === 'vi' ? 'chữ đậm' : 'bold')}**`;
+    else if (mode === 'italic') insertion = `*${selected || (lang === 'vi' ? 'chữ nghiêng' : 'italic')}*`;
+    else if (mode === 'underline') insertion = `__${selected || (lang === 'vi' ? 'gạch chân' : 'underline')}__`;
+    else if (mode === 'ul') insertion = `\n- ${selected || (lang === 'vi' ? 'Mục danh sách' : 'List item')}`;
+    else if (mode === 'ol') insertion = `\n1. ${selected || (lang === 'vi' ? 'Bước 1' : 'Step 1')}`;
+    else if (mode === 'link') insertion = `[${selected || (lang === 'vi' ? 'Liên kết' : 'Link')}](https://)`;
+
+    const next = description.slice(0, start) + insertion + description.slice(end);
+    setDescription(next);
+  };
 
   // Synchronize state when modal opens
   useEffect(() => {
@@ -157,7 +222,7 @@ export const EventModal: React.FC<EventModalProps> = ({
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const finalEvent: CalendarEvent = {
-      id: eventToEdit ? eventToEdit.id : `ev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: eventToEdit ? eventToEdit.id : `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       title: title.trim() || (lang === 'vi' ? '(Chưa có tiêu đề)' : '(Untitled)'),
       type,
       startDate,
@@ -247,8 +312,27 @@ export const EventModal: React.FC<EventModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const copy = { ...eventToEdit, id: `ev-${Date.now()}`, title: `${title} (Bản sao)` };
-                        onSave(copy as CalendarEvent);
+                        const copy: CalendarEvent = {
+                          id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                          title: `${title.trim() || (lang === 'vi' ? 'Sự kiện' : 'Event')} (${lang === 'vi' ? 'Bản sao' : 'Copy'})`,
+                          type,
+                          startDate,
+                          startTime: allDay ? '00:00' : startTime,
+                          endDate: endDate < startDate ? startDate : endDate,
+                          endTime: allDay ? '23:59' : endTime,
+                          allDay,
+                          recurrence,
+                          location: location.trim() || undefined,
+                          description: description.trim() || undefined,
+                          calendarId,
+                          color,
+                          meetUrl,
+                          guests: guests.length > 0 ? guests : undefined,
+                          reminders: [reminderMinutes],
+                          createdAt: Date.now(),
+                          updatedAt: Date.now(),
+                        };
+                        onSave(copy);
                         onClose();
                       }}
                       className="w-full px-4 py-2 text-left text-gray-200 hover:bg-white/10 flex items-center gap-2 cursor-pointer"
@@ -334,6 +418,27 @@ export const EventModal: React.FC<EventModalProps> = ({
           </div>
         </div>
 
+        {/* Conflict Warning Banner */}
+        {conflicts.length > 0 && (
+          <div className="px-6 py-2 bg-amber-500/15 border-b border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-300 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="truncate">
+                {lang === 'vi'
+                  ? `Trùng giờ với ${conflicts.length} lịch khác: "${conflicts[0].title}" (${conflicts[0].startTime}–${conflicts[0].endTime})`
+                  : `Overlaps with ${conflicts.length} event(s): "${conflicts[0].title}" (${conflicts[0].startTime}–${conflicts[0].endTime})`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('find_time')}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold shrink-0 cursor-pointer transition-colors"
+            >
+              {lang === 'vi' ? 'Tìm giờ trống' : 'Find open slot'}
+            </button>
+          </div>
+        )}
+
         {/* Modal Main Body: 2 Columns (Details left, Guests right) */}
         <div className="flex-1 overflow-y-auto flex flex-col md:flex-row">
           {/* Left Column: Event Details Form */}
@@ -354,15 +459,109 @@ export const EventModal: React.FC<EventModalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('find_time')}
-                className={`pb-2.5 border-b-2 cursor-pointer transition-colors ${
+                className={`pb-2.5 border-b-2 cursor-pointer transition-colors flex items-center gap-1.5 ${
                   activeTab === 'find_time'
                     ? 'border-blue-400 text-blue-400'
                     : 'border-transparent text-gray-400 hover:text-gray-200'
                 }`}
               >
-                {lang === 'vi' ? 'Tìm thời gian' : 'Find a time'}
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Tìm thời gian trống' : 'Find a time'}</span>
               </button>
             </div>
+
+            {activeTab === 'find_time' ? (
+              <div className="space-y-4">
+                <div className="p-3 rounded-xl bg-[#28292a] border border-gray-700/80 flex items-center justify-between text-xs">
+                  <span className="text-gray-300">
+                    {lang === 'vi'
+                      ? `Đang tìm khoảng trống ${durationMinutes} phút cho ngày ${startDate}`
+                      : `Finding ${durationMinutes} min open slots on ${startDate}`}
+                  </span>
+                  <span className="font-mono text-emerald-400 font-semibold">
+                    {availableSlots.length} {lang === 'vi' ? 'khung trống' : 'slots'}
+                  </span>
+                </div>
+
+                {availableSlots.length === 0 ? (
+                  <div className="p-6 text-center rounded-xl border border-dashed border-gray-700 text-xs text-gray-400">
+                    {lang === 'vi'
+                      ? 'Không còn khoảng trống nào đủ dài trong khung 06:00–22:00 của ngày này.'
+                      : 'No available slot fits between 06:00–22:00 on this day.'}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {(['morning', 'afternoon', 'evening'] as const).map((period) => {
+                      const list = availableSlots.filter((s) => s.period === period);
+                      if (list.length === 0) return null;
+                      const periodLabel =
+                        period === 'morning'
+                          ? lang === 'vi' ? 'Buổi Sáng' : 'Morning'
+                          : period === 'afternoon'
+                            ? lang === 'vi' ? 'Buổi Chiều' : 'Afternoon'
+                            : lang === 'vi' ? 'Buổi Tối' : 'Evening';
+
+                      return (
+                        <div key={period} className="space-y-1.5">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                            {periodLabel}
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {list.map((slot) => (
+                              <button
+                                key={`${slot.startTime}-${slot.endTime}`}
+                                type="button"
+                                onClick={() => {
+                                  setAllDay(false);
+                                  setStartTime(slot.startTime);
+                                  setEndTime(slot.endTime);
+                                  setActiveTab('details');
+                                }}
+                                className="p-2.5 rounded-xl bg-[#28292a] hover:bg-blue-950/50 border border-gray-700 hover:border-blue-500/60 text-left transition-all cursor-pointer flex items-center justify-between"
+                              >
+                                <div>
+                                  <div className="text-xs font-mono font-bold text-white">
+                                    {slot.startTime} – {slot.endTime}
+                                  </div>
+                                  <div className="text-[11px] text-gray-400">
+                                    {lang === 'vi' ? `Trống ${slot.durationMinutes} phút` : `${slot.durationMinutes} min open`}
+                                  </div>
+                                </div>
+                                <span className="text-[11px] font-semibold text-blue-400">
+                                  {lang === 'vi' ? 'Chọn' : 'Pick'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {sameDayEvents.length > 0 && (
+                  <div className="pt-3 border-t border-gray-700/60 space-y-2">
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block">
+                      {lang === 'vi' ? `Lịch đã có trong ngày (${sameDayEvents.length})` : `Scheduled on this day (${sameDayEvents.length})`}
+                    </span>
+                    <div className="space-y-1 max-h-36 overflow-y-auto">
+                      {sameDayEvents.map((ev) => (
+                        <div
+                          key={ev.id}
+                          className="px-3 py-1.5 rounded-lg bg-[#28292a]/70 border border-gray-700/60 flex items-center justify-between text-xs"
+                        >
+                          <span className="truncate text-gray-200">{ev.title}</span>
+                          <span className="font-mono text-[11px] text-gray-400 shrink-0 ml-2">
+                            {ev.startTime}–{ev.endTime}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+            <>
 
             {/* Google Meet Button */}
             <div className="flex items-center gap-3">
@@ -460,17 +659,18 @@ export const EventModal: React.FC<EventModalProps> = ({
             <div className="space-y-1 pt-1">
               {/* Rich text formatting tools */}
               <div className="flex items-center gap-1 p-1 bg-[#28292a] rounded-t-xl border border-b-0 border-gray-700 text-gray-400">
-                <button type="button" className="p-1 hover:text-white rounded hover:bg-white/10" title="Bold"><Bold className="w-3.5 h-3.5" /></button>
-                <button type="button" className="p-1 hover:text-white rounded hover:bg-white/10" title="Italic"><Italic className="w-3.5 h-3.5" /></button>
-                <button type="button" className="p-1 hover:text-white rounded hover:bg-white/10" title="Underline"><Underline className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => applyDescriptionFormat('bold')} className="p-1 hover:text-white rounded hover:bg-white/10 cursor-pointer" title="Bold"><Bold className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => applyDescriptionFormat('italic')} className="p-1 hover:text-white rounded hover:bg-white/10 cursor-pointer" title="Italic"><Italic className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => applyDescriptionFormat('underline')} className="p-1 hover:text-white rounded hover:bg-white/10 cursor-pointer" title="Underline"><Underline className="w-3.5 h-3.5" /></button>
                 <span className="w-px h-3 bg-gray-700 mx-1" />
-                <button type="button" className="p-1 hover:text-white rounded hover:bg-white/10" title="Bullet List"><List className="w-3.5 h-3.5" /></button>
-                <button type="button" className="p-1 hover:text-white rounded hover:bg-white/10" title="Numbered List"><ListOrdered className="w-3.5 h-3.5" /></button>
-                <button type="button" className="p-1 hover:text-white rounded hover:bg-white/10" title="Link"><Link2 className="w-3.5 h-3.5" /></button>
-                <button type="button" className="p-1 hover:text-white rounded hover:bg-white/10" title="Clear Formatting"><RemoveFormatting className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => applyDescriptionFormat('ul')} className="p-1 hover:text-white rounded hover:bg-white/10 cursor-pointer" title="Bullet List"><List className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => applyDescriptionFormat('ol')} className="p-1 hover:text-white rounded hover:bg-white/10 cursor-pointer" title="Numbered List"><ListOrdered className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => applyDescriptionFormat('link')} className="p-1 hover:text-white rounded hover:bg-white/10 cursor-pointer" title="Link"><Link2 className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => applyDescriptionFormat('clear')} className="p-1 hover:text-white rounded hover:bg-white/10 cursor-pointer" title="Clear Formatting"><RemoveFormatting className="w-3.5 h-3.5" /></button>
               </div>
 
               <textarea
+                ref={descRef}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={lang === 'vi' ? 'Thêm nội dung mô tả' : 'Add description'}
@@ -478,6 +678,8 @@ export const EventModal: React.FC<EventModalProps> = ({
                 className="w-full bg-[#2d2e30] border border-gray-700 rounded-b-xl p-3 text-xs text-white placeholder-gray-400 focus:outline-blue-500 resize-none"
               />
             </div>
+            </>
+            )}
           </div>
 
           {/* Right Column: Guests Section (Khách) */}

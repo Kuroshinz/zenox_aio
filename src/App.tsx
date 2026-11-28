@@ -1,17 +1,85 @@
 
+import { accountStorage } from './services/accountStorage';
+import { LoginModal } from './components/auth/LoginModal';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import {
+  CalendarEvent,
+  CalendarCategory,
+  CalendarViewType,
+  EventType,
+  SyncState,
+  DEFAULT_CALENDARS,
+} from './types/calendar';
+import { INITIAL_EVENTS } from './data/initialEvents';
+import { SEED_PLANNED_SESSIONS, SEED_TASKS, SEED_WORKOUT_SESSIONS } from './data/productivitySeed';
+import {
+  formatDateString,
+  parseDateString,
+  deduplicateEvents,
+  isDemoEventId,
+  findConflictingEvents,
+  resolveNonConflictingSlot,
+} from './utils/calendarUtils';
+
+const Scene = lazy(() => import('./Scene').then((m) => ({ default: m.Scene })));
+const LandingPage = lazy(() => import('./components/LandingPage').then((m) => ({ default: m.LandingPage })));
+const TimeAnalyticsView = lazy(() =>
+  import('./components/analytics/TimeAnalyticsView').then((m) => ({ default: m.TimeAnalyticsView }))
+);
+const ExportImportModal = lazy(() =>
+  import('./components/ExportImportModal').then((m) => ({ default: m.ExportImportModal }))
+);
+const CloudSyncModal = lazy(() =>
+  import('./components/sync/CloudSyncModal').then((m) => ({ default: m.CloudSyncModal }))
+);
+const ProductivityDashboard = lazy(() =>
+  import('./components/productivity/ProductivityDashboard').then((m) => ({ default: m.ProductivityDashboard }))
+);
+const TasksGoalsView = lazy(() =>
+  import('./components/productivity/TasksGoalsView').then((m) => ({ default: m.TasksGoalsView }))
+);
+const StudyFocusView = lazy(() =>
+  import('./components/productivity/StudyFocusView').then((m) => ({ default: m.StudyFocusView }))
+);
+const FinanceView = lazy(() =>
+  import('./components/productivity/FinanceView').then((m) => ({ default: m.FinanceView }))
+);
+const HealthView = lazy(() =>
+  import('./components/productivity/HealthView').then((m) => ({ default: m.HealthView }))
+);
+const LifeCopilotModal = lazy(() =>
+  import('./components/productivity/LifeCopilotModal').then((m) => ({ default: m.LifeCopilotModal }))
+);
+
+const ChunkFallback: React.FC = () => (
+  <div className="flex items-center justify-center w-full h-full min-h-[240px] text-xs font-mono text-zinc-400">
+    Đang tải mô-đun ZENOX...
+  </div>
+);
+
+const SEED_TASK_EVENT_IDS = new Set(SEED_TASKS.map((t) => `task-${t.id}`));
+const SEED_WORKOUT_EVENT_IDS = new Set(SEED_WORKOUT_SESSIONS.map((w) => `wo-ev-${w.id}`));
+const SEED_PLANNED_EVENT_PREFIXES = SEED_PLANNED_SESSIONS.map((p) => `plan-ev-${p.id}-`);
+
 const getInitialEventsForCurrentUser = (): CalendarEvent[] => {
   try {
     const rawUser = typeof window !== 'undefined' ? localStorage.getItem('gcal_active_user') : null;
     if (rawUser) {
       const u = JSON.parse(rawUser);
+      const todayStr = formatDateString(new Date());
       // Fresh isolated event list for current authenticated user
       return [
         {
           id: `ev-welcome-${u.uid || 'usr'}`,
           title: `Chào mừng ${u.displayName || 'bạn'} đến với ZENOX`,
           description: `Kho dữ liệu cá nhân cho ${u.email} (${u.authMethod === 'google' ? 'Google Account' : 'Web Account'})`,
-          startDate: '2026-10-29',
-          endDate: '2026-10-29',
+          startDate: todayStr,
+          endDate: todayStr,
           startTime: '09:00',
           endTime: '10:00',
           allDay: false,
@@ -25,28 +93,8 @@ const getInitialEventsForCurrentUser = (): CalendarEvent[] => {
   } catch {}
   return INITIAL_EVENTS;
 };
-
-import { accountStorage } from './services/accountStorage';
-import { LoginModal } from './components/auth/LoginModal';
-import { Scene } from './Scene';
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import {
-  CalendarEvent,
-  CalendarCategory,
-  CalendarViewType,
-  EventType,
-  SyncState,
-  DEFAULT_CALENDARS,
-} from './types/calendar';
-import { INITIAL_EVENTS } from './data/initialEvents';
-import { formatDateString, parseDateString, deduplicateEvents } from './utils/calendarUtils';
 import { playNotificationSound, playSuccessSound, playToggleSound, playLiveSyncChime, playSyncPulse } from './utils/sound';
-import { notifySuccess } from './utils/notify';
+import { notifySuccess, notifyWarning } from './utils/notify';
 import { useCalendarDnD } from './hooks/useCalendarDnD';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -54,23 +102,14 @@ import { MonthView } from './components/MonthView';
 import { TimeGridView } from './components/TimeGridView';
 import { YearView } from './components/YearView';
 import { ScheduleView } from './components/ScheduleView';
-import { TimeAnalyticsView } from './components/analytics/TimeAnalyticsView';
 import { EventModal } from './components/EventModal';
 import { EventDetailCard } from './components/EventDetailCard';
 import { QuickAddModal } from './components/QuickAddModal';
 import { MiniEventPopover } from './components/MiniEventPopover';
 import { DayPlannerDrawer } from './components/DayPlannerDrawer';
 import { ShortcutsModal } from './components/ShortcutsModal';
-import { ExportImportModal } from './components/ExportImportModal';
-import { CloudSyncModal } from './components/sync/CloudSyncModal';
 import { RightSidebar } from './components/RightSidebar';
 import { MultiHubDrawer } from './components/MultiHubDrawer';
-import { ProductivityDashboard } from './components/productivity/ProductivityDashboard';
-import { TasksGoalsView } from './components/productivity/TasksGoalsView';
-import { StudyFocusView } from './components/productivity/StudyFocusView';
-import { FinanceView } from './components/productivity/FinanceView';
-import { HealthView } from './components/productivity/HealthView';
-import { LandingPage } from './components/LandingPage';
 import {
   verifyZenoxSession,
   logoutZenoxSession,
@@ -80,24 +119,15 @@ import {
 import { getCurrentRoute, navigateToRoute } from './services/router';
 import { mergeSyncedGoogleEvents } from './utils/calendarUtils';
 import { useProductivityStore, todayString } from './hooks/useProductivityStore';
+import { usePersistentState } from './hooks/usePersistentState';
 import { buildTaskEvents } from './utils/productivityUtils';
-import { buildWorkoutEvents, startOfWeek, tdee, calorieTarget, macroTargets } from './utils/fitnessMetrics';
-import { parseVnDate } from './components/productivity/fitness/RoadmapTab';
+import { buildWorkoutEvents, startOfWeek, tdee, calorieTarget, macroTargets, parseVnDate } from './utils/fitnessMetrics';
 import { User } from 'firebase/auth';
 import { auth, initAuth, logout, getAccessToken, clearAccessToken, googleSignIn, AppUser } from './services/auth';
 import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './services/googleCalendarSync';
 import { fetchCalendarFromICalUrl } from './services/googleCalendarUrlSync';
-import { executeRealGoogleSync, hasOwnClientId } from './services/realGoogleAuth';
-import {
-  subscribeUserEvents,
-  saveEventToFirestore,
-  deleteEventFromFirestore,
-} from './services/firestoreSync';
 import { Bell, FileText } from 'lucide-react';
 import { CalendarActionBar } from './components/CalendarActionBar';
-import { GeminiMacroModal } from './components/productivity/fitness/GeminiMacroModal';
-import { GeminiMacroItem } from './services/geminiSync';
-import { LifeCopilotModal } from './components/productivity/LifeCopilotModal';
 import { ToastContainer } from './components/ToastContainer';
 
 export default function App() {
@@ -321,35 +351,48 @@ export default function App() {
   );
   // Check if user has real custom or imported events
   const hasRealUserEvents = useMemo(() => {
-    return events.some((e) => !e.id.startsWith('ev-'));
+    return events.some((e) => !isDemoEventId(e.id));
   }, [events]);
 
   const allEvents = useMemo(() => {
     let baseList = events;
     if (hasRealUserEvents) {
       // Filter out initial demo events when real user events exist
-      baseList = baseList.filter((e) => !e.id.startsWith('ev-'));
+      baseList = baseList.filter((e) => !isDemoEventId(e.id));
     }
 
-    // Only include real tasks, not seed dummy tasks
-    const realTaskEvents = taskEvents.filter(
-      (t) => !t.id.startsWith('task-task-') && !t.id.startsWith('task-1') && !t.id.startsWith('task-2') && !t.id.startsWith('task-3')
-    );
+    // Exclude only exact seed tasks/workouts while preserving all user-created
+    // tasks (whose derived IDs are `task-task-<timestamp>-...`) and user workouts.
+    const realTaskEvents = taskEvents.filter((t) => !SEED_TASK_EVENT_IDS.has(t.id));
 
-    // Only include user-logged workout sessions, not hardcoded seed workouts
     const realWorkoutEvents = workoutEvents.filter(
-      (w) => !w.id.startsWith('wo-ev-w-') && !w.id.startsWith('wo-plan-')
+      (w) =>
+        !SEED_WORKOUT_EVENT_IDS.has(w.id) &&
+        !SEED_PLANNED_EVENT_PREFIXES.some((prefix) => w.id.startsWith(prefix))
     );
 
     return deduplicateEvents([...baseList, ...realTaskEvents, ...realWorkoutEvents]);
   }, [events, taskEvents, workoutEvents, hasRealUserEvents]);
 
+  const allEventsRef = useRef<CalendarEvent[]>(allEvents);
+  allEventsRef.current = allEvents;
+
+  const [weekStartsOnMonday, setWeekStartsOnMonday] = usePersistentState<boolean>(
+    'gcal_week_starts_monday',
+    false
+  );
+  const [eventTypeFilter, setEventTypeFilter] = useState<EventType | 'all'>('all');
+  const calendarVisibleEvents = useMemo(() => {
+    if (eventTypeFilter === 'all') return allEvents;
+    return allEvents.filter((e) => e.type === eventTypeFilter);
+  }, [allEvents, eventTypeFilter]);
+
   const handleCleanCalendar = useCallback(() => {
     setEvents((prev) => {
       let filtered = prev;
-      const hasOther = prev.some((e) => !e.id.startsWith('ev-'));
+      const hasOther = prev.some((e) => !isDemoEventId(e.id));
       if (hasOther) {
-        filtered = filtered.filter((e) => !e.id.startsWith('ev-'));
+        filtered = filtered.filter((e) => !isDemoEventId(e.id));
       }
       const deduped = deduplicateEvents(filtered);
       try {
@@ -405,34 +448,8 @@ export default function App() {
   const [isExportImportOpen, setIsExportImportOpen] = useState(false);
   const [isCloudSyncOpen, setIsCloudSyncOpen] = useState(false);
   const [isMultiHubOpen, setIsMultiHubOpen] = useState(false);
-  const [isGeminiMacroOpen, setIsGeminiMacroOpen] = useState(false);
   const [isLifeCopilotOpen, setIsLifeCopilotOpen] = useState(false);
   const [isRightDrawerOpen, setIsRightDrawerOpen] = useState(false);
-
-  const handleApplyGeminiMacros = useCallback(
-    (items: GeminiMacroItem[]) => {
-      items.forEach((item) => {
-        productivity.addMealLog({
-          date: todayString(),
-          slot: item.slot || 'lunch',
-          description: item.name,
-          items: [
-            {
-              name: item.name,
-              amount: item.amount || 100,
-              unit: item.unit || 'g',
-              kcal: item.kcal,
-              protein: item.protein,
-              carbs: item.carbs,
-              fat: item.fat,
-            },
-          ],
-        });
-      });
-      setIsGeminiMacroOpen(false);
-    },
-    [productivity.addMealLog]
-  );
 
   // Mini Inline Event Popover state
   const [miniPopover, setMiniPopover] = useState<{
@@ -455,7 +472,7 @@ export default function App() {
     dateStr: string;
   }>({
     isOpen: false,
-    dateStr: formatDateString(new Date(2026, 9, 29)),
+    dateStr: formatDateString(new Date()),
   });
 
   // Google OAuth & Cloud Sync State
@@ -518,7 +535,8 @@ export default function App() {
     const firestoreUid = getFirestoreSyncUid(user);
     if (firestoreUid) {
       setSyncState('syncing');
-      saveEventToFirestore(firestoreUid, savedEvent)
+      import('./services/firestoreSync')
+        .then(({ saveEventToFirestore }) => saveEventToFirestore(firestoreUid, savedEvent))
         .then(() => setSyncState('synced'))
         .catch(() => setSyncState('error'));
     }
@@ -535,10 +553,23 @@ export default function App() {
       .catch(() => {});
 
     if (isLiveSyncEnabled) playSyncPulse();
-    notifySuccess(
-      lang === 'vi' ? 'Đã lưu sự kiện thành công!' : 'Event saved successfully!',
-      `"${savedEvent.title}" (${savedEvent.startDate}${savedEvent.allDay ? ' · Cả ngày' : ` lúc ${savedEvent.startTime}`})`
-    );
+    const saveConflicts = !savedEvent.allDay
+      ? findConflictingEvents(savedEvent, allEventsRef.current)
+      : [];
+    if (saveConflicts.length > 0) {
+      const names = saveConflicts.map((c) => `"${c.title}" (${c.startTime}–${c.endTime})`).join(', ');
+      notifyWarning(
+        lang === 'vi' ? 'Đã lưu — Cảnh báo trùng lịch!' : 'Saved with schedule overlap!',
+        lang === 'vi'
+          ? `"${savedEvent.title}" (${savedEvent.startTime}–${savedEvent.endTime}) đang trùng với ${names}.`
+          : `"${savedEvent.title}" (${savedEvent.startTime}–${savedEvent.endTime}) overlaps ${names}.`
+      );
+    } else {
+      notifySuccess(
+        lang === 'vi' ? 'Đã lưu sự kiện thành công!' : 'Event saved successfully!',
+        `"${savedEvent.title}" (${savedEvent.startDate}${savedEvent.allDay ? ' · Cả ngày' : ` lúc ${savedEvent.startTime}`})`
+      );
+    }
   }, [user, getFirestoreSyncUid, productivity.updateTask, isLiveSyncEnabled, lang]);
 
   const handleDeleteEvent = useCallback((eventId: string) => {
@@ -558,7 +589,9 @@ export default function App() {
     }
     const firestoreUid = getFirestoreSyncUid(user);
     if (firestoreUid) {
-      deleteEventFromFirestore(firestoreUid, eventId).catch(console.warn);
+      import('./services/firestoreSync')
+        .then(({ deleteEventFromFirestore }) => deleteEventFromFirestore(firestoreUid, eventId))
+        .catch(console.warn);
     }
     if (isLiveSyncEnabled) playSyncPulse();
     notifySuccess(
@@ -597,7 +630,9 @@ export default function App() {
             updatedAt: Date.now(),
           };
           if (firestoreUid) {
-            saveEventToFirestore(firestoreUid, updated).catch(console.warn);
+            import('./services/firestoreSync')
+              .then(({ saveEventToFirestore }) => saveEventToFirestore(firestoreUid, updated))
+              .catch(console.warn);
           }
           return updated;
         }
@@ -667,31 +702,43 @@ export default function App() {
     }
     setSyncState('syncing');
 
-    const unsubscribeFirestore = subscribeUserEvents(
-      firestoreUid,
-      (remoteEvents) => {
-        if (remoteEvents.length > 0) {
-          setEvents((prev) => {
-            const remoteMap = new Map(remoteEvents.map((r) => [r.id, r]));
-            const merged = prev.map((local) => {
-              const remote = remoteMap.get(local.id);
-              if (!remote) return local;
-              remoteMap.delete(local.id);
-              return (remote.updatedAt || 0) > (local.updatedAt || 0) ? remote : local;
-            });
-            return [...merged, ...Array.from(remoteMap.values())];
-          });
-        }
-        setSyncState('synced');
-        setLastSyncedTime(new Date().toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US'));
-      },
-      (err) => {
-        console.warn('Firestore subscription warning:', err);
-        setSyncState('offline');
-      }
-    );
+    let cancelled = false;
+    let unsubscribeFirestore: (() => void) | undefined;
+
+    import('./services/firestoreSync')
+      .then(({ subscribeUserEvents }) => {
+        if (cancelled) return;
+        unsubscribeFirestore = subscribeUserEvents(
+          firestoreUid,
+          (remoteEvents) => {
+            if (remoteEvents.length > 0) {
+              setEvents((prev) => {
+                const remoteMap = new Map(remoteEvents.map((r) => [r.id, r]));
+                const merged = prev.map((local) => {
+                  const remote = remoteMap.get(local.id);
+                  if (!remote) return local;
+                  remoteMap.delete(local.id);
+                  return (remote.updatedAt || 0) > (local.updatedAt || 0) ? remote : local;
+                });
+                return [...merged, ...Array.from(remoteMap.values())];
+              });
+            }
+            setSyncState('synced');
+            setLastSyncedTime(new Date().toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US'));
+          },
+          (err) => {
+            console.warn('Firestore subscription warning:', err);
+            setSyncState('offline');
+          }
+        );
+      })
+      .catch((err) => {
+        console.warn('Failed to load Firestore sync:', err);
+        if (!cancelled) setSyncState('offline');
+      });
 
     return () => {
+      cancelled = true;
       if (unsubscribeFirestore) unsubscribeFirestore();
     };
   }, [user, getFirestoreSyncUid, lang]);
@@ -909,16 +956,17 @@ export default function App() {
 
   // Google OAuth Handlers
   const handleGoogleSignIn = async () => {
-    // The shared sample Client ID cannot authorize this origin, so the Google
-    // consent popup would only end on a "400: origin_mismatch" error page.
-    // Send the user straight to the real sync dialog (own Client ID, access
-    // token, or secret iCal URL) instead of opening a dead popup.
-    if (!hasOwnClientId()) {
-      setIsCloudSyncOpen(true);
-      return;
-    }
-
     try {
+      const { executeRealGoogleSync, hasOwnClientId } = await import('./services/realGoogleAuth');
+      // The shared sample Client ID cannot authorize this origin, so the Google
+      // consent popup would only end on a "400: origin_mismatch" error page.
+      // Send the user straight to the real sync dialog (own Client ID, access
+      // token, or secret iCal URL) instead of opening a dead popup.
+      if (!hasOwnClientId()) {
+        setIsCloudSyncOpen(true);
+        return;
+      }
+
       setIsSyncing(true);
       // Attempt official real Google OAuth login via Google Identity Services
       const realRes = await executeRealGoogleSync();
@@ -1405,11 +1453,13 @@ export default function App() {
         </div>
 
         <div className="w-full max-w-[540px] h-[340px] sm:h-[380px] rounded-3xl overflow-hidden border border-white/15 shadow-[0_20px_80px_rgba(0,0,0,0.9),0_0_60px_rgba(225,29,72,0.25)] bg-[#0a0a0a]">
-          <Scene
-            syncState={syncState}
-            lastSyncedTime={lastSyncedTime}
-            onSync={() => runLiveSyncCheck(false)}
-          />
+          <Suspense fallback={<ChunkFallback />}>
+            <Scene
+              syncState={syncState}
+              lastSyncedTime={lastSyncedTime}
+              onSync={() => runLiveSyncCheck(false)}
+            />
+          </Suspense>
         </div>
       </div>
     );
@@ -1420,24 +1470,32 @@ export default function App() {
   if (!user || view === 'landing') {
     return (
       <>
-        <LandingPage
-          onEnterApp={() => {
-            if (!user) {
+        <Suspense
+          fallback={
+            <div className="min-h-screen bg-[#030002] flex items-center justify-center text-xs font-mono text-zinc-400">
+              Đang khởi tạo ZENOX...
+            </div>
+          }
+        >
+          <LandingPage
+            onEnterApp={() => {
+              if (!user) {
+                setLoginModalMode('login');
+                setIsLoginModalOpen(true);
+              } else {
+                handleViewChange('dashboard');
+              }
+            }}
+            onOpenLogin={() => {
               setLoginModalMode('login');
               setIsLoginModalOpen(true);
-            } else {
-              handleViewChange('dashboard');
-            }
-          }}
-          onOpenLogin={() => {
-            setLoginModalMode('login');
-            setIsLoginModalOpen(true);
-          }}
-          isLoggedIn={Boolean(user)}
-          userName={user?.displayName || undefined}
-          darkMode={darkMode}
-          onToggleDarkMode={toggleDarkMode}
-        />
+            }}
+            isLoggedIn={Boolean(user)}
+            userName={user?.displayName || undefined}
+            darkMode={darkMode}
+            onToggleDarkMode={toggleDarkMode}
+          />
+        </Suspense>
         <LoginModal
           isOpen={isLoginModalOpen}
           onClose={() => setIsLoginModalOpen(false)}
@@ -1450,7 +1508,7 @@ export default function App() {
   }
 
   return (
-    <div key={user?.uid || "zenox_guest"} className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-[#070204] dark:vortex-canvas text-slate-800 dark:text-slate-100 font-sans antialiased">
+    <div key={user?.uid || "zenox_guest"} className="flex h-dvh w-screen overflow-hidden bg-slate-50 dark:bg-[#070204] dark:vortex-canvas text-slate-800 dark:text-slate-100 font-sans antialiased">
 
       {/* Global Interactive Notification Toast Container */}
       <LoginModal
@@ -1500,7 +1558,6 @@ export default function App() {
         lang={lang}
         onViewChange={handleViewChange}
         currentView={view}
-        onOpenGeminiMacro={() => setIsGeminiMacroOpen(true)}
         onOpenSettings={() => setIsShortcutsOpen(true)}
         onOpenCloudSync={() => setIsCloudSyncOpen(true)}
         onGoogleSignIn={handleGoogleSignIn}
@@ -1524,7 +1581,6 @@ export default function App() {
           onOpenExportImport={() => setIsExportImportOpen(true)}
           onOpenCloudSync={() => setIsCloudSyncOpen(true)}
           onGoogleSignIn={handleGoogleSignIn}
-          onOpenGeminiMacro={() => setIsGeminiMacroOpen(true)}
           onOpenLifeCopilot={() => setIsLifeCopilotOpen(true)}
           onToggleRightDrawer={() => setIsRightDrawerOpen((prev) => !prev)}
           userEmail={user?.email || ''}
@@ -1574,13 +1630,18 @@ export default function App() {
                 onUndo={undo}
                 onRedo={redo}
                 onOpenCreateModal={(type) => openCreateModal(type)}
+                onCleanData={handleCleanCalendar}
+                weekStartsOnMonday={weekStartsOnMonday}
+                onToggleWeekStart={() => setWeekStartsOnMonday((prev) => !prev)}
+                eventTypeFilter={eventTypeFilter}
+                onChangeEventTypeFilter={setEventTypeFilter}
               />
 
               <div className="flex-1 overflow-hidden relative">
                 {view === 'month' && (
                   <MonthView
                     currentDate={currentDate}
-                    events={allEvents}
+                    events={calendarVisibleEvents}
                     visibleCategoryIds={visibleCategoryIds}
                     onSelectEvent={(ev) => setSelectedEventForDetail(ev)}
                     onCellClick={(dateStr, clientX, clientY) => {
@@ -1590,6 +1651,7 @@ export default function App() {
                       setDayPlanner({ isOpen: true, dateStr });
                     }}
                     onMoveEvent={handleMoveEvent}
+                    weekStartsOnMonday={weekStartsOnMonday}
                     lang={lang}
                   />
                 )}
@@ -1598,7 +1660,7 @@ export default function App() {
                   <TimeGridView
                     currentDate={currentDate}
                     viewType={view}
-                    events={allEvents}
+                    events={calendarVisibleEvents}
                     visibleCategoryIds={visibleCategoryIds}
                     onSelectEvent={(ev) => setSelectedEventForDetail(ev)}
                     onSlotClick={(dateStr, timeStr, clientX, clientY) => {
@@ -1617,17 +1679,18 @@ export default function App() {
                     onPointerMove={updatePointerMove}
                     onFinishDnD={finishDnD}
                     onCancelDnD={cancelDnD}
+                    weekStartsOnMonday={weekStartsOnMonday}
                   />
                 )}
 
                 {view === 'year' && (
                   <YearView
                     currentDate={currentDate}
-                    events={allEvents}
+                    events={calendarVisibleEvents}
                     visibleCategoryIds={visibleCategoryIds}
                     onSelectDate={(d) => {
                       setCurrentDate(d);
-                      setView('day');
+                      handleViewChange('day');
                     }}
                     lang={lang}
                   />
@@ -1636,7 +1699,7 @@ export default function App() {
                 {view === 'schedule' && (
                   <ScheduleView
                     currentDate={currentDate}
-                    events={allEvents}
+                    events={calendarVisibleEvents}
                     visibleCategoryIds={visibleCategoryIds}
                     searchQuery={searchQuery}
                     onSelectEvent={(ev) => setSelectedEventForDetail(ev)}
@@ -1651,6 +1714,7 @@ export default function App() {
             </div>
           ) : (
             <div className="h-full">
+              <Suspense fallback={<ChunkFallback />}>
               {view === 'analytics' && (
                 <TimeAnalyticsView
                   events={allEvents}
@@ -1701,7 +1765,12 @@ export default function App() {
                       source: 'manual',
                     });
                   }}
-                  onOpenMacroModal={() => setIsGeminiMacroOpen(true)}
+                  onOpenMacroModal={() => {
+                    try {
+                      localStorage.setItem('vortex_health_subtab', 'nutrition');
+                    } catch {}
+                    handleViewChange('health');
+                  }}
                 />
               )}
 
@@ -1727,13 +1796,25 @@ export default function App() {
                   }}
                   onStartFocus={(taskId) => {
                     try {
-                      const raw = localStorage.getItem('gcal_focus_timer');
-                      if (raw) {
-                        const parsed = JSON.parse(raw);
-                        parsed.linkedTaskId = taskId;
-                        parsed.mode = 'pomodoro';
-                        localStorage.setItem('gcal_focus_timer', JSON.stringify(parsed));
-                      }
+                      const raw = accountStorage.getItem('gcal_focus_timer');
+                      const base = raw
+                        ? JSON.parse(raw)
+                        : {
+                            mode: 'pomodoro',
+                            phase: 'focus',
+                            intervalId: 'pomo25',
+                            countdownMinutes: 30,
+                            linkedTaskId: '',
+                            remaining: 25 * 60,
+                            elapsed: 0,
+                            running: false,
+                            runStartedAt: null,
+                            soundOn: true,
+                            completedPomodoros: 0,
+                          };
+                      base.linkedTaskId = taskId;
+                      base.mode = 'pomodoro';
+                      accountStorage.setItem('gcal_focus_timer', JSON.stringify(base));
                     } catch {}
                     handleViewChange('focus');
                   }}
@@ -1802,6 +1883,9 @@ export default function App() {
                   bodyPhotos={productivity.bodyPhotos}
                   onAddBodyPhoto={productivity.addBodyPhoto}
                   onDeleteBodyPhoto={productivity.deleteBodyPhoto}
+                  weeklyCheckins={productivity.weeklyCheckins}
+                  onAddWeeklyCheckin={productivity.addWeeklyCheckin}
+                  onDeleteWeeklyCheckin={productivity.deleteWeeklyCheckin}
                   savedRoadmaps={productivity.savedRoadmaps}
                   onAddSavedRoadmap={productivity.addSavedRoadmap}
                   onDeleteSavedRoadmap={productivity.deleteSavedRoadmap}
@@ -1836,27 +1920,21 @@ export default function App() {
                   onUpdateNutritionSettings={productivity.updateNutritionSettings}
                   events={events}
                   onClearWorkoutEventsFromCalendar={async () => {
-                    const workoutEvents = events.filter(
-                      (e) =>
-                        e.id.startsWith('scheduled-wo-') ||
-                        e.id.startsWith('ctg-workout-') ||
-                        (e.calendarId === 'health' && e.title.includes('💪'))
-                    );
-                    if (workoutEvents.length === 0) return 0;
+                    const isWorkoutEvent = (e: CalendarEvent) =>
+                      e.id.startsWith('scheduled-wo-') ||
+                      e.id.startsWith('ctg-workout-') ||
+                      (e.calendarId === 'health' &&
+                        (e.title.includes('💪') || e.title.includes('[ZENOX]')));
 
-                    setEvents((prev) =>
-                      prev.filter(
-                        (e) =>
-                          !e.id.startsWith('scheduled-wo-') &&
-                          !e.id.startsWith('ctg-workout-') &&
-                          !(e.calendarId === 'health' && e.title.includes('💪'))
-                      )
-                    );
+                    const workoutEventsToRemove = events.filter(isWorkoutEvent);
+                    if (workoutEventsToRemove.length === 0) return 0;
+
+                    setEvents((prev) => prev.filter((e) => !isWorkoutEvent(e)));
 
                     try {
                       const token = await getAccessToken();
                       if (token) {
-                        for (const ev of workoutEvents) {
+                        for (const ev of workoutEventsToRemove) {
                           if (ev.id.startsWith('gcal-')) {
                             await deleteGoogleCalendarEvent(token, ev.id.slice(5)).catch(() => {});
                           }
@@ -1865,39 +1943,49 @@ export default function App() {
                     } catch (e) {
                       console.warn('GCal delete error:', e);
                     }
-                    return workoutEvents.length;
+                    return workoutEventsToRemove.length;
                   }}
-                  onBatchScheduleToCalendar={async (newEvents: CalendarEvent[]) => {
-                    setEvents((prev) => [...prev, ...newEvents]);
-                    try {
-                      const token = await getAccessToken();
-                      if (token) {
-                        for (const ev of newEvents) {
-                          await createGoogleCalendarEvent(token, ev).catch((e) =>
-                            console.warn('Batch GCal sync error:', e)
-                          );
-                        }
-                      }
-                    } catch (e) {
-                      console.warn('GCal sync error:', e);
+                  onBatchScheduleToCalendar={(newEvents: CalendarEvent[]) => {
+                    setEvents((prev) => deduplicateEvents([...prev, ...newEvents]));
+                  }}
+                  onScheduleSessionToCalendar={async (title, date, color) => {
+                    const resolution = resolveNonConflictingSlot(date, '17:30', 75, events, {
+                      maxHour: 23,
+                      bufferMinutes: 15,
+                    });
+                    if (resolution.status === 'conflict') {
+                      const names = resolution.remainingConflicts
+                        .map((c) => `"${c.title}" (${c.startTime}–${c.endTime})`)
+                        .join(', ');
+                      const proceed = window.confirm(
+                        `Cảnh báo trùng lịch: ngày ${date} khung 17:30–18:45 trùng với ${names} và không còn khoảng trống 75 phút phù hợp. Vẫn thêm "${title}"?`
+                      );
+                      if (!proceed) return;
                     }
-                  }}
-                  onScheduleSessionToCalendar={(title, date, color) => {
                     const newEv: CalendarEvent = {
-                      id: `scheduled-wo-${Date.now()}`,
-                      title: `💪 ${title}`,
+                      id: `scheduled-wo-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+                      title: title.startsWith('[ZENOX]') || title.includes('💪') ? title : `💪 ${title}`,
                       startDate: date,
-                      startTime: '17:30',
+                      startTime: resolution.startTime,
                       endDate: date,
-                      endTime: '18:45',
+                      endTime: resolution.endTime,
                       allDay: false,
                       calendarId: 'health',
-                      color,
+                      color: color || '#E11D48',
                       type: 'event',
                       isCompleted: false,
                       createdAt: Date.now(),
                     };
-                    setEvents((prev) => [...prev, newEv]);
+                    setEvents((prev) => deduplicateEvents([...prev, newEv]));
+                    if (resolution.status === 'shifted') {
+                      const avoided = resolution.conflictingEvents.map((e) => e.title).join(', ');
+                      notifyWarning(
+                        lang === 'vi' ? 'Đã tự dời né trùng lịch' : 'Workout shifted to avoid conflict',
+                        lang === 'vi'
+                          ? `Khung 17:30 trùng "${avoided}". "${title}" được xếp sang ${resolution.startTime}–${resolution.endTime}.`
+                          : `17:30 conflicted with "${avoided}". Scheduled at ${resolution.startTime}–${resolution.endTime}.`
+                      );
+                    }
                     getAccessToken().then((token) => {
                       if (token) {
                         createGoogleCalendarEvent(token, newEv).catch(() => {});
@@ -1906,6 +1994,7 @@ export default function App() {
                   }}
                 />
               )}
+              </Suspense>
             </div>
           )}
         </div>
@@ -1958,6 +2047,7 @@ export default function App() {
         dateStr={miniPopover.dateStr}
         startTime={miniPopover.startTime}
         endTime={miniPopover.endTime}
+        events={allEvents}
         categories={categories}
         onSave={handleSaveEvent}
         onOpenFullModal={(dateStr, startTime, endTime, title, allDay, color) => {
@@ -1996,6 +2086,7 @@ export default function App() {
       {selectedEventForDetail && (
         <EventDetailCard
           event={selectedEventForDetail}
+          events={allEvents}
           categories={categories}
           onClose={() => setSelectedEventForDetail(null)}
           onEdit={(ev) => {
@@ -2004,6 +2095,8 @@ export default function App() {
             setIsEventModalOpen(true);
           }}
           onDelete={handleDeleteEvent}
+          onDuplicate={handleSaveEvent}
+          onQuickReschedule={handleSaveEvent}
           onToggleComplete={handleToggleCompleteTask}
           onJoinMeet={(ev) => {
             if (ev.meetUrl) window.open(ev.meetUrl, '_blank');
@@ -2018,6 +2111,7 @@ export default function App() {
           isOpen={isEventModalOpen}
           onClose={() => setIsEventModalOpen(false)}
           eventToEdit={eventToEdit}
+          events={allEvents}
           initialDate={modalDate}
           initialTime={modalTime}
           initialEndTime={modalEndTime}
@@ -2038,6 +2132,7 @@ export default function App() {
         onClose={() => setIsQuickAddOpen(false)}
         onAddEvent={handleSaveEvent}
         currentDate={currentDate}
+        events={allEvents}
         lang={lang}
       />
 
@@ -2049,61 +2144,84 @@ export default function App() {
       />
 
       {/* Export & Import Modal */}
-      <ExportImportModal
-        isOpen={isExportImportOpen}
-        onClose={() => setIsExportImportOpen(false)}
-        events={events}
-        onImportEvents={(imported) => {
-          setEvents((prev) => {
-            const cleaned = prev.filter((e) => !e.id.startsWith('ev-'));
-            const map = new Map(cleaned.map((e) => [e.id, e]));
-            for (const item of imported) {
-              map.set(item.id, item);
-            }
-            const deduped = deduplicateEvents(Array.from(map.values()));
-            try {
-              accountStorage.setItem('gcal_events', JSON.stringify(deduped));
-            } catch {}
-            return deduped;
-          });
-        }}
-        onResetEvents={() => {
-          setEvents(INITIAL_EVENTS);
-        }}
-        lang={lang}
-      />
+      <Suspense fallback={null}>
+        {isExportImportOpen && (
+          <ExportImportModal
+            isOpen={isExportImportOpen}
+            onClose={() => setIsExportImportOpen(false)}
+            events={events}
+            onImportEvents={(imported) => {
+              setEvents((prev) => {
+                const cleaned = prev.filter((e) => !isDemoEventId(e.id));
+                const map = new Map(cleaned.map((e) => [e.id, e]));
+                for (const item of imported) {
+                  map.set(item.id, item);
+                }
+                const deduped = deduplicateEvents(Array.from(map.values()));
+                try {
+                  accountStorage.setItem('gcal_events', JSON.stringify(deduped));
+                } catch {}
+                return deduped;
+              });
+            }}
+            onResetEvents={() => {
+              setEvents(INITIAL_EVENTS);
+              productivity.resetAll();
+            }}
+            onExportProductivityBackup={productivity.snapshot}
+            onImportProductivityBackup={productivity.restore}
+            lang={lang}
+          />
+        )}
 
-      {/* Cloud Sync Modal */}
-      <CloudSyncModal
-        isOpen={isCloudSyncOpen}
-        onClose={() => setIsCloudSyncOpen(false)}
-        user={user}
-        onGoogleSignIn={handleGoogleSignIn}
-        onGoogleSignOut={handleGoogleSignOut}
-        events={events}
-        categories={categories}
-        onImportEvents={(imported) => {
-          setEvents((prev) => {
-            const cleaned = prev.filter((e) => !e.id.startsWith('ev-'));
-            const map = new Map(cleaned.map((e) => [e.id, e]));
-            for (const item of imported) {
-              map.set(item.id, item);
-            }
-            const deduped = deduplicateEvents(Array.from(map.values()));
-            try {
-              accountStorage.setItem('gcal_events', JSON.stringify(deduped));
-            } catch {}
-            return deduped;
-          });
-          setLastSyncedTime(new Date().toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US'));
-          setSyncState('synced');
-        }}
-        syncState={syncState}
-        lastSyncedTime={lastSyncedTime}
-        lang={lang}
-        onSyncGoogleCalendar={handleSyncGoogleCalendar}
-        onCreateNewAccount={handleCreateNewAccount}
-      />
+        {/* Cloud Sync Modal */}
+        {isCloudSyncOpen && (
+          <CloudSyncModal
+            isOpen={isCloudSyncOpen}
+            onClose={() => setIsCloudSyncOpen(false)}
+            user={user}
+            onGoogleSignIn={handleGoogleSignIn}
+            onGoogleSignOut={handleGoogleSignOut}
+            events={events}
+            categories={categories}
+            onImportEvents={(imported) => {
+              setEvents((prev) => {
+                const cleaned = prev.filter((e) => !e.id.startsWith('ev-'));
+                const map = new Map(cleaned.map((e) => [e.id, e]));
+                for (const item of imported) {
+                  map.set(item.id, item);
+                }
+                const deduped = deduplicateEvents(Array.from(map.values()));
+                try {
+                  accountStorage.setItem('gcal_events', JSON.stringify(deduped));
+                } catch {}
+                return deduped;
+              });
+              setLastSyncedTime(new Date().toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US'));
+              setSyncState('synced');
+            }}
+            syncState={syncState}
+            lastSyncedTime={lastSyncedTime}
+            lang={lang}
+            onSyncGoogleCalendar={handleSyncGoogleCalendar}
+            onCreateNewAccount={handleCreateNewAccount}
+          />
+        )}
+
+        {/* Global Life Copilot AI Assistant Modal */}
+        {isLifeCopilotOpen && (
+          <LifeCopilotModal
+            isOpen={isLifeCopilotOpen}
+            onClose={() => setIsLifeCopilotOpen(false)}
+            lang={lang}
+            store={productivity}
+            events={allEvents}
+            onAddEvent={handleSaveEvent}
+            onNavigate={handleViewChange}
+            currentDate={currentDate}
+          />
+        )}
+      </Suspense>
 
       {/* Multi-Hub: Đồng bộ Google & Quản lý Cuộc sống (Pomodoro, Tài chính, Học tập, Sức khỏe) */}
       <MultiHubDrawer
@@ -2120,26 +2238,6 @@ export default function App() {
         onNavigate={handleViewChange}
         store={productivity}
         categories={categories}
-      />
-
-      {/* Global Gemini AI Macro Studio Modal */}
-      <GeminiMacroModal
-        isOpen={isGeminiMacroOpen}
-        onClose={() => setIsGeminiMacroOpen(false)}
-        onApplyGeminiMacros={handleApplyGeminiMacros}
-        selectedDate={formatDateString(currentDate)}
-      />
-
-      {/* Global Life Copilot AI Assistant Modal */}
-      <LifeCopilotModal
-        isOpen={isLifeCopilotOpen}
-        onClose={() => setIsLifeCopilotOpen(false)}
-        lang={lang}
-        store={productivity}
-        events={allEvents}
-        onAddEvent={handleSaveEvent}
-        onNavigate={handleViewChange}
-        currentDate={currentDate}
       />
     </div>
   );

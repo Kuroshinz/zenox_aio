@@ -28,6 +28,7 @@ import {
   Transaction,
   TransactionType,
   WellnessCheck,
+  WeeklyCheckinRecord,
   WorkoutLog,
   WorkoutSession,
 } from '../types/productivity';
@@ -82,6 +83,7 @@ const KEYS = {
   ctgPeriodizedRoadmap: 'gcal_ctg_periodized_roadmap',
   savedCtgRoadmaps: 'gcal_ctg_saved_roadmaps',
   customExercises: 'gcal_prod_custom_exercises',
+  weeklyCheckins: 'gcal_ctg_weekly_checkins',
 } as const;
 
 export interface ProductivityStore {
@@ -147,6 +149,9 @@ export interface ProductivityStore {
   bodyPhotos: BodyCheckPhoto[];
   addBodyPhoto: (photo: Omit<BodyCheckPhoto, 'id' | 'createdAt'>) => BodyCheckPhoto;
   deleteBodyPhoto: (id: string) => void;
+  weeklyCheckins: WeeklyCheckinRecord[];
+  addWeeklyCheckin: (checkin: Omit<WeeklyCheckinRecord, 'id' | 'createdAt'>) => WeeklyCheckinRecord;
+  deleteWeeklyCheckin: (id: string) => void;
   savedRoadmaps: SavedRoadmap[];
   addSavedRoadmap: (roadmap: Omit<SavedRoadmap, 'id' | 'createdAt'>) => SavedRoadmap;
   deleteSavedRoadmap: (id: string) => void;
@@ -314,6 +319,7 @@ export function useProductivityStore(): ProductivityStore {
     DEFAULT_NUTRITION_SETTINGS
   );
   const [bodyPhotos, setBodyPhotos] = usePersistentState<BodyCheckPhoto[]>(KEYS.bodyPhotos, []);
+  const [weeklyCheckins, setWeeklyCheckins] = usePersistentState<WeeklyCheckinRecord[]>(KEYS.weeklyCheckins, []);
   const [savedRoadmaps, setSavedRoadmaps] = usePersistentState<SavedRoadmap[]>(KEYS.savedRoadmaps, []);
   const [ctgPeriodizedRoadmap, setCtgPeriodizedRoadmap] = usePersistentState<CtgPeriodizedRoadmap | null>(
     KEYS.ctgPeriodizedRoadmap,
@@ -321,7 +327,7 @@ export function useProductivityStore(): ProductivityStore {
   );
   const [savedCtgRoadmaps, setSavedCtgRoadmaps] = usePersistentState<CtgPeriodizedRoadmap[]>(
     KEYS.savedCtgRoadmaps,
-    [SEED_CTG_PERIODIZED_ROADMAP]
+    getAccountScopedSeed([SEED_CTG_PERIODIZED_ROADMAP], [])
   );
   const [customExercises, setCustomExercises] = usePersistentState<Exercise[]>(KEYS.customExercises, []);
 
@@ -748,6 +754,26 @@ export function useProductivityStore(): ProductivityStore {
     [setBodyPhotos]
   );
 
+  const addWeeklyCheckin = useCallback(
+    (input: Omit<WeeklyCheckinRecord, 'id' | 'createdAt'>) => {
+      const record: WeeklyCheckinRecord = {
+        ...input,
+        id: uid('wci'),
+        createdAt: Date.now(),
+      };
+      setWeeklyCheckins((prev) => [record, ...prev]);
+      return record;
+    },
+    [setWeeklyCheckins]
+  );
+
+  const deleteWeeklyCheckin = useCallback(
+    (id: string) => {
+      setWeeklyCheckins((prev) => prev.filter((r) => r.id !== id));
+    },
+    [setWeeklyCheckins]
+  );
+
   const addSavedRoadmap = useCallback(
     (input: Omit<SavedRoadmap, 'id' | 'createdAt'>) => {
       const rm: SavedRoadmap = {
@@ -790,9 +816,14 @@ export function useProductivityStore(): ProductivityStore {
     (phaseId: string) => {
       setCtgPeriodizedRoadmap((prev) => {
         if (!prev) return null;
+        const previousPhaseId =
+          prev.activePhaseId && prev.activePhaseId !== phaseId
+            ? prev.activePhaseId
+            : prev.previousPhaseId;
         const updated = {
           ...prev,
           activePhaseId: phaseId,
+          previousPhaseId,
           phases: prev.phases.map((p) => ({
             ...p,
             isCurrent: p.id === phaseId,
@@ -999,6 +1030,7 @@ export function useProductivityStore(): ProductivityStore {
       sportSessions,
       meals,
       nutritionSettings,
+      weeklyCheckins,
     }),
     [
       tasks,
@@ -1018,6 +1050,7 @@ export function useProductivityStore(): ProductivityStore {
       sportSessions,
       meals,
       nutritionSettings,
+      weeklyCheckins,
     ]
   );
 
@@ -1040,6 +1073,7 @@ export function useProductivityStore(): ProductivityStore {
       if (data.sportSessions) setSportSessions(data.sportSessions);
       if (data.meals) setMeals(data.meals);
       if (data.nutritionSettings) setNutritionSettings(data.nutritionSettings);
+      if (data.weeklyCheckins) setWeeklyCheckins(data.weeklyCheckins);
     },
     [
       setTasks,
@@ -1059,6 +1093,7 @@ export function useProductivityStore(): ProductivityStore {
       setSportSessions,
       setMeals,
       setNutritionSettings,
+      setWeeklyCheckins,
     ]
   );
 
@@ -1081,6 +1116,7 @@ export function useProductivityStore(): ProductivityStore {
     setMeals(SEED_MEALS);
     setNutritionSettings(DEFAULT_NUTRITION_SETTINGS);
     setBodyPhotos([]);
+    setWeeklyCheckins([]);
     setSavedRoadmaps([]);
     setCtgPeriodizedRoadmap(SEED_CTG_PERIODIZED_ROADMAP);
     setSavedCtgRoadmaps([SEED_CTG_PERIODIZED_ROADMAP]);
@@ -1134,6 +1170,7 @@ export function useProductivityStore(): ProductivityStore {
       setMeals([]);
       setNutritionSettings(DEFAULT_NUTRITION_SETTINGS);
       setBodyPhotos([]);
+      setWeeklyCheckins([]);
       setSavedRoadmaps([]);
       setCtgPeriodizedRoadmap(null);
       setSavedCtgRoadmaps([]);
@@ -1160,6 +1197,7 @@ export function useProductivityStore(): ProductivityStore {
       setBodyPhotos,
       setSavedRoadmaps,
       setCtgPeriodizedRoadmap,
+      setSavedCtgRoadmaps,
       setCustomExercises,
     ]
   );
@@ -1215,6 +1253,9 @@ export function useProductivityStore(): ProductivityStore {
     bodyPhotos,
     addBodyPhoto,
     deleteBodyPhoto,
+    weeklyCheckins,
+    addWeeklyCheckin,
+    deleteWeeklyCheckin,
     savedRoadmaps,
     addSavedRoadmap,
     deleteSavedRoadmap,

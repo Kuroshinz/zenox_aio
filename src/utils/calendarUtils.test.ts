@@ -9,6 +9,11 @@ import {
   doesEventOccurOnDate,
   computeEventLayout,
   deduplicateEvents,
+  isDemoEventId,
+  findConflictingEvents,
+  suggestAvailableSlots,
+  resolveNonConflictingSlot,
+  isWorkoutCalendarEvent,
   parseNaturalLanguageInput,
   exportToIcs,
   parseIcsContent,
@@ -245,4 +250,240 @@ test('deduplicateEvents correctly merges identical duplicates and duplicate all-
   const titles = deduped.map((e) => e.title);
   assert.ok(titles.includes('Học chính khóa'));
   assert.ok(titles.includes('Gym'));
+});
+
+test('isDemoEventId & deduplicateEvents preserve user-created events alongside Google Calendar events', () => {
+  assert.equal(isDemoEventId('ev-1'), true);
+  assert.equal(isDemoEventId('ev-welcome-usr1'), true);
+  assert.equal(isDemoEventId('ev-1730000000000-abc'), false);
+  assert.equal(isDemoEventId('usr-1730000000000-abc'), false);
+
+  const mixed: CalendarEvent[] = [
+    {
+      id: 'ev-1',
+      title: 'Demo event',
+      startDate: '2026-10-29',
+      startTime: '09:00',
+      endDate: '2026-10-29',
+      endTime: '10:00',
+      allDay: false,
+      calendarId: 'personal',
+      color: '#039BE5',
+      type: 'event',
+      createdAt: 1,
+    },
+    {
+      id: 'gcal-real-1',
+      title: 'Synced Google Meeting',
+      startDate: '2026-10-29',
+      startTime: '10:00',
+      endDate: '2026-10-29',
+      endTime: '11:00',
+      allDay: false,
+      calendarId: 'work',
+      color: '#039BE5',
+      type: 'event',
+      createdAt: 2,
+    },
+    {
+      id: 'ev-1730000000000-abc',
+      title: 'User Event Created Earlier',
+      startDate: '2026-10-29',
+      startTime: '14:00',
+      endDate: '2026-10-29',
+      endTime: '15:00',
+      allDay: false,
+      calendarId: 'personal',
+      color: '#039BE5',
+      type: 'event',
+      createdAt: 3,
+    },
+  ];
+
+  const deduped = deduplicateEvents(mixed);
+  assert.equal(deduped.length, 2);
+  assert.ok(deduped.some((e) => e.id === 'gcal-real-1'));
+  assert.ok(deduped.some((e) => e.id === 'ev-1730000000000-abc'));
+});
+
+test('findConflictingEvents and suggestAvailableSlots detect overlaps and open gaps', () => {
+  const events: CalendarEvent[] = [
+    {
+      id: 'usr-1',
+      title: 'Morning Standup',
+      startDate: '2026-11-27',
+      startTime: '09:00',
+      endDate: '2026-11-27',
+      endTime: '10:30',
+      allDay: false,
+      calendarId: 'work',
+      color: '#039BE5',
+      type: 'event',
+      createdAt: 1,
+    },
+    {
+      id: 'usr-2',
+      title: 'Lunch Sync',
+      startDate: '2026-11-27',
+      startTime: '12:00',
+      endDate: '2026-11-27',
+      endTime: '13:30',
+      allDay: false,
+      calendarId: 'work',
+      color: '#039BE5',
+      type: 'event',
+      createdAt: 2,
+    },
+  ];
+
+  const conflicts = findConflictingEvents(
+    { startDate: '2026-11-27', startTime: '10:00', endTime: '11:00' },
+    events
+  );
+  assert.equal(conflicts.length, 1);
+  assert.equal(conflicts[0].id, 'usr-1');
+
+  // Ignoring the same event ID produces zero conflicts
+  const selfCheck = findConflictingEvents(
+    { id: 'usr-1', startDate: '2026-11-27', startTime: '09:00', endTime: '10:30' },
+    events
+  );
+  assert.equal(selfCheck.length, 0);
+
+  const slots = suggestAvailableSlots('2026-11-27', 60, events, undefined, 8, 16);
+  assert.equal(slots.length, 3);
+  assert.equal(slots[0].startTime, '08:00');
+  assert.equal(slots[1].startTime, '10:30');
+  assert.equal(slots[2].startTime, '13:30');
+});
+
+test('weekStartsOnMonday shifts MonthView and WeekDates start to Monday', () => {
+  const monWeek = getWeekDates(new Date(2026, 10, 27), true); // Fri Nov 27, 2026
+  assert.equal(monWeek[0].getDay(), 1); // Monday
+  assert.equal(monWeek[6].getDay(), 0); // Sunday
+
+  const monthGrid = getMonthDays(2026, 10, true);
+  assert.equal(monthGrid[0].date.getDay(), 1); // First column is Monday
+});
+
+test('resolveNonConflictingSlot handles packed evenings, recurring events, and unresolvable days accurately', () => {
+  // Reproduces the exact stacked evening scenario: afternoon until 17:15, Văn 18:00-19:00, Anh 19:00-20:30
+  const events: CalendarEvent[] = [
+    {
+      id: 'cls-pm',
+      title: 'Chiều',
+      startDate: '2026-11-26',
+      startTime: '14:00',
+      endDate: '2026-11-26',
+      endTime: '17:15',
+      allDay: false,
+      calendarId: 'work',
+      color: '#2563EB',
+      type: 'event',
+      createdAt: 1,
+    },
+    {
+      id: 'cls-van',
+      title: 'Văn',
+      startDate: '2026-11-26',
+      startTime: '18:00',
+      endDate: '2026-11-26',
+      endTime: '19:00',
+      allDay: false,
+      calendarId: 'work',
+      color: '#2563EB',
+      type: 'event',
+      createdAt: 2,
+    },
+    {
+      id: 'cls-anh',
+      title: 'Anh',
+      startDate: '2026-11-26',
+      startTime: '19:00',
+      endDate: '2026-11-26',
+      endTime: '20:30',
+      allDay: false,
+      calendarId: 'work',
+      color: '#2563EB',
+      type: 'event',
+      createdAt: 3,
+    },
+    {
+      id: 'cls-rec',
+      title: 'Hóa (hàng tuần)',
+      startDate: '2026-11-23', // Monday
+      startTime: '17:30',
+      endDate: '2026-11-23',
+      endTime: '19:00',
+      allDay: false,
+      recurrence: 'weekly',
+      calendarId: 'work',
+      color: '#2563EB',
+      type: 'event',
+      createdAt: 4,
+    },
+    {
+      id: 'ctg-workout-old',
+      title: '[ZENOX] Push Day',
+      startDate: '2026-11-30',
+      startTime: '17:30',
+      endDate: '2026-11-30',
+      endTime: '18:45',
+      allDay: false,
+      calendarId: 'health',
+      color: '#E11D48',
+      type: 'event',
+      createdAt: 5,
+    },
+  ];
+
+  // Must NOT silently keep 17:30 when +/-15m around Văn fails; finds 20:45-22:00 cleanly
+  const packedRes = resolveNonConflictingSlot('2026-11-26', '17:30', 75, events, {
+    minHour: 6,
+    maxHour: 23,
+    bufferMinutes: 15,
+  });
+  assert.equal(packedRes.status, 'shifted');
+  assert.equal(packedRes.remainingConflicts.length, 0);
+  assert.equal(packedRes.startTime, '20:45');
+  assert.equal(packedRes.endTime, '22:00');
+  assert.ok(packedRes.conflictingEvents.some((e) => e.id === 'cls-van'));
+
+  // Next Monday (2026-11-30): recurring Hóa + old workout exist.
+  // When ignoreWorkoutEvents=true (replacing old workouts), still avoids weekly Hóa!
+  const recRes = resolveNonConflictingSlot('2026-11-30', '17:30', 75, events, {
+    ignoreWorkoutEvents: true,
+    minHour: 6,
+    maxHour: 23,
+    bufferMinutes: 15,
+  });
+  assert.equal(recRes.status, 'shifted');
+  assert.equal(recRes.remainingConflicts.length, 0);
+  assert.ok(recRes.conflictingEvents.some((e) => e.id === 'cls-rec'));
+  assert.ok(isWorkoutCalendarEvent(events[4]));
+
+  // When a day is completely booked 06:00-23:00, must report 'conflict' explicitly instead of faking avoidance
+  const fullDay: CalendarEvent[] = [
+    {
+      id: 'full-1',
+      title: 'Học cả ngày',
+      startDate: '2026-12-01',
+      startTime: '06:00',
+      endDate: '2026-12-01',
+      endTime: '22:30',
+      allDay: false,
+      calendarId: 'work',
+      color: '#2563EB',
+      type: 'event',
+      createdAt: 6,
+    },
+  ];
+  const failRes = resolveNonConflictingSlot('2026-12-01', '17:30', 75, fullDay, {
+    minHour: 6,
+    maxHour: 23,
+    bufferMinutes: 15,
+  });
+  assert.equal(failRes.status, 'conflict');
+  assert.equal(failRes.remainingConflicts.length, 1);
+  assert.equal(failRes.remainingConflicts[0].id, 'full-1');
 });

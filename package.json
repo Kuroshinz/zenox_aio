@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --host=0.0.0.0 --port=4173",
+    "preview:ip": "npm run build && vite preview --host=0.0.0.0 --port=4173",
+    "ios:sync": "npm run build && npx cap sync ios",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node -e \"const fs=require('fs'),path=require('path'),cp=require('child_process'),tsx=require.resolve('tsx/cli');function walk(d){return fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(d,e.name)):e.name.endsWith('.test.ts')?[path.join(d,e.name)]:[])}for(const f of walk('src')){console.log('=== '+f+' ===');cp.execFileSync(process.execPath,[tsx,f],{stdio:'inherit'})}\""
   },
   "dependencies": {
+    "@capacitor/core": "^8.6.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/three": "^0.149.0",
     "@vitejs/plugin-react": "^6.1.1",
@@ -24,6 +28,8 @@
     "vite": "^8.3.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.3",
+    "@capacitor/ios": "^8.6.3",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

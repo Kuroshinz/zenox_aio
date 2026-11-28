@@ -13,6 +13,7 @@ import {
   SportSession,
   TaskItem,
   Transaction,
+  WeeklyCheckinRecord,
   WellnessCheck,
   WorkoutLog,
   WorkoutSession,
@@ -37,6 +38,7 @@ export interface ProductivitySnapshotData {
   sportSessions?: SportSession[];
   meals?: MealLog[];
   nutritionSettings?: NutritionSettings;
+  weeklyCheckins?: WeeklyCheckinRecord[];
 }
 
 export interface ProductivityBackup extends ProductivitySnapshotData {

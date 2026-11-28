@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "ZENOX",
+  "short_name": "ZENOX",
+  "description": "ZENOX - Hệ điều hành hiệu suất cá nhân và thể hình chu kỳ hóa khoa học.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#070103",
+  "theme_color": "#070103",
+  "lang": "vi",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

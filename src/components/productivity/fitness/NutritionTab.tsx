@@ -35,11 +35,16 @@ import {
   Copy,
   Layers,
   Heart,
+  Eye,
+  EyeOff,
+  ChefHat,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   CtgPeriodizedRoadmap,
   CtgProfile,
   CtgRoadmapPhase,
+  CustomRecipe,
   FoodItem,
   GOAL_LABEL,
   Goal,
@@ -49,6 +54,8 @@ import {
   MealSlot,
   NutritionSettings,
   BodyPoint,
+  WorkoutSession,
+  SportSession,
 } from '../../../types/productivity';
 import {
   BALANCED_MEAL_COMBOS,
@@ -70,12 +77,18 @@ import {
   calculateMicronutrientSummary,
   calculateCarbCyclingTargets,
   calculateCronometerNutrientScores,
+  calculateThreeTierTdee,
+  calculateDailyEnergyBalance,
+  OracleNutrientKey,
+  getOracleNutrientMeta,
+  recommendFoodsForNutrient,
+  evaluateMicronutrientUpperLimits,
+  calculateRecipePerServing,
+  calculateMacroAdherenceReport,
+  calculateMacroConsistencyHeatmap,
   formatDateString,
 } from '../../../utils/fitnessMetrics';
 import { Donut, ProgressBar, StackedBar } from '../../charts/SimpleCharts';
-import { GeminiMacroModal } from './GeminiMacroModal';
-import { ScientificNutritionStudio } from './ScientificNutritionStudio';
-import { GeminiMacroItem } from '../../../services/geminiSync';
 import { notifySuccess, notifyInfo } from '../../../utils/notify';
 import { playSuccessSound } from '../../../utils/sound';
 
@@ -94,6 +107,8 @@ interface NutritionTabProps {
   ctgPeriodizedRoadmap?: CtgPeriodizedRoadmap | null;
   bodyPoints?: BodyPoint[];
   onUpdateProfile?: (patch: Partial<CtgProfile>) => void;
+  workoutSessions?: WorkoutSession[];
+  sportSessions?: SportSession[];
 }
 
 const MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'pre_workout', 'post_workout', 'dinner', 'snack'];
@@ -113,6 +128,8 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
   ctgPeriodizedRoadmap,
   bodyPoints,
   onUpdateProfile,
+  workoutSessions = [],
+  sportSessions = [],
 }) => {
   const [selectedDate, setSelectedDate] = useState(() => todayString());
   const [selectedSlot, setSelectedSlot] = useState<MealSlot>('lunch');
@@ -187,39 +204,6 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
   const [justSyncedCtg, setJustSyncedCtg] = useState(false);
   const [isApplyingAdaptive, setIsApplyingAdaptive] = useState(false);
   const [justAppliedAdaptive, setJustAppliedAdaptive] = useState(false);
-  const [showGeminiModal, setShowGeminiModal] = useState(false);
-
-  const handleApplyGeminiMacros = (geminiItems: GeminiMacroItem[]) => {
-    const grouped: Partial<Record<MealSlot, FoodItem[]>> = {};
-    for (const it of geminiItems) {
-      if (!grouped[it.slot]) grouped[it.slot] = [];
-      grouped[it.slot]!.push({
-        name: it.name,
-        amount: it.amount,
-        unit: it.unit,
-        kcal: it.kcal,
-        protein: it.protein,
-        carbs: it.carbs,
-        fat: it.fat,
-      });
-    }
-
-    for (const [slotKey, items] of Object.entries(grouped)) {
-      if (!items || items.length === 0) continue;
-      const slot = slotKey as MealSlot;
-      const desc = items.map((i) => `${i.name} (${i.amount}${i.unit})`).join(' + ');
-      onAddMealLog({
-        date: selectedDate,
-        slot,
-        description: desc,
-        items,
-      });
-    }
-
-    setComboToast(`Đã đồng bộ ${geminiItems.length} món từ Gemini AI vào nhật ký ${selectedDate}!`);
-    setTimeout(() => setComboToast(null), 3500);
-    notifySuccess('Đã đồng bộ món từ AI!', `Đã thêm ${geminiItems.length} món vào nhật ký ngày ${selectedDate}.`);
-  };
 
   // Filtered Catalog
   const filteredCatalog = useMemo(() => {
@@ -241,7 +225,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
     const fat = Math.round(item.fat * mult * 10) / 10;
 
     const portionText = mult === 1 ? item.servingLabel : `${mult}x ${item.servingLabel}`;
-    onAddMealLog({
+    logMealWithSnapshot({
       date: selectedDate,
       slot,
       description: `${item.name} (${portionText})`,
@@ -264,7 +248,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
   };
 
   const handleApplyCombo = (combo: MealComboPreset) => {
-    onAddMealLog({
+    logMealWithSnapshot({
       date: selectedDate,
       slot: combo.slot,
       description: combo.name,
@@ -326,6 +310,38 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
     [meals, bodyPoints, userTdee, activeGoal, ctgActivePhase]
   );
 
+  const threeTierTdee = useMemo(
+    () =>
+      calculateThreeTierTdee({
+        profile,
+        weightKg: userWeightKg,
+        bodyFatPct: profile.targetBodyFatPct || 15,
+        goal: activeGoal,
+        meals,
+        bodyPoints: bodyPoints || [],
+        workoutSessions,
+        sportSessions,
+        healthLogs,
+        ctgPhaseTargetKcal: ctgActivePhase?.targetKcal,
+      }),
+    [profile, userWeightKg, activeGoal, meals, bodyPoints, workoutSessions, sportSessions, healthLogs, ctgActivePhase]
+  );
+
+  const dailyEnergyBalance = useMemo(
+    () =>
+      calculateDailyEnergyBalance({
+        date: selectedDate,
+        weightKg: userWeightKg,
+        bodyFatPct: profile.targetBodyFatPct || 15,
+        meals,
+        workoutSessions,
+        sportSessions,
+        healthLogs,
+        targetKcal: targets.kcal,
+      }),
+    [selectedDate, userWeightKg, profile.targetBodyFatPct, meals, workoutSessions, sportSessions, healthLogs, targets.kcal]
+  );
+
   // Protein Distribution & Leucine / MPS Threshold (CTG Web)
   const proteinDist = useMemo(() => {
     const lbmKg = (userWeightKg * (100 - (profile.targetBodyFatPct || 15))) / 100;
@@ -345,12 +361,76 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
     [dayMeals, currentWaterMl]
   );
 
-  // Cronometer Advanced Micronutrients & Scores
+  // Cronometer Advanced Micronutrients, Nutrient Oracle & Custom Recipes
   const [showCronometerDrawer, setShowCronometerDrawer] = useState(false);
+  const [oracleNutrient, setOracleNutrient] = useState<OracleNutrientKey>('magnesium');
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [recipeName, setRecipeName] = useState('');
+  const [recipeServings, setRecipeServings] = useState('4');
+  const [recipeIngredients, setRecipeIngredients] = useState<FoodItem[]>([]);
+  const [recipeSelectedFoodId, setRecipeSelectedFoodId] = useState(VIETNAMESE_FOOD_CATALOG[0]?.id || '');
+
+  const hideCaloriesMode = Boolean(nutritionSettings.hideCaloriesMode);
+  const savedRecipes = nutritionSettings.customRecipes || [];
+
   const cronoScores = useMemo(
     () => calculateCronometerNutrientScores(dayMeals, currentWaterMl, targets.protein),
     [dayMeals, currentWaterMl, targets.protein]
   );
+
+  const upperLimitAlerts = useMemo(
+    () => evaluateMicronutrientUpperLimits(dayMeals, cronoScores),
+    [dayMeals, cronoScores]
+  );
+
+  const adherenceReport = useMemo(
+    () =>
+      calculateMacroAdherenceReport({
+        meals,
+        currentTargets: { kcal: baseTargets.kcal, protein: baseTargets.protein },
+        targetSnapshots: nutritionSettings.targetSnapshots,
+        referenceDateStr: selectedDate,
+        windowDays: 14,
+      }),
+    [meals, baseTargets.kcal, baseTargets.protein, nutritionSettings.targetSnapshots, selectedDate]
+  );
+
+  const macroHeatmap = useMemo(
+    () =>
+      calculateMacroConsistencyHeatmap({
+        meals,
+        currentTargets: { kcal: baseTargets.kcal, protein: baseTargets.protein },
+        targetSnapshots: nutritionSettings.targetSnapshots,
+        referenceDateStr: selectedDate,
+        weeksCount: 12,
+        awayMode: profile.awayMode,
+      }),
+    [meals, baseTargets.kcal, baseTargets.protein, nutritionSettings.targetSnapshots, selectedDate, profile.awayMode]
+  );
+
+  // Lock historical daily macro target snapshot when logging meals so future goal changes don't skew past adherence
+  const lockSnapshotIfNeeded = (dateStr: string) => {
+    if (!nutritionSettings.targetSnapshots?.[dateStr]) {
+      onUpdateNutritionSettings({
+        targetSnapshots: {
+          ...(nutritionSettings.targetSnapshots || {}),
+          [dateStr]: {
+            date: dateStr,
+            kcal: targets.kcal,
+            protein: targets.protein,
+            carbs: targets.carbs,
+            fat: targets.fat,
+            goal: activeGoal,
+          },
+        },
+      });
+    }
+  };
+
+  const logMealWithSnapshot = (meal: Omit<MealLog, 'id' | 'createdAt'>) => {
+    lockSnapshotIfNeeded(meal.date);
+    return onAddMealLog(meal);
+  };
 
   const handleCopyYesterdayMeals = () => {
     const yesterdayDate = formatDateString(new Date(new Date(selectedDate).getTime() - 86400000));
@@ -377,7 +457,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
     playSuccessSound();
     setIsApplyingAdaptive(true);
 
-    const recKcal = adaptiveExpenditure.recommendedCaloTarget;
+    const recKcal = threeTierTdee.recommendedTargetKcal;
     const calcCarbs = Math.max(50, Math.round((recKcal - targets.protein * 4 - targets.fat * 9) / 4));
 
     onUpdateNutritionSettings({
@@ -390,6 +470,9 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
           fat: targets.fat,
         },
       },
+      appliedTdeeKcal: threeTierTdee.inferredTdee,
+      appliedTdeeAt: formatDateString(new Date()),
+      appliedTdeeStartWeightKg: userWeightKg,
     });
     setOverrideKcal(String(recKcal));
     setOverrideProtein(String(targets.protein));
@@ -399,20 +482,52 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
     setTimeout(() => {
       setIsApplyingAdaptive(false);
       setJustAppliedAdaptive(true);
-      setComboToast(`✓ Đã kích hoạt Calo Thích Ứng (${recKcal.toLocaleString('vi-VN')} kcal) từ Tiêu Hao Chuyển Hóa!`);
+      setComboToast(`✓ Đã áp dụng mức đốt ${threeTierTdee.inferredTdee.toLocaleString('vi-VN')} kcal (mục tiêu ${recKcal.toLocaleString('vi-VN')} kcal)!`);
       setTimeout(() => setComboToast(null), 4000);
       notifySuccess(
         'Đã áp dụng TDEE Thích Ứng thành công!',
-        `Mục tiêu calo đã chuyển sang ${recKcal.toLocaleString('vi-VN')} kcal (TDEE Trao Đổi Chất Thực Tế: ${adaptiveExpenditure.adaptiveTdee.toLocaleString('vi-VN')} kcal).`
+        `Mục tiêu calo chuyển sang ${recKcal.toLocaleString('vi-VN')} kcal (TDEE suy ngược: ${threeTierTdee.inferredTdee.toLocaleString('vi-VN')} kcal).`
       );
       setTimeout(() => setJustAppliedAdaptive(false), 3500);
     }, 200);
   };
 
+  const handleClearAppliedTDEE = () => {
+    const nextOverrides = { ...(nutritionSettings.overrides || {}) };
+    delete nextOverrides[profile.goal];
+    onUpdateNutritionSettings({
+      overrides: nextOverrides,
+      appliedTdeeKcal: undefined,
+      appliedTdeeAt: undefined,
+      appliedTdeeStartWeightKg: undefined,
+    });
+    setJustAppliedAdaptive(false);
+    setComboToast('Đã bỏ áp TDEE hiệu chỉnh — quay về macro theo hồ sơ mặc định.');
+    setTimeout(() => setComboToast(null), 3500);
+    notifyInfo('Đã bỏ áp TDEE', 'Mục tiêu dinh dưỡng đã quay về chuẩn hồ sơ ban đầu.');
+  };
 
+
+
+  const isAdaptiveApplied = useMemo(() => {
+    const currentOverride = nutritionSettings.overrides?.[profile.goal];
+    if (nutritionSettings.appliedTdeeKcal) {
+      if (
+        ctgActivePhase &&
+        currentOverride?.kcal &&
+        Math.abs(currentOverride.kcal - ctgActivePhase.targetKcal) <= 10 &&
+        Math.abs(threeTierTdee.recommendedTargetKcal - ctgActivePhase.targetKcal) > 10
+      ) {
+        return false;
+      }
+      return true;
+    }
+    if (!currentOverride || !currentOverride.kcal) return false;
+    return Math.abs(currentOverride.kcal - threeTierTdee.recommendedTargetKcal) <= 5;
+  }, [nutritionSettings.appliedTdeeKcal, nutritionSettings.overrides, profile.goal, threeTierTdee.recommendedTargetKcal, ctgActivePhase]);
 
   const isSyncedWithCtgPhase = useMemo(() => {
-    if (!ctgActivePhase) return true;
+    if (!ctgActivePhase || isAdaptiveApplied) return !ctgActivePhase;
     const currentOverride = nutritionSettings.overrides?.[profile.goal];
     if (currentOverride && currentOverride.kcal) {
       const diffKcal = Math.abs(currentOverride.kcal - ctgActivePhase.targetKcal);
@@ -422,13 +537,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
     const diffKcal = Math.abs(baseTargets.kcal - ctgActivePhase.targetKcal);
     const diffProtein = Math.abs(baseTargets.protein - ctgActivePhase.macros.protein);
     return diffKcal <= 10 && diffProtein <= 2;
-  }, [ctgActivePhase, nutritionSettings.overrides, profile.goal, baseTargets]);
-
-  const isAdaptiveApplied = useMemo(() => {
-    const currentOverride = nutritionSettings.overrides?.[profile.goal];
-    if (!currentOverride || !currentOverride.kcal) return false;
-    return Math.abs(currentOverride.kcal - adaptiveExpenditure.recommendedCaloTarget) <= 5;
-  }, [nutritionSettings.overrides, profile.goal, adaptiveExpenditure.recommendedCaloTarget]);
+  }, [ctgActivePhase, isAdaptiveApplied, nutritionSettings.overrides, profile.goal, baseTargets]);
 
   const handleSyncWithCtgPhase = () => {
     if (!ctgActivePhase) return;
@@ -445,6 +554,9 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
           fat: ctgActivePhase.macros.fat,
         },
       },
+      appliedTdeeKcal: undefined,
+      appliedTdeeAt: undefined,
+      appliedTdeeStartWeightKg: undefined,
     });
     setOverrideKcal(String(ctgActivePhase.targetKcal));
     setOverrideProtein(String(ctgActivePhase.macros.protein));
@@ -508,7 +620,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
     e.preventDefault();
     if (!inputText.trim() || parsedPreview.length === 0) return;
 
-    onAddMealLog({
+    logMealWithSnapshot({
       date: selectedDate,
       slot: selectedSlot,
       description: inputText.trim(),
@@ -535,7 +647,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
       carbs: Number(manualCarbs) || 0,
       fat: Number(manualFat) || 0,
     };
-    onAddMealLog({
+    logMealWithSnapshot({
       date: selectedDate,
       slot: selectedSlot,
       description: `${manualName.trim()} (${amountNum}${manualUnit})`,
@@ -569,16 +681,6 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
 
   return (
     <div className="space-y-5">
-      {/* Evidence-Based Scientific Nutrition Studio (Peri-workout, Refeed, ISSN Tier A Supplements) */}
-      <ScientificNutritionStudio
-        userWeightKg={userWeightKg}
-        tdeeValue={userTdee}
-        goal={profile.goal}
-        bodyFatPct={profile.targetBodyFatPct || 15}
-        selectedDate={selectedDate}
-        onAddMealLog={onAddMealLog}
-      />
-
       {/* CTG Active Phase Sync Card */}
       {ctgActivePhase && (
         <div className="bg-gradient-to-r from-rose-950/40 via-red-950/30 to-[#070204] border border-rose-500/40 rounded-2xl p-4 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white">
@@ -589,7 +691,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                  Giai Đoạn ZENOX Hiện Tại
+                  1. Kế Hoạch Lộ Trình (Lý Thuyết)
                 </span>
                 <span className="text-xs text-white/50 font-mono">
                   {ctgActivePhase.startDate} – {ctgActivePhase.endDate}
@@ -628,7 +730,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
               <div className="flex items-center gap-2">
                 <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>✓ Đang khớp chuẩn ZENOX ({ctgActivePhase.targetKcal} kcal)</span>
+                  <span>✓ Đang dùng mục tiêu Lộ Trình ({ctgActivePhase.targetKcal} kcal)</span>
                 </span>
                 <button
                   type="button"
@@ -647,7 +749,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs cursor-pointer shadow-md hover:shadow-rose-600/30 transition-all flex items-center gap-1.5"
               >
                 <Zap className="w-3.5 h-3.5 text-rose-200" />
-                <span>Đồng Bộ Chuẩn ZENOX</span>
+                <span>Dùng mức Lộ Trình ({ctgActivePhase.targetKcal} kcal)</span>
               </button>
             )}
           </div>
@@ -662,16 +764,16 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
               <Activity className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-rose-600/30 text-rose-300 border border-rose-500/40">
-                  ZENOX Adaptive Engine
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-rose-600/30 text-rose-300 border border-rose-500/40 shrink-0">
+                  2. TDEE Thích Ứng Thực Tế (14 Ngày)
                 </span>
                 <span className="text-xs text-rose-400/90 font-semibold">
-                  TDEE Thích Ứng & Cân Nặng Xu Hướng
+                  Hiệu chỉnh theo cân nặng thực tế
                 </span>
               </div>
               <p className="text-[11px] text-white/60 mt-0.5">
-                Tính toán tiêu hao trao đổi chất thực tế dựa trên delta cân nặng xu hướng (EMA) và lượng calo nạp 14 ngày.
+                Tự tính tốc độ đốt thật dựa trên biến động cân EMA và calo ăn 14 ngày (khác với mức lý thuyết cố định ở trên).
               </p>
             </div>
           </div>
@@ -693,22 +795,31 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 text-white font-extrabold text-xs flex items-center gap-2 btn-success-glow border border-emerald-300 transform scale-105 transition-all cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4 text-emerald-200 animate-bounce" />
-                <span>✓ ĐÃ ÁP DỤNG {adaptiveExpenditure.recommendedCaloTarget} KCAL!</span>
+                <span>✓ ĐÃ ÁP DỤNG {threeTierTdee.recommendedTargetKcal} KCAL!</span>
               </button>
             ) : isAdaptiveApplied ? (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>✓ Đang áp dụng TDEE ({adaptiveExpenditure.recommendedCaloTarget} kcal)</span>
+                  <span>
+                    ✓ Đang áp dụng {(threeTierTdee.recommendedTargetKcal).toLocaleString('vi-VN')} kcal (TDEE {(nutritionSettings.appliedTdeeKcal || threeTierTdee.inferredTdee).toLocaleString('vi-VN')})
+                  </span>
                 </span>
                 <button
                   type="button"
                   onClick={handleApplyAdaptiveTDEE}
                   className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-semibold transition-colors cursor-pointer border border-white/10 flex items-center gap-1"
-                  title="Bấm để cập nhật lại"
+                  title="Cập nhật lại theo số đo mới nhất"
                 >
                   <Zap className="w-3 h-3 text-rose-400" />
                   <span>Cập nhật lại</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAppliedTDEE}
+                  className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-white/60 hover:text-rose-200 text-xs font-semibold transition-colors cursor-pointer border border-white/10"
+                >
+                  Bỏ áp TDEE
                 </button>
               </div>
             ) : (
@@ -716,10 +827,12 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 type="button"
                 onClick={handleApplyAdaptiveTDEE}
                 className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs cursor-pointer shadow-md hover:shadow-rose-600/30 transition-all flex items-center gap-1.5"
-                title="Cập nhật mục tiêu dinh dưỡng theo mức chuyển hóa thực tế của cơ thể"
+                title="Áp dụng mục tiêu calo hiệu chỉnh theo tốc độ đốt thực tế 14 ngày"
               >
                 <Zap className="w-3.5 h-3.5 text-rose-200" />
-                <span>Áp dụng TDEE Thích Ứng ({adaptiveExpenditure.recommendedCaloTarget} kcal)</span>
+                <span>
+                  Áp dụng {threeTierTdee.recommendedTargetKcal.toLocaleString('vi-VN')} kcal (TDEE {threeTierTdee.inferredTdee.toLocaleString('vi-VN')})
+                </span>
               </button>
             )}
           </div>
@@ -746,14 +859,16 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
           {/* Card 2: Recommended Target */}
           <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
             <div className="text-[10px] uppercase font-bold text-amber-400 flex items-center justify-between">
-              <span>Calo Đề Xuất ({ctgActivePhase ? ctgActivePhase.name : GOAL_LABEL[profile.goal]})</span>
+              <span>Calo Đề Xuất Thực Tế ({GOAL_LABEL[profile.goal]})</span>
               <Target className="w-3 h-3 text-amber-400" />
             </div>
             <div className="text-lg font-black font-mono text-amber-300 mt-1">
-              {adaptiveExpenditure.recommendedCaloTarget.toLocaleString('vi-VN')} <span className="text-xs font-normal text-white/50">kcal</span>
+              {threeTierTdee.recommendedTargetKcal.toLocaleString('vi-VN')} <span className="text-xs font-normal text-white/50">kcal</span>
             </div>
             <div className="text-[11px] text-white/50 mt-0.5">
-              {ctgActivePhase ? 'Khớp lộ trình Giai đoạn ZENOX' : 'Tối ưu cho mục tiêu cá nhân'}
+              {threeTierTdee.bmrFloorApplied
+                ? `Đã bảo vệ sàn BMR (${threeTierTdee.bmrKcal} kcal)`
+                : `Tính từ TDEE suy ngược ${threeTierTdee.inferredTdee.toLocaleString('vi-VN')} kcal`}
             </div>
           </div>
 
@@ -786,7 +901,64 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
           </div>
         </div>
 
-        {/* Biological Adaptation Feedback */}
+        {/* Biological Adaptation Feedback + CTG 3-Tier TDEE Triangle & Cronometer Energy Strip */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs">
+          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
+            <div className="text-[10px] uppercase font-bold text-white/50">1. TDEE theo lộ trình</div>
+            <div className="text-base font-black font-mono text-white mt-0.5">
+              {threeTierTdee.roadmapTdee.toLocaleString('vi-VN')} kcal
+            </div>
+            <div className="text-[10px] text-white/45 mt-0.5">Mốc cơ sở theo hồ sơ / pha</div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
+            <div className="text-[10px] uppercase font-bold text-sky-400">2. TDEE check-in vận động</div>
+            <div className="text-base font-black font-mono text-sky-300 mt-0.5">
+              {threeTierTdee.checkinActivityTdee.toLocaleString('vi-VN')} kcal
+            </div>
+            <div className="text-[10px] text-sky-200/70 font-mono mt-0.5">
+              Check-in − lộ trình: {threeTierTdee.checkinMinusRoadmapKcal >= 0 ? '+' : ''}
+              {threeTierTdee.checkinMinusRoadmapKcal} kcal
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
+            <div className="text-[10px] uppercase font-bold text-rose-400">3. Suy ngược (0,5–4 × BMR)</div>
+            <div className="text-base font-black font-mono text-rose-300 mt-0.5">
+              {threeTierTdee.inferredTdee.toLocaleString('vi-VN')} kcal
+            </div>
+            <div className="text-[10px] text-rose-200/70 font-mono mt-0.5">
+              Suy ngược − check-in: {threeTierTdee.inferredMinusCheckinKcal >= 0 ? '+' : ''}
+              {threeTierTdee.inferredMinusCheckinKcal} kcal
+            </div>
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.08] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+          <span className="text-white/60">
+            Cân bằng ngày {selectedDate}: Nạp <strong className="text-sky-300">{dailyEnergyBalance.consumedKcal}</strong> vs Đốt{' '}
+            <strong className="text-rose-300">{dailyEnergyBalance.totalBurnedKcal}</strong> kcal
+            (BMR {dailyEnergyBalance.bmrKcal} + Tập {dailyEnergyBalance.exerciseBurnKcal} + Bước {dailyEnergyBalance.stepsBurnKcal} + TEF {dailyEnergyBalance.tefKcal})
+          </span>
+          {nutritionSettings.appliedTdeeAt && (
+            <span className="text-emerald-300">
+              Áp từ {nutritionSettings.appliedTdeeAt}
+              {nutritionSettings.appliedTdeeStartWeightKg !== undefined &&
+                ` (${userWeightKg - nutritionSettings.appliedTdeeStartWeightKg >= 0 ? '+' : ''}${Math.round((userWeightKg - nutritionSettings.appliedTdeeStartWeightKg) * 10) / 10} kg)`}
+            </span>
+          )}
+        </div>
+
+        {threeTierTdee.bmrFloorApplied && (
+          <div className="p-2.5 rounded-xl bg-amber-950/35 border border-amber-500/35 text-xs text-amber-200 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              Mức calo suy ra ({threeTierTdee.rawTargetBeforeBmrFloor} kcal) thấp hơn BMR. Hệ thống đã tự nâng mức tham khảo lên{' '}
+              <strong className="font-mono">{threeTierTdee.bmrKcal} kcal/ngày</strong> để bảo đảm sàn BMR.
+            </span>
+          </div>
+        )}
+
         <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/20 text-xs text-rose-200/90 flex items-start gap-2.5">
           <ShieldCheck className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
           <div className="leading-relaxed">
@@ -984,17 +1156,17 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
       </div>
 
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent dark:from-emerald-950/30 dark:via-teal-950/20 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white">
+      <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent dark:from-emerald-950/30 dark:via-teal-950/20 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 p-4 md:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white shrink-0">
               Dinh Dưỡng Theo Mục Tiêu ({GOAL_LABEL[profile.goal]})
             </span>
             <span className="text-xs text-gray-500 dark:text-gray-400">
               TDEE: {userTdee} kcal · BMR nền: Mifflin–St Jeor
             </span>
           </div>
-          <h2 className="text-lg md:text-xl font-bold text-gray-900 dark:text-gray-100 mt-1">
+          <h2 className="text-lg md:text-xl font-bold text-gray-900 dark:text-gray-100 mt-1.5">
             Nhật Ký Bữa Ăn & Macro Đa Lượng
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -1007,7 +1179,7 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="text-xs px-3 py-2 rounded-xl border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+            className="text-xs px-3 py-2 rounded-xl border border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 dark:[color-scheme:dark] text-gray-800 dark:text-gray-100"
           />
           <button
             type="button"
@@ -1022,10 +1194,32 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
             type="button"
             onClick={() => setShowCronometerDrawer(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-bold shadow-xs cursor-pointer transition-all"
-            title="Mở bảng vi chất & 3 thang điểm dinh dưỡng chuyên sâu chuẩn Cronometer"
+            title="Mở bảng vi chất, Upper Limit & Nutrient Oracle chuẩn Cronometer"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-            <span>Vi Chất Cronometer (95+)</span>
+            <span>Vi Chất Cronometer</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRecipeModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-300 text-xs font-bold cursor-pointer transition-all"
+            title="Tạo công thức nấu / Meal Prep chia nhiều phần ăn"
+          >
+            <ChefHat className="w-3.5 h-3.5" />
+            <span>Công Thức ({savedRecipes.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onUpdateNutritionSettings({ hideCaloriesMode: !hideCaloriesMode })}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+              hideCaloriesMode
+                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-300'
+                : 'border-gray-300 dark:border-white/[0.1] bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+            }`}
+            title="Ẩn/hiện số calo để chỉ tập trung theo dõi đạm & vi chất (giống Cronometer)"
+          >
+            {hideCaloriesMode ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            <span>{hideCaloriesMode ? 'Đang ẩn Calo' : 'Ẩn Calo'}</span>
           </button>
           <button
             type="button"
@@ -1041,13 +1235,27 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
       {/* Quick Remaining Macro Pills (Chuẩn ZENOX Pro) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <div className={`p-3 rounded-2xl border transition-all ${
-          remainingKcal >= 0 ? 'bg-white dark:bg-white/[0.03] backdrop-blur-xl border-slate-200 dark:border-white/[0.08]' : 'bg-rose-500/10 border-rose-500/30'
+          hideCaloriesMode
+            ? 'bg-emerald-500/10 border-emerald-500/30'
+            : remainingKcal >= 0
+            ? 'bg-white dark:bg-white/[0.03] backdrop-blur-xl border-slate-200 dark:border-white/[0.08]'
+            : 'bg-rose-500/10 border-rose-500/30'
         }`}>
-          <div className="text-[10px] uppercase font-bold text-gray-400">Calo Còn Lại</div>
+          <div className="text-[10px] uppercase font-bold text-gray-400">
+            {hideCaloriesMode ? 'Điểm Vi Chất' : 'Calo Còn Lại'}
+          </div>
           <div className={`text-base sm:text-lg font-black font-mono mt-0.5 ${
-            remainingKcal >= 0 ? 'text-gray-900 dark:text-white' : 'text-rose-500'
+            hideCaloriesMode
+              ? 'text-emerald-400'
+              : remainingKcal >= 0
+              ? 'text-gray-900 dark:text-white'
+              : 'text-rose-500'
           }`}>
-            {remainingKcal >= 0 ? `${remainingKcal} kcal` : `Vượt +${-remainingKcal}`}
+            {hideCaloriesMode
+              ? `${cronoScores.overallNutritionScorePct}/100`
+              : remainingKcal >= 0
+              ? `${remainingKcal} kcal`
+              : `Vượt +${-remainingKcal}`}
           </div>
         </div>
 
@@ -1111,8 +1319,8 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
           <Donut
             segments={donutSegments}
             size={120}
-            centerValue={`${currentTotals.kcal}`}
-            centerLabel={`/ ${targets.kcal} kcal`}
+            centerValue={hideCaloriesMode ? `${cronoScores.overallNutritionScorePct}%` : `${currentTotals.kcal}`}
+            centerLabel={hideCaloriesMode ? 'Vi chất' : `/ ${targets.kcal} kcal`}
           />
         </div>
 
@@ -1187,6 +1395,177 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 height={6}
               />
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CTG 14-Day Historical Target Snapshot & 90–110% Macro Adherence */}
+      <div className="bg-white dark:bg-[#070205] backdrop-blur-xl p-4 rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-xs space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">
+              CTG Historical Adherence · 14 Ngày Gần Nhất
+            </span>
+            <h3 className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white mt-0.5">
+              Bám Mục Tiêu 90–110% &amp; Mục Tiêu Lịch Sử Đã Chốt
+            </h3>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30 font-bold">
+              Trong 90–110%: {adherenceReport.inRangeDays}/{adherenceReport.loggedDays} ngày ({adherenceReport.adherencePct}%)
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
+              Đạt ≥90% Đạm: {adherenceReport.proteinMetDays}/{adherenceReport.loggedDays} ngày
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono">
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
+            <div className="text-[10px] text-gray-400 uppercase font-sans">Trên &gt;110% / Dưới &lt;90%</div>
+            <div className="font-bold text-gray-900 dark:text-white mt-0.5">
+              <span className="text-amber-500">{adherenceReport.aboveRangeDays}</span> / <span className="text-sky-500">{adherenceReport.belowRangeDays}</span> ngày
+            </div>
+          </div>
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
+            <div className="text-[10px] text-gray-400 uppercase font-sans">Ăn − Mục tiêu lịch sử</div>
+            <div className="font-bold text-emerald-500 mt-0.5">
+              {adherenceReport.avgDeltaVsHistoricalKcal >= 0 ? '+' : ''}
+              {adherenceReport.avgDeltaVsHistoricalKcal} kcal/ngày
+            </div>
+          </div>
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
+            <div className="text-[10px] text-gray-400 uppercase font-sans">Ăn − Mục tiêu hiện tại</div>
+            <div className="font-bold text-sky-400 mt-0.5">
+              {adherenceReport.avgDeltaVsCurrentKcal >= 0 ? '+' : ''}
+              {adherenceReport.avgDeltaVsCurrentKcal} kcal/ngày
+            </div>
+          </div>
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[10px] text-gray-400 uppercase font-sans">Mục tiêu {selectedDate}</div>
+              <div className="font-bold text-gray-900 dark:text-white mt-0.5">
+                {nutritionSettings.targetSnapshots?.[selectedDate]
+                  ? `Đã chốt (${nutritionSettings.targetSnapshots[selectedDate].kcal})`
+                  : 'Chưa chốt'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onUpdateNutritionSettings({
+                  targetSnapshots: {
+                    ...(nutritionSettings.targetSnapshots || {}),
+                    [selectedDate]: {
+                      date: selectedDate,
+                      kcal: targets.kcal,
+                      protein: targets.protein,
+                      carbs: targets.carbs,
+                      fat: targets.fat,
+                      goal: activeGoal,
+                    },
+                  },
+                });
+                notifySuccess('Đã chốt mục tiêu ngày!', `Mục tiêu ngày ${selectedDate} được giữ cố định ở ${targets.kcal} kcal (${targets.protein}g đạm).`);
+              }}
+              className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-sans font-bold cursor-pointer shrink-0"
+            >
+              Chốt ngày
+            </button>
+          </div>
+        </div>
+
+        {adherenceReport.dailyBreakdown.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            {adherenceReport.dailyBreakdown.map((d) => (
+              <span
+                key={d.date}
+                title={`${d.date}: ${d.actualKcal}/${d.historicalTargetKcal} kcal (${d.hasLockedSnapshot ? 'mục tiêu đã chốt' : 'mục tiêu hiện tại'}) · ${d.actualProtein}g Đạm`}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${
+                  d.status === 'in_range'
+                    ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
+                    : d.status === 'above'
+                    ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
+                    : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                }`}
+              >
+                {d.date.slice(5)} {d.proteinMet ? '✓P' : ''}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Phase 4: 12-Week Macro Consistency Heatmap */}
+        <div className="pt-3 border-t border-slate-200 dark:border-white/[0.08] space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <span className="font-bold text-gray-800 dark:text-gray-200">
+              Heatmap Kỷ Luật 12 Tuần (84 Ngày · 90–110% Calo)
+            </span>
+            <div className="flex flex-wrap items-center gap-3 font-mono text-[10px]">
+              <span className="text-emerald-500 font-bold">
+                Chuỗi hiện tại: {macroHeatmap.currentStreak} ngày
+              </span>
+              <span className="text-indigo-500 font-semibold">
+                Kỷ lục: {macroHeatmap.bestStreak} ngày
+              </span>
+              <span className="text-gray-500 dark:text-gray-400">
+                Ổn định: {macroHeatmap.consistencyPct}% ({macroHeatmap.adherentDays}/{macroHeatmap.loggedDays})
+              </span>
+              {macroHeatmap.awayDays > 0 && (
+                <span className="text-purple-500 font-semibold">
+                  Away: {macroHeatmap.awayDays} ngày
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-12 gap-1.5 w-full pb-1">
+            {macroHeatmap.weeks.map((week, wIdx) => (
+              <div key={`hm-w-${wIdx}`} className="flex flex-col gap-1.5">
+                {week.map((cell) => {
+                  const colorCls =
+                    cell.status === 'in_range'
+                      ? 'bg-emerald-500/85 border-emerald-400 text-white'
+                      : cell.status === 'above'
+                      ? 'bg-amber-400/85 border-amber-300 text-slate-950'
+                      : cell.status === 'below'
+                      ? 'bg-sky-400/85 border-sky-300 text-slate-950'
+                      : cell.status === 'away'
+                      ? 'bg-purple-500/60 border-purple-400/50 text-white'
+                      : 'bg-slate-200 dark:bg-white/[0.06] border-transparent text-slate-400 dark:text-white/35';
+                  const statusLabel =
+                    cell.status === 'in_range'
+                      ? 'Đạt 90–110%'
+                      : cell.status === 'above'
+                      ? 'Vượt >110%'
+                      : cell.status === 'below'
+                      ? 'Thiếu <90%'
+                      : cell.status === 'away'
+                      ? 'Away Mode (Bảo toàn chuỗi)'
+                      : 'Chưa ghi nhật ký';
+                  return (
+                    <button
+                      key={cell.date}
+                      type="button"
+                      onClick={() => setSelectedDate(cell.date)}
+                      title={`${cell.date} · ${statusLabel}${cell.actualKcal > 0 ? ` (${cell.actualKcal}/${cell.targetKcal} kcal)` : ''}`}
+                      className={`h-6 sm:h-7 w-full rounded-md border font-mono text-[9px] sm:text-[10px] font-bold flex items-center justify-center cursor-pointer hover:scale-105 transition-transform ${colorCls} ${
+                        cell.date === selectedDate ? 'ring-2 ring-rose-500 dark:ring-white' : ''
+                      }`}
+                    >
+                      {Number(cell.date.slice(8))}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[10px] text-gray-500 dark:text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-emerald-500 inline-block" /> Đạt 90–110%</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-amber-400 inline-block" /> Vượt &gt;110%</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-sky-400 inline-block" /> Thiếu &lt;90%</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-purple-500/60 inline-block" /> Away Mode</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-slate-200 dark:bg-white/10 inline-block" /> Chưa log</span>
           </div>
         </div>
       </div>
@@ -1432,16 +1811,6 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
             >
               <Flame className="w-3.5 h-3.5" />
               <span>{showCombosSection ? 'Ẩn Thực Đơn Mẫu' : 'Thực Đơn Mẫu (Combos)'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowGeminiModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-orange-600 via-amber-600 to-yellow-600 hover:from-orange-700 hover:to-amber-700 text-white text-xs font-bold cursor-pointer transition-all shadow-xs"
-              title="Nhập cấu trúc bữa ăn & tính toán Macro tự động qua Prompt"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-              <span>Prompt Macro AI</span>
             </button>
 
             {/* Toggle between NLP, Direct Macro and Manual mode */}
@@ -1941,7 +2310,13 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                 onClick={() => {
                   const updatedOverrides = { ...nutritionSettings.overrides };
                   delete updatedOverrides[profile.goal];
-                  onUpdateNutritionSettings({ overrides: updatedOverrides, tdeeOffset: 0 });
+                  onUpdateNutritionSettings({
+                    overrides: updatedOverrides,
+                    tdeeOffset: 0,
+                    appliedTdeeKcal: undefined,
+                    appliedTdeeAt: undefined,
+                    appliedTdeeStartWeightKg: undefined,
+                  });
                   setOverrideKcal('');
                   setOverrideProtein('');
                   setOverrideCarbs('');
@@ -1968,7 +2343,12 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
                   } else {
                     delete updatedOverrides[profile.goal];
                   }
-                  onUpdateNutritionSettings({ overrides: updatedOverrides });
+                  onUpdateNutritionSettings({
+                    overrides: updatedOverrides,
+                    appliedTdeeKcal: undefined,
+                    appliedTdeeAt: undefined,
+                    appliedTdeeStartWeightKg: undefined,
+                  });
                   setShowOverrideModal(false);
                 }}
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold cursor-pointer shadow-xs"
@@ -2258,7 +2638,88 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
             </div>
 
             {/* Detailed Micronutrient Breakdown Grid */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* Cronometer Tolerable Upper Intake Level (UL) Alerts */}
+              {upperLimitAlerts.length > 0 && (
+                <div className="p-3 rounded-2xl bg-rose-950/40 border border-rose-500/40 space-y-1.5 text-xs">
+                  <div className="font-bold text-rose-300 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>Cảnh Báo Vượt Ngưỡng An Toàn (Upper Limit)</span>
+                  </div>
+                  {upperLimitAlerts.map((al) => (
+                    <div key={al.nutrient} className="text-[11px] text-rose-200/90 flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        <strong>{al.nutrient}:</strong> {al.current} / {al.upperLimit} {al.unit}
+                      </span>
+                      <span className="text-rose-300/75">{al.note}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Cronometer Nutrient Oracle (Offline food recommender for deficient micronutrients) */}
+              <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/30 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Cronometer Nutrient Oracle — Tìm Món Việt Bù Vi Chất Thiếu</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      Xếp hạng món theo mật độ vi chất trên mỗi 100 kcal và ưu tiên khớp quỹ calo còn lại.
+                    </p>
+                  </div>
+                  <select
+                    value={oracleNutrient}
+                    onChange={(e) => setOracleNutrient(e.target.value as OracleNutrientKey)}
+                    className="bg-black/50 border border-amber-500/40 rounded-xl px-2.5 py-1 text-xs font-semibold text-amber-200 cursor-pointer"
+                  >
+                    {(
+                      [
+                        'magnesium',
+                        'potassium',
+                        'calcium',
+                        'zinc',
+                        'iron',
+                        'vitaminD',
+                        'vitaminC',
+                        'vitaminB12',
+                        'omega3',
+                        'fiber',
+                        'protein',
+                      ] as OracleNutrientKey[]
+                    ).map((k) => (
+                      <option key={k} value={k}>
+                        Bù: {getOracleNutrientMeta(k).labelVi}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {recommendFoodsForNutrient(oracleNutrient, remainingKcal, 4).map((sug) => (
+                    <div
+                      key={sug.food.id}
+                      className="p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-white truncate">{sug.food.name}</div>
+                        <div className="text-[10px] font-mono text-amber-300/90 mt-0.5">
+                          +{sug.estimatedAmount} {sug.unit} ({sug.pctOfDailyTarget}% RDA) · {sug.food.kcalPerServing} kcal
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddCatalogFood(sug.food, 1, selectedSlot)}
+                        className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold shrink-0 cursor-pointer"
+                      >
+                        + Thêm
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
                 Mục Tiêu Vi Lượng Thiết Yếu (RDA / DRI Targets)
               </h4>
@@ -2380,14 +2841,207 @@ export const NutritionTab: React.FC<NutritionTabProps> = ({
         </div>
       )}
 
-      {/* Gemini AI Macro Modal */}
-      <GeminiMacroModal
-        isOpen={showGeminiModal}
-        onClose={() => setShowGeminiModal(false)}
-        onApplyGeminiMacros={handleApplyGeminiMacros}
-        selectedDate={selectedDate}
-        defaultSlot={selectedSlot}
-      />
+      {/* Custom Recipe & Meal Prep Builder Modal (Cronometer feature) */}
+      {showRecipeModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-[#090306] border border-amber-500/40 rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl max-h-[90vh] flex flex-col text-white space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex items-center gap-2.5">
+                <ChefHat className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h3 className="text-base font-bold text-white">Công Thức &amp; Chia Khẩu Phần Meal Prep</h3>
+                  <p className="text-[11px] text-white/50">
+                    Ghép nhiều nguyên liệu Việt thành 1 công thức tái sử dụng, tự chia Macro &amp; Vi chất theo số phần ăn.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRecipeModal(false)}
+                className="p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/[0.08] cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* Saved Recipes List */}
+              {savedRecipes.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
+                    Công thức đã lưu ({savedRecipes.length})
+                  </div>
+                  <div className="space-y-2">
+                    {savedRecipes.map((r) => {
+                      const calc = calculateRecipePerServing(r);
+                      return (
+                        <div
+                          key={r.id}
+                          className="p-3 rounded-xl bg-white/[0.04] border border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs"
+                        >
+                          <div>
+                            <div className="font-bold text-white">
+                              {r.name} <span className="text-white/50 font-mono font-normal">({r.servings} phần)</span>
+                            </div>
+                            <div className="text-[11px] font-mono text-emerald-300 mt-0.5">
+                              1 phần: {calc.perServingItem.kcal} kcal · {calc.perServingItem.protein}P · {calc.perServingItem.carbs}C · {calc.perServingItem.fat}F
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                logMealWithSnapshot({
+                                  date: selectedDate,
+                                  slot: selectedSlot,
+                                  description: `Công thức: ${r.name} (1/${r.servings} phần)`,
+                                  items: [calc.perServingItem],
+                                });
+                                notifySuccess('Đã ghi 1 phần công thức!', `${r.name}: +${calc.perServingItem.kcal} kcal.`);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
+                            >
+                              + Log 1 phần ({MEAL_LABEL[selectedSlot]})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdateNutritionSettings({
+                                  customRecipes: savedRecipes.filter((item) => item.id !== r.id),
+                                })
+                              }
+                              className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 cursor-pointer"
+                              title="Xóa công thức"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Create New Recipe Form */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3 text-xs">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-white/70">
+                  Tạo công thức mới
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={recipeName}
+                    onChange={(e) => setRecipeName(e.target.value)}
+                    placeholder="Tên công thức (vd: Cơm ức gà Meal Prep 4 ngày)"
+                    className="sm:col-span-2 px-3 py-2 rounded-xl bg-black/50 border border-white/15 text-white text-xs"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={recipeServings}
+                    onChange={(e) => setRecipeServings(e.target.value)}
+                    placeholder="Số phần"
+                    className="px-3 py-2 rounded-xl bg-black/50 border border-white/15 text-white font-mono text-xs"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={recipeSelectedFoodId}
+                    onChange={(e) => setRecipeSelectedFoodId(e.target.value)}
+                    className="flex-1 px-2.5 py-2 rounded-xl bg-black/50 border border-white/15 text-white text-xs"
+                  >
+                    {VIETNAMESE_FOOD_CATALOG.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} ({f.servingLabel} · {f.kcalPerServing} kcal)
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = VIETNAMESE_FOOD_CATALOG.find((item) => item.id === recipeSelectedFoodId);
+                      if (!f) return;
+                      setRecipeIngredients((prev) => [
+                        ...prev,
+                        {
+                          name: f.name,
+                          amount: f.servingGramsOrMl,
+                          unit: f.unit,
+                          kcal: f.kcalPerServing,
+                          protein: f.protein,
+                          carbs: f.carbs,
+                          fat: f.fat,
+                        },
+                      ]);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs cursor-pointer shrink-0"
+                  >
+                    + Nguyên liệu
+                  </button>
+                </div>
+
+                {recipeIngredients.length > 0 && (
+                  <div className="space-y-1.5">
+                    {recipeIngredients.map((ing, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-black/30 border border-white/5"
+                      >
+                        <span className="truncate">
+                          {ing.name} ({ing.amount}{ing.unit}) — {ing.kcal} kcal
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRecipeIngredients((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-rose-400 hover:text-rose-300 text-[11px] ml-2 cursor-pointer"
+                        >
+                          Bỏ
+                        </button>
+                      </div>
+                    ))}
+                    <div className="pt-1 text-[11px] font-mono text-emerald-300">
+                      {(() => {
+                        const preview = calculateRecipePerServing({
+                          name: recipeName || 'Công thức',
+                          servings: Number(recipeServings) || 1,
+                          items: recipeIngredients,
+                        });
+                        return `Tổng: ${preview.totalKcal} kcal → 1/${Math.max(1, Number(recipeServings) || 1)} phần: ${preview.perServingItem.kcal} kcal (${preview.perServingItem.protein}P / ${preview.perServingItem.carbs}C / ${preview.perServingItem.fat}F)`;
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={!recipeName.trim() || recipeIngredients.length === 0}
+                  onClick={() => {
+                    const newRecipe: CustomRecipe = {
+                      id: `recipe-${Date.now()}`,
+                      name: recipeName.trim(),
+                      servings: Math.max(1, Math.round(Number(recipeServings) || 1)),
+                      items: recipeIngredients,
+                      createdAt: Date.now(),
+                    };
+                    onUpdateNutritionSettings({
+                      customRecipes: [newRecipe, ...savedRecipes],
+                    });
+                    setRecipeName('');
+                    setRecipeIngredients([]);
+                    notifySuccess('Đã lưu công thức Meal Prep!', `"${newRecipe.name}" (${newRecipe.servings} phần) đã sẵn sàng.`);
+                  }}
+                  className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs cursor-pointer"
+                >
+                  Lưu Công Thức
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -25,7 +25,14 @@ import {
   MuscleVolumeLandmark,
   ProgressiveOverloadComparison,
   MUSCLE_LABEL,
+  CustomRecipe,
+  DailyTargetSnapshot,
+  AwayBreakPeriod,
+  BodyCheckPhoto,
+  WeeklyCheckinRecord,
 } from '../types/productivity';
+import { CalendarEvent } from '../types/calendar';
+import { findConflictingEvents, isWorkoutCalendarEvent } from './calendarUtils';
 
 // ---------------------------------------------------------------------------
 // Dates & Formatting
@@ -44,6 +51,25 @@ export function todayString(): string {
 export function parseDateString(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
+}
+
+/** Parses `DD/MM/YYYY`, `YYYY-MM-DD`, or `DD-MM-YY` Vietnamese date strings safely. */
+export function parseVnDate(str: string): Date {
+  if (!str || typeof str !== 'string') return new Date(NaN);
+  const trimmed = str.trim();
+  const parts = trimmed.split(/[/.-]/);
+  if (parts.length === 3) {
+    const p0 = parseInt(parts[0], 10);
+    const p1 = parseInt(parts[1], 10);
+    const p2 = parseInt(parts[2], 10);
+    if (isNaN(p0) || isNaN(p1) || isNaN(p2)) return new Date(NaN);
+    if (parts[0].length === 4) {
+      return new Date(p0, p1 - 1, p2);
+    }
+    const year = p2 < 100 ? 2000 + p2 : p2;
+    return new Date(year, p1 - 1, p0);
+  }
+  return new Date(trimmed);
 }
 
 /** `2026-10-30` -> `30/10` */
@@ -480,6 +506,141 @@ export function parseFoodText(text: string): ParsedFood[] {
       recognised: true,
     };
   });
+}
+
+export interface MacroTextItem {
+  slot: MealSlot;
+  name: string;
+  amount: number;
+  unit: 'g' | 'ml';
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+function parseMacroMealSlot(val: string): MealSlot {
+  const lower = String(val).toLowerCase();
+  if (lower.includes('break') || lower.includes('sáng')) return 'breakfast';
+  if (lower.includes('lunch') || lower.includes('trưa')) return 'lunch';
+  if (lower.includes('din') || lower.includes('tối')) return 'dinner';
+  return 'snack';
+}
+
+/**
+ * Offline parser for structured macro snippets, JSON blocks, markdown tables,
+ * or bulleted meal descriptions (e.g. "1. Ức gà (200g): 330 kcal, 62g protein").
+ */
+export function parseMacroTextResponse(rawText: string, defaultSlot: MealSlot = 'lunch'): MacroTextItem[] {
+  if (!rawText || !rawText.trim()) return [];
+  const text = rawText.trim();
+
+  let jsonString = '';
+  const codeBlockMatch = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(text);
+  if (codeBlockMatch) {
+    jsonString = codeBlockMatch[1].trim();
+  } else {
+    const bracketMatch = /\[\s*\{[\s\S]*\}\s*\]/.exec(text);
+    if (bracketMatch) {
+      jsonString = bracketMatch[0].trim();
+    } else {
+      const singleObjMatch = /\{[\s\S]*"name"[\s\S]*\}/.exec(text);
+      if (singleObjMatch) {
+        jsonString = `[${singleObjMatch[0].trim()}]`;
+      }
+    }
+  }
+
+  if (jsonString) {
+    try {
+      const parsed = JSON.parse(jsonString);
+      const list = Array.isArray(parsed) ? parsed : [parsed];
+      const validItems: MacroTextItem[] = [];
+
+      for (const item of list) {
+        if (!item || typeof item !== 'object') continue;
+        const name = String(item.name || item.food || item.item || 'Món ăn').trim();
+        const slot = parseMacroMealSlot(item.slot || item.meal || defaultSlot);
+        const amount = Number(item.amount || item.weight || item.quantity) || 150;
+        const unit = item.unit === 'ml' ? 'ml' : 'g';
+        const kcal = Number(item.kcal || item.calories || item.calorie) || 0;
+        const protein = Number(item.protein || item.prot || item.p) || 0;
+        const carbs = Number(item.carbs || item.carb || item.c) || 0;
+        const fat = Number(item.fat || item.f) || 0;
+
+        if (name && (kcal > 0 || protein > 0 || carbs > 0 || fat > 0)) {
+          validItems.push({
+            slot,
+            name,
+            amount: Math.round(amount),
+            unit,
+            kcal: Math.round(kcal || protein * 4 + carbs * 4 + fat * 9),
+            protein: Math.round(protein * 10) / 10,
+            carbs: Math.round(carbs * 10) / 10,
+            fat: Math.round(fat * 10) / 10,
+          });
+        }
+      }
+
+      if (validItems.length > 0) return validItems;
+    } catch {
+      // JSON parse failed, fall through to line-by-line parser
+    }
+  }
+
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const heuristicItems: MacroTextItem[] = [];
+
+  for (const line of lines) {
+    if (/^\|?[-:\s|]+\|?$/.test(line)) continue;
+    let cleanLine = line.replace(/^[-*•\d.]+\s*/, '').replace(/^\|\s*/, '').replace(/\s*\|$/, '');
+
+    let itemSlot = defaultSlot;
+    const slotPrefixMatch = /^(?:bữa\s+)?(sáng|trưa|tối|phụ|breakfast|lunch|dinner|snack)\s*[:\-–]\s*(.*)$/i.exec(cleanLine);
+    if (slotPrefixMatch) {
+      itemSlot = parseMacroMealSlot(slotPrefixMatch[1]);
+      cleanLine = slotPrefixMatch[2].trim();
+    }
+
+    const kcalMatch = /(\d+(?:\.\d+)?)\s*(?:kcal|calo|calories)/i.exec(cleanLine);
+    const pMatch = /(\d+(?:\.\d+)?)\s*g?\s*(?:protein|đạm|p\b)/i.exec(cleanLine);
+    const cMatch = /(\d+(?:\.\d+)?)\s*g?\s*(?:carbs|carb|tinh bột|c\b)/i.exec(cleanLine);
+    const fMatch = /(\d+(?:\.\d+)?)\s*g?\s*(?:fat|chất béo|mỡ|béo|f\b)/i.exec(cleanLine);
+
+    if (kcalMatch || pMatch || cMatch || fMatch) {
+      let namePart = cleanLine
+        .replace(/\(.*?\)/g, '')
+        .replace(/\[.*?\]/g, '')
+        .split(/[:|]/)[0]
+        .replace(/(\d+(?:\.\d+)?)\s*(?:kcal|calo|calories|protein|đạm|p|carbs|carb|tinh bột|c|fat|chất béo|béo|f)\b.*/i, '')
+        .trim();
+
+      if (!namePart || namePart.length < 2) {
+        namePart = cleanLine.split(/[,-]/)[0].trim();
+      }
+
+      const kcal = kcalMatch ? Number(kcalMatch[1]) : 0;
+      const protein = pMatch ? Number(pMatch[1]) : 0;
+      const carbs = cMatch ? Number(cMatch[1]) : 0;
+      const fat = fMatch ? Number(fMatch[1]) : 0;
+      const calcKcal = kcal > 0 ? kcal : Math.round(protein * 4 + carbs * 4 + fat * 9);
+
+      if (namePart && (calcKcal > 0 || protein > 0 || carbs > 0 || fat > 0)) {
+        heuristicItems.push({
+          slot: itemSlot,
+          name: namePart.replace(/^[-*•:\s]+/, '').trim() || 'Món ăn',
+          amount: 150,
+          unit: 'g',
+          kcal: calcKcal,
+          protein: Math.round(protein * 10) / 10,
+          carbs: Math.round(carbs * 10) / 10,
+          fat: Math.round(fat * 10) / 10,
+        });
+      }
+    }
+  }
+
+  return heuristicItems;
 }
 
 // ---------------------------------------------------------------------------
@@ -1407,7 +1568,7 @@ export function generateCtgPeriodizedRoadmap(
   const currentBodyFatPct = Math.max(4, Math.min(55, params.currentBodyFatPct || 18));
 
   const targetFfmi = params.targetFfmi ? Math.min(24.5, Math.max(16, params.targetFfmi)) : (isFemale ? 19.5 : 22.0);
-  const targetBfPct = params.targetBodyFatPct ? Math.min(35, Math.max(8, params.targetBodyFatPct)) : (isFemale ? 20.0 : 12.0);
+  const targetBfPct = params.targetBodyFatPct ? Math.min(42, Math.max(8, params.targetBodyFatPct)) : (isFemale ? 20.0 : 12.0);
 
   // ZENOX Biological Constants
   const rf = { male: 25, female: 21.2 };
@@ -3044,75 +3205,16 @@ export function calculateCronometerNutrientScores(
   for (const m of todayMeals || []) {
     for (const it of m.items || []) {
       totalProtein += it.protein || 0;
-      potassiumMg += it.potassium || 0;
-      magnesiumMg += it.magnesium || 0;
-      calciumMg += it.calcium || 0;
-      zincMg += it.zinc || 0;
-      ironMg += it.iron || 0;
-      vitaminDIu += it.vitaminD || 0;
-      vitaminCMg += it.vitaminC || 0;
-      vitaminB12Mcg += it.vitaminB12 || 0;
-      omega3Grams += it.omega3 || 0;
-
-      // Realistic estimation for common gym/Vietnamese foods if not explicitly tagged
-      const name = (it.name || '').toLowerCase();
-      const amountRatio = Math.max(0.5, (it.amount || 100) / 100);
-
-      if (it.potassium === undefined) {
-        if (name.includes('chuối')) potassiumMg += Math.round(360 * amountRatio);
-        else if (name.includes('khoai')) potassiumMg += Math.round(450 * amountRatio);
-        else if (name.includes('bò') || name.includes('gà')) potassiumMg += Math.round(300 * amountRatio);
-        else if (name.includes('rau') || name.includes('canh')) potassiumMg += Math.round(250 * amountRatio);
-      }
-
-      if (it.magnesium === undefined) {
-        if (name.includes('yến mạch') || name.includes('hạt')) magnesiumMg += Math.round(140 * amountRatio);
-        else if (name.includes('gạo lứt') || name.includes('chuối')) magnesiumMg += Math.round(35 * amountRatio);
-        else if (name.includes('rau')) magnesiumMg += Math.round(40 * amountRatio);
-        else if (it.protein > 20) magnesiumMg += Math.round(25 * amountRatio);
-      }
-
-      if (it.calcium === undefined) {
-        if (name.includes('sữa') || name.includes('whey') || name.includes('chua')) calciumMg += Math.round(220 * amountRatio);
-        else if (name.includes('đậu phụ') || name.includes('phô mai')) calciumMg += Math.round(180 * amountRatio);
-        else if (name.includes('rau')) calciumMg += Math.round(50 * amountRatio);
-      }
-
-      if (it.zinc === undefined) {
-        if (name.includes('bò') || name.includes('hàu') || name.includes('thịt đỏ')) zincMg += Math.round(5.5 * amountRatio);
-        else if (name.includes('gà') || name.includes('trứng')) zincMg += Math.round(2.0 * amountRatio);
-        else if (it.protein > 15) zincMg += Math.round(1.2 * amountRatio);
-      }
-
-      if (it.iron === undefined) {
-        if (name.includes('bò') || name.includes('gan') || name.includes('tiết')) ironMg += Math.round(4.0 * amountRatio);
-        else if (name.includes('trứng') || name.includes('rau')) ironMg += Math.round(1.8 * amountRatio);
-        else if (it.protein > 15) ironMg += Math.round(1.2 * amountRatio);
-      }
-
-      if (it.vitaminD === undefined) {
-        if (name.includes('cá hồi') || name.includes('hồi')) vitaminDIu += Math.round(400 * amountRatio);
-        else if (name.includes('trứng')) vitaminDIu += Math.round(45 * amountRatio);
-        else if (name.includes('sữa')) vitaminDIu += Math.round(80 * amountRatio);
-      }
-
-      if (it.vitaminC === undefined) {
-        if (name.includes('cam') || name.includes('ổi') || name.includes('bưởi') || name.includes('chanh')) vitaminCMg += Math.round(60 * amountRatio);
-        else if (name.includes('rau') || name.includes('cà chua') || name.includes('ớt')) vitaminCMg += Math.round(25 * amountRatio);
-        else if (name.includes('chuối') || name.includes('táo')) vitaminCMg += Math.round(10 * amountRatio);
-      }
-
-      if (it.vitaminB12 === undefined) {
-        if (name.includes('bò') || name.includes('thịt')) vitaminB12Mcg += Math.round(2.1 * amountRatio);
-        else if (name.includes('trứng') || name.includes('sữa')) vitaminB12Mcg += Math.round(0.8 * amountRatio);
-        else if (it.protein > 20) vitaminB12Mcg += Math.round(0.6 * amountRatio);
-      }
-
-      if (it.omega3 === undefined) {
-        if (name.includes('cá hồi') || name.includes('cá ngừ') || name.includes('cá thu')) omega3Grams += Math.round(1.8 * amountRatio * 10) / 10;
-        else if (name.includes('hạt chia') || name.includes('óc chó')) omega3Grams += Math.round(1.2 * amountRatio * 10) / 10;
-        else if (name.includes('trứng')) omega3Grams += 0.15;
-      }
+      const est = estimateItemMicronutrients(it);
+      potassiumMg += est.potassium;
+      magnesiumMg += est.magnesium;
+      calciumMg += est.calcium;
+      zincMg += est.zinc;
+      ironMg += est.iron;
+      vitaminDIu += est.vitaminD;
+      vitaminCMg += est.vitaminC;
+      vitaminB12Mcg += est.vitaminB12;
+      omega3Grams += est.omega3;
     }
   }
 
@@ -3202,8 +3304,27 @@ export const VOLUME_LANDMARKS_CONFIG: Record<
   cardio: { mev: 3, mav: 6, mrv: 10 },
 };
 
+const SECONDARY_MUSCLES_MAP: Record<string, MuscleGroup[]> = {
+  'bench-press': ['shoulders', 'arms'],
+  'incline-db-press': ['shoulders', 'arms'],
+  'dumbbell-fly': ['shoulders'],
+  'push-ups': ['shoulders', 'arms'],
+  'dips': ['chest', 'arms'],
+  'barbell-row': ['arms'],
+  'pullup': ['arms'],
+  'lat-pulldown': ['arms'],
+  'seated-cable-row': ['arms'],
+  'deadlift': ['legs', 'core'],
+  'squat': ['core'],
+  'rdl': ['back'],
+  'leg-press': ['core'],
+  'ohp': ['arms'],
+  'db-shoulder-press': ['arms'],
+};
+
 /**
- * Calculates current weekly working sets per muscle group against MEV, MAV, and MRV
+ * Calculates current weekly working sets per muscle group against MEV, MAV, and MRV,
+ * including 0.5 fractional sets for secondary synergist muscles (CTG standard).
  */
 export function calculateMuscleVolumeLandmarks(
   workoutSessions: WorkoutSession[] = [],
@@ -3223,6 +3344,14 @@ export function calculateMuscleVolumeLandmarks(
       const muscle = exerciseMap.get(s.exerciseId) as MuscleGroup | undefined;
       if (!muscle) continue;
       muscleSets[muscle] = (muscleSets[muscle] || 0) + 1;
+      const secondary = SECONDARY_MUSCLES_MAP[s.exerciseId];
+      if (secondary) {
+        for (const sec of secondary) {
+          if (sec !== muscle) {
+            muscleSets[sec] = (muscleSets[sec] || 0) + 0.5;
+          }
+        }
+      }
     }
   }
 
@@ -3942,5 +4071,1871 @@ export function calculateRefeedTargets(
       `Giữ lượng chất béo ở mức rất thấp (${refeedFats}g) để hạn chế tích lũy mỡ thừa khi nạp lượng carb lớn.`,
       `Đừng lo lắng nếu cân nặng hôm sau tăng nhẹ 0.5-1.5kg: đây hoàn toàn là nước và glycogen được giữ trong sợi cơ, không phải mỡ!`,
     ],
+  };
+}
+
+// ============================================================================
+// PHASE 1: CRONOMETER ENERGY BALANCE, TRACKED 10D TREND + FIX NEXT & CTG 3-TIER TDEE
+// ============================================================================
+
+export interface DailyEnergyBalance {
+  date: string;
+  bmrKcal: number;
+  baselineActivityKcal: number;
+  stepsBurnKcal: number;
+  exerciseBurnKcal: number;
+  tefKcal: number;
+  totalBurnedKcal: number;
+  consumedKcal: number;
+  netKcal: number;
+  targetKcal: number;
+  remainingBudgetKcal: number;
+  goalStatus: 'on_track' | 'under_eating' | 'over_target';
+}
+
+/**
+ * Cronometer-style Dynamic Daily Energy Balance combining Katch-McArdle BMR,
+ * baseline NEAT, logged steps, gym & sport expenditure, and 10% TEF.
+ */
+export function calculateDailyEnergyBalance(params: {
+  date: string;
+  weightKg: number;
+  bodyFatPct?: number;
+  meals: MealLog[];
+  workoutSessions?: WorkoutSession[];
+  sportSessions?: SportSession[];
+  healthLogs?: HealthDayLog[];
+  targetKcal?: number;
+}): DailyEnergyBalance {
+  const {
+    date,
+    weightKg,
+    bodyFatPct = 15,
+    meals = [],
+    workoutSessions = [],
+    sportSessions = [],
+    healthLogs = [],
+    targetKcal = 0,
+  } = params;
+
+  const safeWeight = Math.max(30, weightKg || 65);
+  const lbm = leanMassKg(safeWeight, bodyFatPct);
+  const bmrKcal = Math.round(370 + 21.6 * lbm);
+  const baselineActivityKcal = Math.round(bmrKcal * 0.2);
+
+  const dayLog = healthLogs.find((l) => l.date === date);
+  const steps = Math.max(0, dayLog?.steps || 0);
+  const stepsBurnKcal = Math.round(steps * 0.04 * (safeWeight / 70));
+
+  const dayWorkoutsBurn = workoutSessions
+    .filter((w) => w.date === date)
+    .reduce((sum, w) => sum + gymCalories(w.sets, safeWeight), 0);
+  const daySportsBurn = sportSessions
+    .filter((s) => s.date === date)
+    .reduce((sum, s) => sum + sportCalories(s, safeWeight), 0);
+  const exerciseBurnKcal = Math.round(dayWorkoutsBurn + daySportsBurn);
+
+  const consumedKcal = Math.round(
+    meals
+      .filter((m) => m.date === date)
+      .reduce((sum, m) => sum + (m.items || []).reduce((s, it) => s + (it.kcal || 0), 0), 0)
+  );
+  const tefKcal = Math.round(consumedKcal * 0.1);
+
+  const totalBurnedKcal =
+    bmrKcal + baselineActivityKcal + stepsBurnKcal + exerciseBurnKcal + tefKcal;
+  const netKcal = consumedKcal - totalBurnedKcal;
+  const effectiveTarget = targetKcal > 0 ? Math.round(targetKcal) : totalBurnedKcal;
+  const remainingBudgetKcal = effectiveTarget - consumedKcal;
+
+  let goalStatus: DailyEnergyBalance['goalStatus'] = 'on_track';
+  if (consumedKcal > effectiveTarget * 1.1) {
+    goalStatus = 'over_target';
+  } else if (consumedKcal > 0 && consumedKcal < bmrKcal * 0.85) {
+    goalStatus = 'under_eating';
+  }
+
+  return {
+    date,
+    bmrKcal,
+    baselineActivityKcal,
+    stepsBurnKcal,
+    exerciseBurnKcal,
+    tefKcal,
+    totalBurnedKcal,
+    consumedKcal,
+    netKcal,
+    targetKcal: effectiveTarget,
+    remainingBudgetKcal,
+    goalStatus,
+  };
+}
+
+export interface WeightWindowStats {
+  currentRawKg: number;
+  currentEmaKg: number;
+  tenDayHighKg: number;
+  tenDayLowKg: number;
+  sevenDayAvgKg: number;
+  weeklyDeltaKg: number;
+  sampleCount10d: number;
+}
+
+/**
+ * Computes Tracked.gg-style 10-day bodyweight High/Low band and 7-day rolling mean alongside EMA.
+ */
+export function calculateWeightWindowStats(
+  bodyPoints: BodyPoint[] = [],
+  healthLogs: HealthDayLog[] = [],
+  fallbackWeightKg = 68,
+  referenceDateStr?: string
+): WeightWindowStats {
+  const byDate = new Map<string, number>();
+  for (const log of healthLogs) {
+    if (log.weightKg && log.weightKg > 20) {
+      byDate.set(log.date, log.weightKg);
+    }
+  }
+  for (const pt of bodyPoints) {
+    if (pt.weightKg && pt.weightKg > 20) {
+      byDate.set(pt.date, pt.weightKg);
+    }
+  }
+
+  const mergedPoints: BodyPoint[] = Array.from(byDate.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, weightKg], idx) => ({
+      id: `merged-wt-${idx}`,
+      date,
+      weightKg,
+      bodyFatPct: 15,
+      createdAt: idx,
+    }));
+
+  if (mergedPoints.length === 0) {
+    return {
+      currentRawKg: fallbackWeightKg,
+      currentEmaKg: fallbackWeightKg,
+      tenDayHighKg: fallbackWeightKg,
+      tenDayLowKg: fallbackWeightKg,
+      sevenDayAvgKg: fallbackWeightKg,
+      weeklyDeltaKg: 0,
+      sampleCount10d: 0,
+    };
+  }
+
+  const trendRes = calculateTrendWeights(mergedPoints);
+  const refDate = referenceDateStr || mergedPoints[mergedPoints.length - 1].date;
+  const refTime = new Date(refDate + 'T00:00:00').getTime();
+  const tenDaysAgoTime = refTime - 9 * 86400 * 1000;
+  const sevenDaysAgoTime = refTime - 6 * 86400 * 1000;
+
+  const last10 = mergedPoints.filter((p) => {
+    const t = new Date(p.date + 'T00:00:00').getTime();
+    return t >= tenDaysAgoTime && t <= refTime;
+  });
+  const pool10 = last10.length > 0 ? last10 : mergedPoints.slice(-10);
+  const weights10 = pool10.map((p) => p.weightKg);
+
+  const last7 = mergedPoints.filter((p) => {
+    const t = new Date(p.date + 'T00:00:00').getTime();
+    return t >= sevenDaysAgoTime && t <= refTime;
+  });
+  const pool7 = last7.length > 0 ? last7 : mergedPoints.slice(-7);
+  const sevenDayAvgKg =
+    Math.round((pool7.reduce((s, p) => s + p.weightKg, 0) / pool7.length) * 100) / 100;
+
+  return {
+    currentRawKg: trendRes.currentRaw,
+    currentEmaKg: trendRes.currentTrend,
+    tenDayHighKg: Math.max(...weights10),
+    tenDayLowKg: Math.min(...weights10),
+    sevenDayAvgKg,
+    weeklyDeltaKg: trendRes.weeklyRateKg,
+    sampleCount10d: last10.length,
+  };
+}
+
+export interface ThreeTierTdeeResult {
+  bmrKcal: number;
+  roadmapTdee: number;
+  checkinActivityTdee: number;
+  inferredTdee: number;
+  inferredWithinBounds: boolean;
+  lowerBoundKcal: number;
+  upperBoundKcal: number;
+  checkinMinusRoadmapKcal: number;
+  inferredMinusCheckinKcal: number;
+  recommendedTargetKcal: number;
+  rawTargetBeforeBmrFloor: number;
+  bmrFloorApplied: boolean;
+  loggedDaysCount: number;
+  confidencePct: number;
+}
+
+/**
+ * CTG 3-Tier TDEE Triangle:
+ * 1) Roadmap TDEE (declared profile/phase baseline)
+ * 2) Check-in Activity TDEE (BMR + logged steps + gym/sport + TEF)
+ * 3) Back-solved Inferred TDEE from EMA weight change vs intake, clamped within 0.5–4.0 × BMR,
+ *    with automatic BMR safety floor for recommended target calories.
+ */
+export function calculateThreeTierTdee(params: {
+  profile: CtgProfile;
+  weightKg: number;
+  bodyFatPct?: number;
+  goal: Goal;
+  meals: MealLog[];
+  bodyPoints: BodyPoint[];
+  workoutSessions?: WorkoutSession[];
+  sportSessions?: SportSession[];
+  healthLogs?: HealthDayLog[];
+  ctgPhaseTargetKcal?: number;
+}): ThreeTierTdeeResult {
+  const {
+    profile,
+    weightKg,
+    bodyFatPct = profile.targetBodyFatPct || 15,
+    goal,
+    meals = [],
+    bodyPoints = [],
+    workoutSessions = [],
+    sportSessions = [],
+    healthLogs = [],
+    ctgPhaseTargetKcal,
+  } = params;
+
+  const safeWeight = Math.max(30, weightKg || profile.targetWeightKg || 65);
+  const lbm = leanMassKg(safeWeight, bodyFatPct);
+  const bmrKcal = Math.round(370 + 21.6 * lbm);
+  const lowerBoundKcal = Math.round(bmrKcal * 0.5);
+  const upperBoundKcal = Math.round(bmrKcal * 4.0);
+
+  const staticProfileTdee = tdee(profile, safeWeight);
+  const roadmapTdee =
+    ctgPhaseTargetKcal && ctgPhaseTargetKcal > 0
+      ? goal === 'bulk'
+        ? Math.round(ctgPhaseTargetKcal / 1.1)
+        : goal === 'cut'
+        ? Math.round(ctgPhaseTargetKcal / 0.85)
+        : Math.round(ctgPhaseTargetKcal)
+      : staticProfileTdee;
+
+  // Compute check-in activity TDEE across recent active/logged dates (up to last 14 days)
+  const activeDates = new Set<string>();
+  for (const l of healthLogs) {
+    if ((l.steps || 0) > 0 || (l.caloriesBurned || 0) > 0) activeDates.add(l.date);
+  }
+  for (const w of workoutSessions) activeDates.add(w.date);
+  for (const s of sportSessions) activeDates.add(s.date);
+
+  const sortedActiveDates = Array.from(activeDates).sort().slice(-14);
+  let checkinActivityTdee = staticProfileTdee;
+  if (sortedActiveDates.length > 0) {
+    const burns = sortedActiveDates.map((d) =>
+      calculateDailyEnergyBalance({
+        date: d,
+        weightKg: safeWeight,
+        bodyFatPct,
+        meals,
+        workoutSessions,
+        sportSessions,
+        healthLogs,
+      }).totalBurnedKcal
+    );
+    checkinActivityTdee = Math.round(burns.reduce((a, b) => a + b, 0) / burns.length);
+  }
+
+  const adaptive = calculateAdaptiveTDEE(
+    meals,
+    bodyPoints,
+    staticProfileTdee,
+    goal,
+    ctgPhaseTargetKcal
+  );
+
+  const rawInferred = adaptive.adaptiveTdee;
+  const inferredWithinBounds = rawInferred >= lowerBoundKcal && rawInferred <= upperBoundKcal;
+  const inferredTdee = Math.max(lowerBoundKcal, Math.min(upperBoundKcal, rawInferred));
+
+  const referenceMaintenance =
+    adaptive.loggedDaysCount >= 4 ? inferredTdee : checkinActivityTdee;
+
+  const rawTargetBeforeBmrFloor =
+    goal === 'bulk'
+      ? Math.round(referenceMaintenance * 1.1)
+      : goal === 'cut'
+      ? Math.round(referenceMaintenance * 0.85)
+      : Math.round(referenceMaintenance);
+
+  const bmrFloorApplied = rawTargetBeforeBmrFloor < bmrKcal;
+  const recommendedTargetKcal = bmrFloorApplied ? bmrKcal : rawTargetBeforeBmrFloor;
+
+  return {
+    bmrKcal,
+    roadmapTdee,
+    checkinActivityTdee,
+    inferredTdee,
+    inferredWithinBounds,
+    lowerBoundKcal,
+    upperBoundKcal,
+    checkinMinusRoadmapKcal: checkinActivityTdee - roadmapTdee,
+    inferredMinusCheckinKcal: inferredTdee - checkinActivityTdee,
+    recommendedTargetKcal,
+    rawTargetBeforeBmrFloor,
+    bmrFloorApplied,
+    loggedDaysCount: adaptive.loggedDaysCount,
+    confidencePct: adaptive.confidenceScore,
+  };
+}
+
+export interface HealthFixNextAction {
+  id: string;
+  severity: 'high' | 'medium' | 'low';
+  title: string;
+  detail: string;
+  ctaLabel: string;
+  targetTab: 'nutrition' | 'training' | 'inbody' | 'roadmap' | 'profile';
+}
+
+/**
+ * Generates Tracked.gg-style "Fix Next" prioritized actions from nutrition gaps,
+ * under-MEV muscle volume, calendar workout conflicts, and stale body check-ins.
+ */
+export function generateHealthFixNextActions(params: {
+  todayStr: string;
+  dayMeals: MealLog[];
+  targetProteinG: number;
+  targetKcal: number;
+  plannedSessions: PlannedSession[];
+  customExercises?: Exercise[];
+  bodyPoints: BodyPoint[];
+  calendarEvents?: CalendarEvent[];
+  awayMode?: AwayBreakPeriod;
+}): HealthFixNextAction[] {
+  const {
+    todayStr,
+    dayMeals = [],
+    targetProteinG,
+    targetKcal,
+    plannedSessions = [],
+    customExercises = [],
+    bodyPoints = [],
+    calendarEvents = [],
+    awayMode,
+  } = params;
+
+  const actions: HealthFixNextAction[] = [];
+  const isAwayToday = isDateInAwayPeriod(todayStr, awayMode);
+
+  if (isAwayToday && awayMode) {
+    actions.push({
+      id: 'fix-away-mode-active',
+      severity: 'low',
+      title: `Away Mode đang bật (đến ${awayMode.endDate})`,
+      detail: `${awayMode.reason ? `Lý do: ${awayMode.reason}. ` : ''}Hệ thống tạm ngưng nhắc thiếu buổi tập & bảo toàn chuỗi kỷ luật của bạn.`,
+      ctaLabel: 'Quản lý nghỉ phép',
+      targetTab: 'profile',
+    });
+  }
+
+  // 1. Check calendar workout conflicts in upcoming 7 days (suppressed while Away Mode active)
+  const todayTime = new Date(todayStr + 'T00:00:00').getTime();
+  const nextWeekTime = todayTime + 7 * 86400 * 1000;
+  const upcomingWorkouts = isAwayToday
+    ? []
+    : calendarEvents.filter((ev) => {
+        if (!isWorkoutCalendarEvent(ev) || ev.allDay) return false;
+        const t = new Date(ev.startDate + 'T00:00:00').getTime();
+        return t >= todayTime && t <= nextWeekTime;
+      });
+
+  const conflictedWorkouts = upcomingWorkouts.filter((wo) => {
+    const conflicts = findConflictingEvents(wo, calendarEvents).filter(
+      (c) => !isWorkoutCalendarEvent(c)
+    );
+    return conflicts.length > 0;
+  });
+
+  if (conflictedWorkouts.length > 0) {
+    const firstWo = conflictedWorkouts[0];
+    const firstConflict = findConflictingEvents(firstWo, calendarEvents).find(
+      (c) => !isWorkoutCalendarEvent(c)
+    );
+    actions.push({
+      id: 'fix-workout-conflict',
+      severity: 'high',
+      title: `${conflictedWorkouts.length} buổi tập sắp tới đang trùng lịch`,
+      detail: `Ví dụ: "${firstWo.title}" (${firstWo.startDate} ${firstWo.startTime}) đè với "${firstConflict?.title || 'sự kiện khác'}".`,
+      ctaLabel: 'Đồng bộ né trùng',
+      targetTab: 'training',
+    });
+  }
+
+  // 2. Check under-MEV muscles in split
+  if (plannedSessions.length > 0) {
+    const splitQuality = evaluateSplitScientificQuality(plannedSessions, customExercises);
+    const belowMev = splitQuality.items.filter((it) => it.landmarkEvaluation === 'below_mev');
+    if (belowMev.length > 0) {
+      actions.push({
+        id: 'fix-below-mev',
+        severity: 'medium',
+        title: `${belowMev.length} nhóm cơ đang dưới ngưỡng kích thích tối thiểu (MEV)`,
+        detail: `${belowMev.map((m) => `${m.muscleLabel} (${m.weeklySets} sets)`).join(', ')}. Nên thêm 2-4 hiệp/tuần.`,
+        ctaLabel: 'Tối ưu giáo án',
+        targetTab: 'training',
+      });
+    }
+  }
+
+  // 3. Protein / Calorie check for today
+  const totals = dayMeals.reduce(
+    (acc, m) => {
+      for (const it of m.items || []) {
+        acc.kcal += it.kcal || 0;
+        acc.protein += it.protein || 0;
+      }
+      return acc;
+    },
+    { kcal: 0, protein: 0 }
+  );
+
+  if (targetProteinG > 0 && totals.protein < targetProteinG * 0.6) {
+    const missingP = Math.round(targetProteinG - totals.protein);
+    actions.push({
+      id: 'fix-protein-gap',
+      severity: totals.kcal > 0 ? 'medium' : 'low',
+      title: `Còn thiếu ${missingP}g Protein cho hôm nay`,
+      detail: `Đã nạp ${Math.round(totals.protein)}/${Math.round(targetProteinG)}g đạm (${Math.round(totals.kcal)}/${Math.round(targetKcal)} kcal).`,
+      ctaLabel: 'Gợi ý món giàu đạm',
+      targetTab: 'nutrition',
+    });
+  } else if (targetKcal > 0 && totals.kcal > targetKcal * 1.15) {
+    actions.push({
+      id: 'fix-kcal-over',
+      severity: 'medium',
+      title: `Calo nạp vượt +${Math.round(totals.kcal - targetKcal)} kcal mục tiêu`,
+      detail: 'Cân nhắc đi bộ thêm 3.000 bước hoặc giảm nhẹ tinh bột vào ngày mai.',
+      ctaLabel: 'Xem nhật ký ăn',
+      targetTab: 'nutrition',
+    });
+  }
+
+  // 4. Stale body check-in (> 7 days)
+  const sortedPoints = [...bodyPoints].sort((a, b) => a.date.localeCompare(b.date));
+  const latestBp = sortedPoints[sortedPoints.length - 1];
+  const daysSinceCheckin = latestBp
+    ? Math.floor((todayTime - new Date(latestBp.date + 'T00:00:00').getTime()) / 86400000)
+    : 999;
+
+  if (!isAwayToday && (!latestBp || daysSinceCheckin > 7)) {
+    actions.push({
+      id: 'fix-stale-checkin',
+      severity: daysSinceCheckin > 14 ? 'medium' : 'low',
+      title: latestBp
+        ? `Đã ${daysSinceCheckin} ngày chưa cập nhật số đo cơ thể`
+        : 'Chưa có số đo cân nặng / InBody nào',
+      detail: 'Ghi cân nặng định kỳ giúp hệ thống tính TDEE suy ngược chính xác hơn.',
+      ctaLabel: 'Check-in ngay',
+      targetTab: 'inbody',
+    });
+  }
+
+  return actions.slice(0, 4);
+}
+
+// ============================================================================
+// PHASE 2: CRONOMETER NUTRIENT ORACLE, UPPER LIMITS, RECIPE BUILDER & CTG 90-110% ADHERENCE
+// ============================================================================
+
+export type OracleNutrientKey =
+  | 'potassium'
+  | 'magnesium'
+  | 'calcium'
+  | 'zinc'
+  | 'iron'
+  | 'vitaminD'
+  | 'vitaminC'
+  | 'vitaminB12'
+  | 'omega3'
+  | 'fiber'
+  | 'protein';
+
+export interface EstimatedFoodMicros {
+  potassium: number;
+  magnesium: number;
+  calcium: number;
+  zinc: number;
+  iron: number;
+  vitaminD: number;
+  vitaminC: number;
+  vitaminB12: number;
+  omega3: number;
+  fiber: number;
+  sodium: number;
+  sugar: number;
+}
+
+/**
+ * Shared micronutrient estimator for logged FoodItems & catalog items so both
+ * Cronometer scoring and the Nutrient Oracle share identical food profiles.
+ */
+export function estimateItemMicronutrients(it: {
+  name?: string;
+  amount?: number;
+  protein?: number;
+  carbs?: number;
+  potassium?: number;
+  magnesium?: number;
+  calcium?: number;
+  zinc?: number;
+  iron?: number;
+  vitaminD?: number;
+  vitaminC?: number;
+  vitaminB12?: number;
+  omega3?: number;
+  fiber?: number;
+  sodium?: number;
+  sugar?: number;
+}): EstimatedFoodMicros {
+  const name = (it.name || '').toLowerCase();
+  const amountRatio = Math.max(0.5, (it.amount || 100) / 100);
+  const prot = it.protein || 0;
+  const carb = it.carbs || 0;
+
+  let potassium = it.potassium ?? 0;
+  if (it.potassium === undefined) {
+    if (name.includes('chuối')) potassium += Math.round(360 * amountRatio);
+    else if (name.includes('khoai')) potassium += Math.round(450 * amountRatio);
+    else if (name.includes('bơ')) potassium += Math.round(420 * amountRatio);
+    else if (name.includes('cá hồi')) potassium += Math.round(380 * amountRatio);
+    else if (name.includes('bò') || name.includes('gà')) potassium += Math.round(300 * amountRatio);
+    else if (name.includes('rau') || name.includes('canh')) potassium += Math.round(250 * amountRatio);
+  }
+
+  let magnesium = it.magnesium ?? 0;
+  if (it.magnesium === undefined) {
+    if (name.includes('yến mạch') || name.includes('hạt')) magnesium += Math.round(140 * amountRatio);
+    else if (name.includes('gạo lứt') || name.includes('chuối')) magnesium += Math.round(35 * amountRatio);
+    else if (name.includes('rau')) magnesium += Math.round(40 * amountRatio);
+    else if (prot > 20) magnesium += Math.round(25 * amountRatio);
+  }
+
+  let calcium = it.calcium ?? 0;
+  if (it.calcium === undefined) {
+    if (name.includes('sữa') || name.includes('whey') || name.includes('chua')) calcium += Math.round(220 * amountRatio);
+    else if (name.includes('đậu phụ') || name.includes('đậu hũ') || name.includes('phô mai')) calcium += Math.round(180 * amountRatio);
+    else if (name.includes('rau')) calcium += Math.round(50 * amountRatio);
+  }
+
+  let zinc = it.zinc ?? 0;
+  if (it.zinc === undefined) {
+    if (name.includes('bò') || name.includes('hàu') || name.includes('thịt đỏ')) zinc += Math.round(5.5 * amountRatio * 10) / 10;
+    else if (name.includes('gà') || name.includes('trứng')) zinc += Math.round(2.0 * amountRatio * 10) / 10;
+    else if (prot > 15) zinc += Math.round(1.2 * amountRatio * 10) / 10;
+  }
+
+  let iron = it.iron ?? 0;
+  if (it.iron === undefined) {
+    if (name.includes('bò') || name.includes('gan') || name.includes('tiết')) iron += Math.round(4.0 * amountRatio * 10) / 10;
+    else if (name.includes('trứng') || name.includes('rau')) iron += Math.round(1.8 * amountRatio * 10) / 10;
+    else if (prot > 15) iron += Math.round(1.2 * amountRatio * 10) / 10;
+  }
+
+  let vitaminD = it.vitaminD ?? 0;
+  if (it.vitaminD === undefined) {
+    if (name.includes('cá hồi') || name.includes('hồi')) vitaminD += Math.round(400 * amountRatio);
+    else if (name.includes('trứng')) vitaminD += Math.round(45 * amountRatio);
+    else if (name.includes('sữa')) vitaminD += Math.round(80 * amountRatio);
+  }
+
+  let vitaminC = it.vitaminC ?? 0;
+  if (it.vitaminC === undefined) {
+    if (name.includes('cam') || name.includes('ổi') || name.includes('bưởi') || name.includes('chanh')) vitaminC += Math.round(60 * amountRatio);
+    else if (name.includes('rau') || name.includes('cà chua') || name.includes('ớt')) vitaminC += Math.round(25 * amountRatio);
+    else if (name.includes('chuối') || name.includes('táo') || name.includes('khoai')) vitaminC += Math.round(12 * amountRatio);
+  }
+
+  let vitaminB12 = it.vitaminB12 ?? 0;
+  if (it.vitaminB12 === undefined) {
+    if (name.includes('cá hồi') || name.includes('bò') || name.includes('thịt')) vitaminB12 += Math.round(2.1 * amountRatio * 10) / 10;
+    else if (name.includes('trứng') || name.includes('sữa')) vitaminB12 += Math.round(0.8 * amountRatio * 10) / 10;
+    else if (prot > 20) vitaminB12 += Math.round(0.6 * amountRatio * 10) / 10;
+  }
+
+  let omega3 = it.omega3 ?? 0;
+  if (it.omega3 === undefined) {
+    if (name.includes('cá hồi') || name.includes('cá ngừ') || name.includes('cá thu')) omega3 += Math.round(1.8 * amountRatio * 10) / 10;
+    else if (name.includes('hạt chia') || name.includes('óc chó')) omega3 += Math.round(1.2 * amountRatio * 10) / 10;
+    else if (name.includes('trứng')) omega3 += 0.15;
+  }
+
+  let fiber = it.fiber ?? 0;
+  if (it.fiber === undefined) {
+    if (name.includes('rau') || name.includes('yến mạch') || name.includes('hạt') || name.includes('gạo lứt')) fiber += Math.round(4.5 * amountRatio * 10) / 10;
+    else if (name.includes('khoai') || name.includes('chuối') || name.includes('ổi') || name.includes('bơ')) fiber += Math.round(3.0 * amountRatio * 10) / 10;
+    else if (carb > 20) fiber += 1.5;
+  }
+
+  let sodium = it.sodium ?? 0;
+  if (it.sodium === undefined) {
+    if (name.includes('phở') || name.includes('bún') || name.includes('mì')) sodium += 850;
+    else if (name.includes('cơm tấm') || name.includes('nước mắm') || name.includes('kho')) sodium += 620;
+    else if (name.includes('bánh mì') || name.includes('xúc xích')) sodium += 540;
+    else sodium += 120;
+  }
+
+  let sugar = it.sugar ?? 0;
+  if (it.sugar === undefined) {
+    if (name.includes('trà sữa') || name.includes('chè') || name.includes('nước ngọt')) sugar += 28;
+    else if (name.includes('chuối') || name.includes('cam') || name.includes('táo') || name.includes('sữa')) sugar += 9;
+    else if (carb > 30) sugar += 4;
+  }
+
+  return {
+    potassium,
+    magnesium,
+    calcium,
+    zinc,
+    iron,
+    vitaminD,
+    vitaminC,
+    vitaminB12,
+    omega3,
+    fiber,
+    sodium,
+    sugar,
+  };
+}
+
+export interface NutrientOracleSuggestion {
+  food: CatalogFoodItem;
+  nutrientKey: OracleNutrientKey;
+  estimatedAmount: number;
+  unit: string;
+  pctOfDailyTarget: number;
+  densityPer100Kcal: number;
+  fitsRemainingBudget: boolean;
+}
+
+const ORACLE_TARGETS: Record<OracleNutrientKey, { target: number; unit: string; labelVi: string }> = {
+  potassium: { target: 3400, unit: 'mg', labelVi: 'Kali (Potassium)' },
+  magnesium: { target: 400, unit: 'mg', labelVi: 'Magie (Magnesium)' },
+  calcium: { target: 1000, unit: 'mg', labelVi: 'Canxi (Calcium)' },
+  zinc: { target: 11, unit: 'mg', labelVi: 'Kẽm (Zinc)' },
+  iron: { target: 14, unit: 'mg', labelVi: 'Sắt (Iron)' },
+  vitaminD: { target: 800, unit: 'IU', labelVi: 'Vitamin D' },
+  vitaminC: { target: 90, unit: 'mg', labelVi: 'Vitamin C' },
+  vitaminB12: { target: 2.4, unit: 'µg', labelVi: 'Vitamin B12' },
+  omega3: { target: 2.0, unit: 'g', labelVi: 'Omega-3' },
+  fiber: { target: 28, unit: 'g', labelVi: 'Chất xơ (Fiber)' },
+  protein: { target: 140, unit: 'g', labelVi: 'Chất đạm (Protein)' },
+};
+
+export function getOracleNutrientMeta(key: OracleNutrientKey) {
+  return ORACLE_TARGETS[key];
+}
+
+/**
+ * Cronometer Nutrient Oracle (100% deterministic over VIETNAMESE_FOOD_CATALOG):
+ * Ranks foods by highest density of the selected deficient micronutrient per 100 kcal
+ * while flagging whether adding 1 serving stays inside remaining daily calories.
+ */
+export function recommendFoodsForNutrient(
+  nutrientKey: OracleNutrientKey,
+  remainingKcal = 9999,
+  limit = 5
+): NutrientOracleSuggestion[] {
+  const meta = ORACLE_TARGETS[nutrientKey];
+  const results: NutrientOracleSuggestion[] = [];
+
+  for (const food of VIETNAMESE_FOOD_CATALOG) {
+    let val = 0;
+    if (nutrientKey === 'protein') {
+      val = food.protein;
+    } else {
+      const est = estimateItemMicronutrients({
+        name: food.name,
+        amount: food.servingGramsOrMl,
+        protein: food.protein,
+        carbs: food.carbs,
+      });
+      val = est[nutrientKey] || 0;
+    }
+
+    if (val <= 0) continue;
+    const kcal = Math.max(40, food.kcalPerServing);
+    const densityPer100Kcal = Math.round(((val / kcal) * 100) * 100) / 100;
+    const pctOfDailyTarget = Math.min(200, Math.round((val / meta.target) * 100));
+    const fitsRemainingBudget = food.kcalPerServing <= Math.max(150, remainingKcal + 80);
+
+    results.push({
+      food,
+      nutrientKey,
+      estimatedAmount: Math.round(val * 10) / 10,
+      unit: meta.unit,
+      pctOfDailyTarget,
+      densityPer100Kcal,
+      fitsRemainingBudget,
+    });
+  }
+
+  return results
+    .sort((a, b) => {
+      if (a.fitsRemainingBudget !== b.fitsRemainingBudget) {
+        return a.fitsRemainingBudget ? -1 : 1;
+      }
+      return b.densityPer100Kcal - a.densityPer100Kcal;
+    })
+    .slice(0, Math.max(1, limit));
+}
+
+export interface NutrientUpperLimitAlert {
+  nutrient: string;
+  current: number;
+  upperLimit: number;
+  unit: string;
+  note: string;
+}
+
+/**
+ * Flags daily intakes exceeding evidence-based Tolerable Upper Intake Levels (UL).
+ */
+export function evaluateMicronutrientUpperLimits(
+  dayMeals: MealLog[] = [],
+  cronoScores?: CronometerScores
+): NutrientUpperLimitAlert[] {
+  let sodiumMg = 0;
+  let sugarG = 0;
+  for (const m of dayMeals) {
+    for (const it of m.items || []) {
+      const est = estimateItemMicronutrients(it);
+      sodiumMg += est.sodium;
+      sugarG += est.sugar;
+    }
+  }
+
+  const scores = cronoScores || calculateCronometerNutrientScores(dayMeals, 0, 140);
+  const alerts: NutrientUpperLimitAlert[] = [];
+
+  if (sodiumMg > 2300) {
+    alerts.push({
+      nutrient: 'Natri (Sodium)',
+      current: Math.round(sodiumMg),
+      upperLimit: 2300,
+      unit: 'mg',
+      note: 'Vượt mốc WHO 2.300 mg/ngày — dễ gây giữ nước tạm thời và tăng cân ảo sáng mai.',
+    });
+  }
+  if (sugarG > 50) {
+    alerts.push({
+      nutrient: 'Đường đơn (Sugar)',
+      current: Math.round(sugarG),
+      upperLimit: 50,
+      unit: 'g',
+      note: 'Cao hơn ngưỡng khuyến nghị 50g/ngày, dễ gây dao động đường huyết.',
+    });
+  }
+  if (scores.ironMg > 45) {
+    alerts.push({
+      nutrient: 'Sắt (Iron)',
+      current: Math.round(scores.ironMg * 10) / 10,
+      upperLimit: 45,
+      unit: 'mg',
+      note: 'Vượt ngưỡng an toàn tối đa UL 45 mg/ngày.',
+    });
+  }
+  if (scores.zincMg > 40) {
+    alerts.push({
+      nutrient: 'Kẽm (Zinc)',
+      current: Math.round(scores.zincMg * 10) / 10,
+      upperLimit: 40,
+      unit: 'mg',
+      note: 'Vượt ngưỡng tối đa UL 40 mg/ngày, có thể cản trở hấp thu Đồng.',
+    });
+  }
+  if (scores.vitaminDIu > 4000) {
+    alerts.push({
+      nutrient: 'Vitamin D',
+      current: Math.round(scores.vitaminDIu),
+      upperLimit: 4000,
+      unit: 'IU',
+      note: 'Vượt ngưỡng an toàn hàng ngày 4.000 IU.',
+    });
+  }
+
+  return alerts;
+}
+
+/**
+ * Computes 1-serving FoodItem payload for a CustomRecipe divided by `servings`.
+ */
+export function calculateRecipePerServing(recipe: Pick<CustomRecipe, 'name' | 'servings' | 'items'>): {
+  totalKcal: number;
+  totalProtein: number;
+  totalCarbs: number;
+  totalFat: number;
+  perServingItem: FoodItem;
+} {
+  const safeServings = Math.max(1, Math.round(recipe.servings || 1));
+  let kcal = 0;
+  let protein = 0;
+  let carbs = 0;
+  let fat = 0;
+  let grams = 0;
+  let fiber = 0;
+  let potassium = 0;
+  let magnesium = 0;
+  let calcium = 0;
+  let zinc = 0;
+  let iron = 0;
+  let vitaminD = 0;
+  let vitaminC = 0;
+  let vitaminB12 = 0;
+  let omega3 = 0;
+
+  for (const it of recipe.items || []) {
+    kcal += it.kcal || 0;
+    protein += it.protein || 0;
+    carbs += it.carbs || 0;
+    fat += it.fat || 0;
+    grams += it.amount || 100;
+    const est = estimateItemMicronutrients(it);
+    fiber += est.fiber;
+    potassium += est.potassium;
+    magnesium += est.magnesium;
+    calcium += est.calcium;
+    zinc += est.zinc;
+    iron += est.iron;
+    vitaminD += est.vitaminD;
+    vitaminC += est.vitaminC;
+    vitaminB12 += est.vitaminB12;
+    omega3 += est.omega3;
+  }
+
+  return {
+    totalKcal: Math.round(kcal),
+    totalProtein: Math.round(protein * 10) / 10,
+    totalCarbs: Math.round(carbs * 10) / 10,
+    totalFat: Math.round(fat * 10) / 10,
+    perServingItem: {
+      name: `${recipe.name} (1/${safeServings} phần)`,
+      amount: Math.max(50, Math.round(grams / safeServings)),
+      unit: 'g',
+      kcal: Math.round(kcal / safeServings),
+      protein: Math.round((protein / safeServings) * 10) / 10,
+      carbs: Math.round((carbs / safeServings) * 10) / 10,
+      fat: Math.round((fat / safeServings) * 10) / 10,
+      fiber: Math.round((fiber / safeServings) * 10) / 10,
+      potassium: Math.round(potassium / safeServings),
+      magnesium: Math.round(magnesium / safeServings),
+      calcium: Math.round(calcium / safeServings),
+      zinc: Math.round((zinc / safeServings) * 10) / 10,
+      iron: Math.round((iron / safeServings) * 10) / 10,
+      vitaminD: Math.round(vitaminD / safeServings),
+      vitaminC: Math.round(vitaminC / safeServings),
+      vitaminB12: Math.round((vitaminB12 / safeServings) * 10) / 10,
+      omega3: Math.round((omega3 / safeServings) * 100) / 100,
+    },
+  };
+}
+
+export interface MacroAdherenceDayItem {
+  date: string;
+  actualKcal: number;
+  actualProtein: number;
+  historicalTargetKcal: number;
+  historicalTargetProtein: number;
+  hasLockedSnapshot: boolean;
+  status: 'in_range' | 'above' | 'below';
+  proteinMet: boolean;
+}
+
+export interface MacroAdherenceReport {
+  windowDays: number;
+  loggedDays: number;
+  inRangeDays: number; // 90% - 110% of historical/effective target kcal
+  aboveRangeDays: number; // > 110%
+  belowRangeDays: number; // < 90%
+  proteinMetDays: number; // >= 90% protein target
+  adherencePct: number;
+  proteinAdherencePct: number;
+  avgDeltaVsHistoricalKcal: number;
+  avgDeltaVsCurrentKcal: number;
+  dailyBreakdown: MacroAdherenceDayItem[];
+}
+
+/**
+ * Computes CTG-grade 14-day adherence against locked historical DailyTargetSnapshots
+ * ("Các ngày đã chốt mục tiêu được giữ nguyên") vs current targets.
+ */
+export function calculateMacroAdherenceReport(params: {
+  meals: MealLog[];
+  currentTargets: { kcal: number; protein: number };
+  targetSnapshots?: Record<string, DailyTargetSnapshot>;
+  referenceDateStr?: string;
+  windowDays?: number;
+}): MacroAdherenceReport {
+  const {
+    meals = [],
+    currentTargets,
+    targetSnapshots = {},
+    referenceDateStr = todayString(),
+    windowDays = 14,
+  } = params;
+
+  const refDate = new Date(referenceDateStr + 'T00:00:00');
+  const startDate = new Date(refDate.getTime() - (Math.max(1, windowDays) - 1) * 86400 * 1000);
+  const startStr = formatDateString(startDate);
+
+  const byDate = new Map<string, { kcal: number; protein: number }>();
+  for (const m of meals) {
+    if (m.date < startStr || m.date > referenceDateStr) continue;
+    const prev = byDate.get(m.date) || { kcal: 0, protein: 0 };
+    for (const it of m.items || []) {
+      prev.kcal += it.kcal || 0;
+      prev.protein += it.protein || 0;
+    }
+    byDate.set(m.date, prev);
+  }
+
+  const dailyBreakdown: MacroAdherenceDayItem[] = [];
+  let inRangeDays = 0;
+  let aboveRangeDays = 0;
+  let belowRangeDays = 0;
+  let proteinMetDays = 0;
+  let sumDeltaHistorical = 0;
+  let sumDeltaCurrent = 0;
+
+  const sortedDates = Array.from(byDate.keys()).sort();
+  for (const date of sortedDates) {
+    const totals = byDate.get(date)!;
+    if (totals.kcal <= 0) continue;
+
+    const snap = targetSnapshots[date];
+    const histKcal = Math.max(1, snap?.kcal ?? currentTargets.kcal);
+    const histProtein = Math.max(1, snap?.protein ?? currentTargets.protein);
+    const ratio = totals.kcal / histKcal;
+
+    let status: MacroAdherenceDayItem['status'] = 'in_range';
+    if (ratio > 1.1) {
+      status = 'above';
+      aboveRangeDays++;
+    } else if (ratio < 0.9) {
+      status = 'below';
+      belowRangeDays++;
+    } else {
+      inRangeDays++;
+    }
+
+    const proteinMet = totals.protein >= histProtein * 0.9;
+    if (proteinMet) proteinMetDays++;
+
+    sumDeltaHistorical += totals.kcal - histKcal;
+    sumDeltaCurrent += totals.kcal - Math.max(1, currentTargets.kcal);
+
+    dailyBreakdown.push({
+      date,
+      actualKcal: Math.round(totals.kcal),
+      actualProtein: Math.round(totals.protein),
+      historicalTargetKcal: Math.round(histKcal),
+      historicalTargetProtein: Math.round(histProtein),
+      hasLockedSnapshot: Boolean(snap),
+      status,
+      proteinMet,
+    });
+  }
+
+  const loggedDays = dailyBreakdown.length;
+  return {
+    loggedDays,
+    windowDays,
+    inRangeDays,
+    aboveRangeDays,
+    belowRangeDays,
+    proteinMetDays,
+    adherencePct: loggedDays > 0 ? Math.round((inRangeDays / loggedDays) * 100) : 0,
+    proteinAdherencePct: loggedDays > 0 ? Math.round((proteinMetDays / loggedDays) * 100) : 0,
+    avgDeltaVsHistoricalKcal: loggedDays > 0 ? Math.round(sumDeltaHistorical / loggedDays) : 0,
+    avgDeltaVsCurrentKcal: loggedDays > 0 ? Math.round(sumDeltaCurrent / loggedDays) : 0,
+    dailyBreakdown,
+  };
+}
+
+// ============================================================================
+// PHASE 3: EXERCISE DRILLDOWN (E1RM/VOLUME), SWAP CANDIDATES & SESSION QUALITY
+// ============================================================================
+
+export interface ExerciseSessionTimelineEntry {
+  sessionId: string;
+  date: string;
+  sessionTitle: string;
+  topWeightKg: number;
+  topReps: number;
+  bestOneRmKg: number;
+  totalTonnageKg: number;
+  avgRpe: number | null;
+  avgRir: number | null;
+  setsCount: number;
+}
+
+export interface ExerciseHistoryDrilldown {
+  exerciseId: string;
+  exerciseName: string;
+  bestOneRmKg: number;
+  maxWeightKg: number;
+  bestRepSet: { weightKg: number; reps: number; date: string } | null;
+  totalSessionsCount: number;
+  totalWorkingSets: number;
+  latestOneRmDeltaKg: number;
+  timeline: ExerciseSessionTimelineEntry[];
+}
+
+/**
+ * Computes Tracked.gg-style per-exercise drilldown (E1RM progression, PR wall, tonnage & RIR history).
+ */
+export function getExerciseHistoryDrilldown(
+  exerciseId: string,
+  workoutSessions: WorkoutSession[] = [],
+  customExercises: Exercise[] = []
+): ExerciseHistoryDrilldown {
+  const ex = exerciseById(exerciseId, customExercises);
+  const timeline: ExerciseSessionTimelineEntry[] = [];
+  let bestOneRmKg = 0;
+  let maxWeightKg = 0;
+  let bestRepSet: { weightKg: number; reps: number; date: string } | null = null;
+  let totalWorkingSets = 0;
+
+  const sorted = [...workoutSessions].sort((a, b) => a.date.localeCompare(b.date));
+  for (const session of sorted) {
+    const sets = (session.sets || []).filter((s) => s.exerciseId === exerciseId);
+    if (sets.length === 0) continue;
+
+    const workingSets = sets.filter((s) => s.setType !== 'warmup');
+    const evalSets = workingSets.length > 0 ? workingSets : sets;
+    totalWorkingSets += workingSets.length;
+    let sessionTopWeight = 0;
+    let sessionTopReps = 0;
+    let sessionBest1Rm = 0;
+    let sessionTonnage = 0;
+    let rpeSum = 0;
+    let rpeCount = 0;
+    let rirSum = 0;
+    let rirCount = 0;
+
+    for (const st of evalSets) {
+      const w = st.weightKg || 0;
+      const r = st.reps || 0;
+      sessionTonnage += w * r;
+      const e1rm = calculate1RM(w, r).oneRepMax;
+      if (e1rm > sessionBest1Rm) {
+        sessionBest1Rm = e1rm;
+        sessionTopWeight = w;
+        sessionTopReps = r;
+      }
+      if (e1rm > bestOneRmKg) bestOneRmKg = e1rm;
+      if (w > maxWeightKg) maxWeightKg = w;
+      if (!bestRepSet || e1rm > calculate1RM(bestRepSet.weightKg, bestRepSet.reps).oneRepMax) {
+        bestRepSet = { weightKg: w, reps: r, date: session.date };
+      }
+      if (st.rpe !== undefined) {
+        rpeSum += st.rpe;
+        rpeCount++;
+        const impliedRir = st.rir !== undefined ? st.rir : Math.max(0, 10 - st.rpe);
+        rirSum += impliedRir;
+        rirCount++;
+      } else if (st.rir !== undefined) {
+        rirSum += st.rir;
+        rirCount++;
+      }
+    }
+
+    timeline.push({
+      sessionId: session.id,
+      date: session.date,
+      sessionTitle: session.title,
+      topWeightKg: sessionTopWeight,
+      topReps: sessionTopReps,
+      bestOneRmKg: Math.round(sessionBest1Rm * 10) / 10,
+      totalTonnageKg: Math.round(sessionTonnage),
+      avgRpe: rpeCount > 0 ? Math.round((rpeSum / rpeCount) * 10) / 10 : null,
+      avgRir: rirCount > 0 ? Math.round((rirSum / rirCount) * 10) / 10 : null,
+      setsCount: sets.length,
+    });
+  }
+
+  const latestOneRmDeltaKg =
+    timeline.length >= 2
+      ? Math.round((timeline[timeline.length - 1].bestOneRmKg - timeline[timeline.length - 2].bestOneRmKg) * 10) / 10
+      : 0;
+
+  return {
+    exerciseId,
+    exerciseName: ex?.name || exerciseId,
+    bestOneRmKg: Math.round(bestOneRmKg * 10) / 10,
+    maxWeightKg,
+    bestRepSet,
+    totalSessionsCount: timeline.length,
+    totalWorkingSets,
+    latestOneRmDeltaKg,
+    timeline,
+  };
+}
+
+/**
+ * Returns same-muscle swap candidates first (Tracked/CTG "Thay thế bài này bằng"),
+ * excluding `excludeIds`.
+ */
+export function getSwapCandidatesForExercise(
+  exerciseId: string,
+  customExercises: Exercise[] = [],
+  excludeIds: string[] = []
+): Exercise[] {
+  const pool = [...EXERCISES, ...customExercises];
+  const current = pool.find((e) => e.id === exerciseId);
+  const exclude = new Set([exerciseId, ...excludeIds]);
+
+  const candidates = pool.filter((e) => !exclude.has(e.id));
+  if (!current) return candidates;
+
+  return candidates.sort((a, b) => {
+    const aSame = a.muscle === current.muscle ? 1 : 0;
+    const bSame = b.muscle === current.muscle ? 1 : 0;
+    if (aSame !== bSame) return bSame - aSame;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Identifies CTG's "Buổi thiếu chi tiết set" — sessions with 0 sets or incomplete set metrics.
+ */
+export function findSessionDetailGaps(workoutSessions: WorkoutSession[] = []): Set<string> {
+  const incompleteIds = new Set<string>();
+  for (const s of workoutSessions) {
+    const sets = s.sets || [];
+    if (sets.length === 0 || sets.some((st) => (st.weightKg || 0) <= 0 && (st.reps || 0) <= 0)) {
+      incompleteIds.add(s.id);
+    }
+  }
+  return incompleteIds;
+}
+
+// ============================================================================
+// PHASE 4: AWAY MODE, 12-WEEK MACRO HEATMAP & WEEKLY CHECK-IN INBOX
+// ============================================================================
+
+export function isDateInAwayPeriod(dateStr: string, awayMode?: AwayBreakPeriod): boolean {
+  if (!awayMode || !awayMode.enabled) return false;
+  if (!awayMode.startDate || !awayMode.endDate) return false;
+  const start = awayMode.startDate <= awayMode.endDate ? awayMode.startDate : awayMode.endDate;
+  const end = awayMode.startDate <= awayMode.endDate ? awayMode.endDate : awayMode.startDate;
+  return dateStr >= start && dateStr <= end;
+}
+
+function shiftDateYmd(ymd: string, deltaDays: number): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+export interface MacroHeatmapCell {
+  date: string;
+  status: 'in_range' | 'above' | 'below' | 'away' | 'empty';
+  actualKcal: number;
+  targetKcal: number;
+  actualProtein: number;
+  targetProtein: number;
+}
+
+export interface MacroConsistencyHeatmapResult {
+  weeks: MacroHeatmapCell[][];
+  adherentDays: number;
+  loggedDays: number;
+  awayDays: number;
+  consistencyPct: number;
+  currentStreak: number;
+  bestStreak: number;
+}
+
+/**
+ * Generates a 12-week (84-day) CTG/Tracked Macro Consistency Heatmap
+ * checking historical 90-110% calorie adherence while preserving streaks across Away days.
+ */
+export function calculateMacroConsistencyHeatmap(params: {
+  meals: MealLog[];
+  currentTargets: { kcal: number; protein: number };
+  targetSnapshots?: Record<string, DailyTargetSnapshot>;
+  referenceDateStr: string;
+  weeksCount?: number;
+  awayMode?: AwayBreakPeriod;
+}): MacroConsistencyHeatmapResult {
+  const {
+    meals = [],
+    currentTargets,
+    targetSnapshots = {},
+    referenceDateStr,
+    weeksCount = 12,
+    awayMode,
+  } = params;
+
+  const totalDays = Math.max(7, weeksCount * 7);
+  const byDate = new Map<string, { kcal: number; protein: number }>();
+  for (const m of meals) {
+    let kcal = 0;
+    let protein = 0;
+    for (const it of m.items || []) {
+      kcal += it.kcal || 0;
+      protein += it.protein || 0;
+    }
+    const prev = byDate.get(m.date) || { kcal: 0, protein: 0 };
+    byDate.set(m.date, { kcal: prev.kcal + kcal, protein: prev.protein + protein });
+  }
+
+  const cells: MacroHeatmapCell[] = [];
+  let adherentDays = 0;
+  let loggedDays = 0;
+  let awayDays = 0;
+  let runningStreak = 0;
+  let bestStreak = 0;
+
+  for (let offset = -(totalDays - 1); offset <= 0; offset++) {
+    const date = shiftDateYmd(referenceDateStr, offset);
+    const snap = targetSnapshots[date];
+    const targetKcal = Math.max(1, snap?.kcal ?? currentTargets.kcal);
+    const targetProtein = Math.max(1, snap?.protein ?? currentTargets.protein);
+    const dayTotals = byDate.get(date);
+    const isAway = isDateInAwayPeriod(date, awayMode);
+
+    if (dayTotals && dayTotals.kcal > 0) {
+      loggedDays++;
+      const ratio = dayTotals.kcal / targetKcal;
+      let status: MacroHeatmapCell['status'] = 'in_range';
+      if (ratio > 1.1) {
+        status = 'above';
+        if (!isAway || !awayMode?.preserveStreaks) runningStreak = 0;
+      } else if (ratio < 0.9) {
+        status = 'below';
+        if (!isAway || !awayMode?.preserveStreaks) runningStreak = 0;
+      } else {
+        adherentDays++;
+        runningStreak++;
+        if (runningStreak > bestStreak) bestStreak = runningStreak;
+      }
+      cells.push({
+        date,
+        status,
+        actualKcal: Math.round(dayTotals.kcal),
+        targetKcal: Math.round(targetKcal),
+        actualProtein: Math.round(dayTotals.protein),
+        targetProtein: Math.round(targetProtein),
+      });
+    } else if (isAway) {
+      awayDays++;
+      cells.push({
+        date,
+        status: 'away',
+        actualKcal: 0,
+        targetKcal: Math.round(targetKcal),
+        actualProtein: 0,
+        targetProtein: Math.round(targetProtein),
+      });
+    } else {
+      // Only break streak on past unlogged days before today
+      if (date < referenceDateStr) runningStreak = 0;
+      cells.push({
+        date,
+        status: 'empty',
+        actualKcal: 0,
+        targetKcal: Math.round(targetKcal),
+        actualProtein: 0,
+        targetProtein: Math.round(targetProtein),
+      });
+    }
+  }
+
+  const weeks: MacroHeatmapCell[][] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7));
+  }
+
+  return {
+    weeks,
+    adherentDays,
+    loggedDays,
+    awayDays,
+    consistencyPct: loggedDays > 0 ? Math.round((adherentDays / loggedDays) * 100) : 0,
+    currentStreak: runningStreak,
+    bestStreak,
+  };
+}
+
+/**
+ * Builds a pre-filled 7-day Weekly Check-in Record combining body composition averages,
+ * workout plan adherence, macro adherence, and progress photos from that week.
+ */
+export function buildWeeklyCheckinDraft(params: {
+  weekEndDateStr: string;
+  bodyPoints: BodyPoint[];
+  plannedSessions: PlannedSession[];
+  workoutSessions: WorkoutSession[];
+  meals: MealLog[];
+  currentTargets: { kcal: number; protein: number };
+  targetSnapshots?: Record<string, DailyTargetSnapshot>;
+  bodyPhotos?: BodyCheckPhoto[];
+  energyScore?: number;
+  adherenceNote?: string;
+}): Omit<WeeklyCheckinRecord, 'id' | 'createdAt'> {
+  const {
+    weekEndDateStr,
+    bodyPoints = [],
+    plannedSessions = [],
+    workoutSessions = [],
+    meals = [],
+    currentTargets,
+    targetSnapshots = {},
+    bodyPhotos = [],
+    energyScore,
+    adherenceNote,
+  } = params;
+
+  const weekStart = shiftDateYmd(weekEndDateStr, -6);
+  const weekEnd = weekEndDateStr;
+
+  const weekPoints = bodyPoints.filter((p) => p.date >= weekStart && p.date <= weekEnd);
+  const avgWeightKg =
+    weekPoints.length > 0
+      ? Math.round((weekPoints.reduce((s, p) => s + p.weightKg, 0) / weekPoints.length) * 10) / 10
+      : null;
+  const avgBodyFatPct =
+    weekPoints.length > 0
+      ? Math.round((weekPoints.reduce((s, p) => s + p.bodyFatPct, 0) / weekPoints.length) * 10) / 10
+      : null;
+
+  const completedWorkoutsCount = workoutSessions.filter(
+    (s) => s.date >= weekStart && s.date <= weekEnd
+  ).length;
+  const plannedWorkoutsCount = Math.max(plannedSessions.length, completedWorkoutsCount);
+  const trainingAdherencePct =
+    plannedWorkoutsCount > 0
+      ? Math.min(100, Math.round((completedWorkoutsCount / plannedWorkoutsCount) * 100))
+      : completedWorkoutsCount > 0
+      ? 100
+      : 0;
+
+  const macroReport = calculateMacroAdherenceReport({
+    meals,
+    currentTargets,
+    targetSnapshots,
+    referenceDateStr: weekEnd,
+    windowDays: 7,
+  });
+
+  const weekPhotoIds = bodyPhotos
+    .filter((ph) => ph.date >= weekStart && ph.date <= weekEnd)
+    .map((ph) => ph.id);
+
+  let coachFeedback = 'Dữ liệu tuần đã được tổng hợp đầy đủ.';
+  if (trainingAdherencePct >= 80 && macroReport.adherencePct >= 70) {
+    coachFeedback =
+      'Tuần kỷ luật xuất sắc! Giữ nguyên mức calo & tiếp tục tăng tải lũy tiến 1–2.5kg ở buổi tới.';
+  } else if (macroReport.loggedDays > 0 && macroReport.proteinAdherencePct < 60) {
+    coachFeedback =
+      'Lưu ý: Mức đạm đạt mục tiêu tuần này còn thấp (<60%). Ưu tiên bổ sung Whey/Ức gà/Trứng để giữ cơ.';
+  } else if (trainingAdherencePct < 60 && plannedSessions.length > 0) {
+    coachFeedback =
+      'Số buổi tập hoàn thành dưới 60% kế hoạch. Cân nhắc dời khung giờ sang buổi sáng hoặc bật Away Mode nếu bận.';
+  } else if (avgWeightKg === null) {
+    coachFeedback =
+      'Nên cân cơ thể ít nhất 2–3 sáng/tuần để biểu đồ EMA và TDEE suy ngược bám sát thực tế hơn.';
+  }
+
+  return {
+    weekStart,
+    weekEnd,
+    avgWeightKg,
+    avgBodyFatPct,
+    plannedWorkoutsCount,
+    completedWorkoutsCount,
+    trainingAdherencePct,
+    macroAdherencePct: macroReport.adherencePct,
+    proteinAdherencePct: macroReport.proteinAdherencePct,
+    energyScore,
+    adherenceNote,
+    coachFeedback,
+    photoIds: weekPhotoIds,
+  };
+}
+
+/**
+ * Checks whether a subsequent roadmap phase has reached its scheduled `startDate`
+ * on `referenceDateStr` (default: local today) so it can auto-advance silently without confirmation.
+ * Respects `autoAdvanceByDate === false` and `autoHandledPhaseIds` so manual reverts aren't overridden.
+ */
+export function resolveAutoPhaseTransition(
+  roadmap: CtgPeriodizedRoadmap | null | undefined,
+  referenceDateStr?: string
+): CtgRoadmapPhase | null {
+  if (!roadmap || !roadmap.phases?.length || roadmap.autoAdvanceByDate === false) {
+    return null;
+  }
+
+  const today = referenceDateStr ? parseVnDate(referenceDateStr) : new Date();
+  if (!Number.isFinite(today.getTime())) return null;
+  today.setHours(0, 0, 0, 0);
+
+  const phases = roadmap.phases;
+  let activeIdx = phases.findIndex((p) => p.id === roadmap.activePhaseId);
+  if (activeIdx < 0) activeIdx = phases.findIndex((p) => p.isCurrent);
+  if (activeIdx < 0) activeIdx = 0;
+
+  const handled = new Set(roadmap.autoHandledPhaseIds || []);
+  let scheduledCandidate: CtgRoadmapPhase | null = null;
+
+  for (let i = activeIdx + 1; i < phases.length; i++) {
+    const ph = phases[i];
+    const start = parseVnDate(ph.startDate);
+    if (!Number.isFinite(start.getTime())) continue;
+    start.setHours(0, 0, 0, 0);
+
+    if (today >= start) {
+      const end = parseVnDate(ph.endDate);
+      if (Number.isFinite(end.getTime())) {
+        end.setHours(23, 59, 59, 999);
+        if (today <= end) {
+          scheduledCandidate = ph;
+          break;
+        }
+      }
+      scheduledCandidate = ph;
+    }
+  }
+
+  if (!scheduledCandidate || handled.has(scheduledCandidate.id)) {
+    return null;
+  }
+  return scheduledCandidate;
+}
+
+export interface JourneyHeatmapDayCell {
+  date: string; // YYYY-MM-DD
+  dayNumber: number; // 1-based day count from startDate (<=0 if before startDate)
+  hasWorkout: boolean;
+  hasSport: boolean;
+  hasMeals: boolean;
+  hasBodyPoint: boolean;
+  activityLevel: 0 | 1 | 2 | 3;
+  isToday: boolean;
+  isBeforeStart: boolean;
+  isAway: boolean;
+}
+
+export interface PhaseJourneyHeatmapResult {
+  startDate: string; // YYYY-MM-DD
+  todayDate: string; // YYYY-MM-DD
+  dayNumber: number; // 1-based since startDate (0 if startDate is after todayDate)
+  phaseDayNumber: number | null;
+  totalPhaseDays: number | null;
+  daysRemainingInPhase: number | null;
+  activeTrainingDays: number;
+  loggedDays: number;
+  currentStreak: number;
+  weeks: JourneyHeatmapDayCell[][];
+  /** Full chronological timeline grouped by 7-day journey weeks starting strictly at Day 1 (N1) up to today. */
+  journeyWeeks: JourneyHeatmapDayCell[][];
+}
+
+function createJourneyDayCell(params: {
+  date: string;
+  dayNumber: number;
+  isToday: boolean;
+  isBeforeStart: boolean;
+  workoutDates: Set<string>;
+  sportDates: Set<string>;
+  mealDates: Set<string>;
+  bodyDates: Set<string>;
+  healthActiveDates: Set<string>;
+  awayMode?: AwayBreakPeriod;
+}): JourneyHeatmapDayCell {
+  const {
+    date,
+    dayNumber,
+    isToday,
+    isBeforeStart,
+    workoutDates,
+    sportDates,
+    mealDates,
+    bodyDates,
+    healthActiveDates,
+    awayMode,
+  } = params;
+  const hasWorkout = workoutDates.has(date);
+  const hasSport = sportDates.has(date);
+  const hasMeals = mealDates.has(date);
+  const hasBodyPoint = bodyDates.has(date);
+  const isAway = isDateInAwayPeriod(date, awayMode);
+
+  let activityLevel: 0 | 1 | 2 | 3 = 0;
+  if ((hasWorkout || hasSport) && (hasMeals || hasBodyPoint)) {
+    activityLevel = 3;
+  } else if (hasWorkout || hasSport) {
+    activityLevel = 2;
+  } else if (hasMeals || hasBodyPoint || healthActiveDates.has(date)) {
+    activityLevel = 1;
+  }
+
+  return {
+    date,
+    dayNumber,
+    hasWorkout,
+    hasSport,
+    hasMeals,
+    hasBodyPoint,
+    activityLevel,
+    isToday,
+    isBeforeStart,
+    isAway,
+  };
+}
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Builds the Overview Training Journey & Phase Day Counter Heatmap:
+ * tracks "Ngày thứ N" from custom `trainingStartDate` (or active phase start / earliest log)
+ * up to `todayDateStr`, alongside an interactive 12-week daily activity matrix.
+ */
+export function calculatePhaseJourneyHeatmap(params: {
+  trainingStartDate?: string;
+  activePhase?: CtgRoadmapPhase | null;
+  workoutSessions?: WorkoutSession[];
+  sportSessions?: SportSession[];
+  meals?: MealLog[];
+  bodyPoints?: BodyPoint[];
+  healthLogs?: HealthDayLog[];
+  awayMode?: AwayBreakPeriod;
+  todayDateStr: string;
+  weeksCount?: number;
+}): PhaseJourneyHeatmapResult {
+  const {
+    trainingStartDate,
+    activePhase,
+    workoutSessions = [],
+    sportSessions = [],
+    meals = [],
+    bodyPoints = [],
+    healthLogs = [],
+    awayMode,
+    todayDateStr,
+    weeksCount = 12,
+  } = params;
+
+  const todayDate = parseVnDate(todayDateStr);
+  todayDate.setHours(0, 0, 0, 0);
+  const safeTodayYmd = Number.isFinite(todayDate.getTime()) ? toIsoDate(todayDate) : todayDateStr;
+
+  // Resolve effective training start date (explicit user setting > phase start > earliest record > today)
+  let resolvedStart: Date | null = null;
+  if (trainingStartDate) {
+    const p = parseVnDate(trainingStartDate);
+    if (Number.isFinite(p.getTime())) resolvedStart = p;
+  }
+  if (!resolvedStart && activePhase?.startDate) {
+    const p = parseVnDate(activePhase.startDate);
+    if (Number.isFinite(p.getTime())) resolvedStart = p;
+  }
+  if (!resolvedStart) {
+    const candidateDates = [
+      ...workoutSessions.map((w) => w.date),
+      ...sportSessions.map((s) => s.date),
+      ...bodyPoints.map((b) => b.date),
+      ...meals.map((m) => m.date),
+    ].filter(Boolean).sort();
+    if (candidateDates.length > 0) {
+      const p = parseVnDate(candidateDates[0]);
+      if (Number.isFinite(p.getTime())) resolvedStart = p;
+    }
+  }
+  if (!resolvedStart) resolvedStart = new Date(todayDate);
+  resolvedStart.setHours(0, 0, 0, 0);
+  const startYmd = toIsoDate(resolvedStart);
+
+  const rawDiffDays = Math.round((todayDate.getTime() - resolvedStart.getTime()) / 86_400_000);
+  const dayNumber = rawDiffDays >= 0 ? rawDiffDays + 1 : 0;
+
+  let phaseDayNumber: number | null = null;
+  let totalPhaseDays: number | null = null;
+  let daysRemainingInPhase: number | null = null;
+  if (activePhase?.startDate && activePhase?.endDate) {
+    const ps = parseVnDate(activePhase.startDate);
+    const pe = parseVnDate(activePhase.endDate);
+    if (Number.isFinite(ps.getTime()) && Number.isFinite(pe.getTime())) {
+      ps.setHours(0, 0, 0, 0);
+      pe.setHours(0, 0, 0, 0);
+      const total = Math.max(1, Math.round((pe.getTime() - ps.getTime()) / 86_400_000) + 1);
+      const elapsed = Math.round((todayDate.getTime() - ps.getTime()) / 86_400_000) + 1;
+      totalPhaseDays = total;
+      phaseDayNumber = elapsed <= 0 ? 0 : Math.min(total, elapsed);
+      daysRemainingInPhase = Math.max(0, Math.round((pe.getTime() - todayDate.getTime()) / 86_400_000));
+    }
+  }
+
+  const workoutDates = new Set(workoutSessions.map((w) => w.date));
+  const sportDates = new Set(sportSessions.map((s) => s.date));
+  const mealDates = new Set(meals.filter((m) => (m.items || []).length > 0).map((m) => m.date));
+  const bodyDates = new Set(bodyPoints.map((b) => b.date));
+  const healthActiveDates = new Set(
+    healthLogs.filter((h) => (h.steps || 0) >= 4000 || (h.caloriesBurned || 0) > 0).map((h) => h.date)
+  );
+
+  // Count active training & logged days strictly from resolved startDate up to today
+  let activeTrainingDays = 0;
+  let loggedDays = 0;
+  let currentStreak = 0;
+
+  if (dayNumber > 0) {
+    const scanDays = Math.min(dayNumber, 3650);
+    for (let i = 0; i < scanDays; i++) {
+      const dStr = shiftDateYmd(startYmd, i);
+      if (dStr > safeTodayYmd) break;
+      const hasWo = workoutDates.has(dStr);
+      const hasSp = sportDates.has(dStr);
+      const hasMl = mealDates.has(dStr);
+      const hasBp = bodyDates.has(dStr);
+      if (hasWo || hasSp) activeTrainingDays++;
+      if (hasWo || hasSp || hasMl || hasBp || healthActiveDates.has(dStr)) loggedDays++;
+    }
+
+    for (let offset = 0; offset < scanDays; offset++) {
+      const dStr = shiftDateYmd(safeTodayYmd, -offset);
+      if (dStr < startYmd) break;
+      const isActive =
+        workoutDates.has(dStr) ||
+        sportDates.has(dStr) ||
+        mealDates.has(dStr) ||
+        bodyDates.has(dStr) ||
+        healthActiveDates.has(dStr);
+      const isAway = isDateInAwayPeriod(dStr, awayMode);
+      if (isActive || isAway) {
+        currentStreak++;
+      } else if (offset > 0) {
+        break;
+      }
+    }
+  }
+
+  const totalCells = Math.max(7, weeksCount * 7);
+  const cells: JourneyHeatmapDayCell[] = [];
+  for (let offset = -(totalCells - 1); offset <= 0; offset++) {
+    const date = shiftDateYmd(safeTodayYmd, offset);
+    const isBeforeStart = date < startYmd;
+    const cellDayNum = isBeforeStart
+      ? 0
+      : Math.round((parseVnDate(date).getTime() - resolvedStart.getTime()) / 86_400_000) + 1;
+    cells.push(
+      createJourneyDayCell({
+        date,
+        dayNumber: cellDayNum,
+        isToday: date === safeTodayYmd,
+        isBeforeStart,
+        workoutDates,
+        sportDates,
+        mealDates,
+        bodyDates,
+        healthActiveDates,
+        awayMode,
+      })
+    );
+  }
+
+  const weeks: JourneyHeatmapDayCell[][] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7));
+  }
+
+  // Full sequential timeline strictly from Day 1 (startYmd) to Today (safeTodayYmd)
+  const journeyDays: JourneyHeatmapDayCell[] = [];
+  if (dayNumber > 0) {
+    const spanDays = Math.min(dayNumber, 3650);
+    for (let i = 0; i < spanDays; i++) {
+      const date = shiftDateYmd(startYmd, i);
+      if (date > safeTodayYmd) break;
+      journeyDays.push(
+        createJourneyDayCell({
+          date,
+          dayNumber: i + 1,
+          isToday: date === safeTodayYmd,
+          isBeforeStart: false,
+          workoutDates,
+          sportDates,
+          mealDates,
+          bodyDates,
+          healthActiveDates,
+          awayMode,
+        })
+      );
+    }
+  }
+  const journeyWeeks: JourneyHeatmapDayCell[][] = [];
+  for (let i = 0; i < journeyDays.length; i += 7) {
+    journeyWeeks.push(journeyDays.slice(i, i + 7));
+  }
+
+  return {
+    startDate: startYmd,
+    todayDate: safeTodayYmd,
+    dayNumber,
+    phaseDayNumber,
+    totalPhaseDays,
+    daysRemainingInPhase,
+    activeTrainingDays,
+    loggedDays,
+    currentStreak,
+    weeks,
+    journeyWeeks,
+  };
+}
+
+export interface JourneyPeriodCell extends JourneyHeatmapDayCell {
+  weekdayLabel: string;
+  inCurrentPeriod: boolean;
+}
+
+export interface JourneyCalendarPeriodResult {
+  mode: 'week' | 'month';
+  label: string;
+  periodStart: string;
+  periodEnd: string;
+  cells: JourneyPeriodCell[];
+}
+
+const WEEKDAY_SHORT_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+/**
+ * Builds an expanded Week (7-day) or Month (T2-CN calendar grid) journey matrix
+ * so users can inspect every day's `Ngày thứ N` and logged activity without squinting at tiny dots.
+ */
+export function buildJourneyCalendarPeriod(params: {
+  mode: 'week' | 'month';
+  cursorDateStr: string;
+  journeyStartDateStr: string;
+  todayDateStr: string;
+  workoutSessions?: WorkoutSession[];
+  sportSessions?: SportSession[];
+  meals?: MealLog[];
+  bodyPoints?: BodyPoint[];
+  healthLogs?: HealthDayLog[];
+  awayMode?: AwayBreakPeriod;
+}): JourneyCalendarPeriodResult {
+  const {
+    mode,
+    cursorDateStr,
+    journeyStartDateStr,
+    todayDateStr,
+    workoutSessions = [],
+    sportSessions = [],
+    meals = [],
+    bodyPoints = [],
+    healthLogs = [],
+    awayMode,
+  } = params;
+
+  const cursor = parseVnDate(cursorDateStr);
+  const safeCursor = Number.isFinite(cursor.getTime()) ? cursor : new Date();
+  safeCursor.setHours(0, 0, 0, 0);
+
+  const journeyStart = parseVnDate(journeyStartDateStr);
+  const safeStart = Number.isFinite(journeyStart.getTime()) ? journeyStart : new Date(safeCursor);
+  safeStart.setHours(0, 0, 0, 0);
+  const startYmd = toIsoDate(safeStart);
+
+  const workoutDates = new Set(workoutSessions.map((w) => w.date));
+  const sportDates = new Set(sportSessions.map((s) => s.date));
+  const mealDates = new Set(meals.filter((m) => (m.items || []).length > 0).map((m) => m.date));
+  const bodyDates = new Set(bodyPoints.map((b) => b.date));
+  const healthActiveDates = new Set(
+    healthLogs.filter((h) => (h.steps || 0) >= 4000 || (h.caloriesBurned || 0) > 0).map((h) => h.date)
+  );
+
+  let gridStart: Date;
+  let gridEnd: Date;
+  let label = '';
+  const targetMonth = safeCursor.getMonth();
+  const targetYear = safeCursor.getFullYear();
+
+  if (mode === 'week') {
+    const dow = safeCursor.getDay();
+    const offsetToMon = dow === 0 ? -6 : 1 - dow;
+    gridStart = new Date(safeCursor);
+    gridStart.setDate(safeCursor.getDate() + offsetToMon);
+    gridEnd = new Date(gridStart);
+    gridEnd.setDate(gridStart.getDate() + 6);
+    label = `Tuần ${toIsoDate(gridStart).slice(5).split('-').reverse().join('/')} – ${toIsoDate(gridEnd).slice(5).split('-').reverse().join('/')}`;
+  } else {
+    const firstOfMonth = new Date(targetYear, targetMonth, 1);
+    const lastOfMonth = new Date(targetYear, targetMonth + 1, 0);
+    const startDow = firstOfMonth.getDay();
+    const endDow = lastOfMonth.getDay();
+    gridStart = new Date(firstOfMonth);
+    gridStart.setDate(firstOfMonth.getDate() - (startDow === 0 ? 6 : startDow - 1));
+    gridEnd = new Date(lastOfMonth);
+    gridEnd.setDate(lastOfMonth.getDate() + (endDow === 0 ? 0 : 7 - endDow));
+    label = `Tháng ${String(targetMonth + 1).padStart(2, '0')}/${targetYear}`;
+  }
+
+  const cells: JourneyPeriodCell[] = [];
+  const totalGridDays = Math.round((gridEnd.getTime() - gridStart.getTime()) / 86_400_000) + 1;
+
+  for (let i = 0; i < totalGridDays; i++) {
+    const cur = new Date(gridStart);
+    cur.setDate(gridStart.getDate() + i);
+    const date = toIsoDate(cur);
+    const isBeforeStart = date < startYmd;
+    const dayNumber = isBeforeStart
+      ? 0
+      : Math.round((cur.getTime() - safeStart.getTime()) / 86_400_000) + 1;
+    const hasWorkout = workoutDates.has(date);
+    const hasSport = sportDates.has(date);
+    const hasMeals = mealDates.has(date);
+    const hasBodyPoint = bodyDates.has(date);
+    const isAway = isDateInAwayPeriod(date, awayMode);
+
+    let activityLevel: 0 | 1 | 2 | 3 = 0;
+    if ((hasWorkout || hasSport) && (hasMeals || hasBodyPoint)) {
+      activityLevel = 3;
+    } else if (hasWorkout || hasSport) {
+      activityLevel = 2;
+    } else if (hasMeals || hasBodyPoint || healthActiveDates.has(date)) {
+      activityLevel = 1;
+    }
+
+    const dow = cur.getDay();
+    const weekdayIdx = dow === 0 ? 6 : dow - 1;
+    cells.push({
+      date,
+      dayNumber,
+      hasWorkout,
+      hasSport,
+      hasMeals,
+      hasBodyPoint,
+      activityLevel,
+      isToday: date === todayDateStr,
+      isBeforeStart,
+      isAway,
+      weekdayLabel: WEEKDAY_SHORT_LABELS[weekdayIdx],
+      inCurrentPeriod: mode === 'week' ? true : cur.getMonth() === targetMonth,
+    });
+  }
+
+  return {
+    mode,
+    label,
+    periodStart: toIsoDate(gridStart),
+    periodEnd: toIsoDate(gridEnd),
+    cells,
   };
 }

@@ -89,7 +89,6 @@ interface HeaderProps {
   onOpenExportImport: () => void;
   onOpenCloudSync?: () => void;
   onGoogleSignIn?: () => Promise<void>;
-  onOpenGeminiMacro?: () => void;
   onOpenLifeCopilot?: () => void;
   onToggleRightDrawer?: () => void;
   searchQuery: string;
@@ -125,7 +124,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExportImport,
   onOpenCloudSync,
   onGoogleSignIn,
-  onOpenGeminiMacro,
   onOpenLifeCopilot,
   onToggleRightDrawer,
   searchQuery,

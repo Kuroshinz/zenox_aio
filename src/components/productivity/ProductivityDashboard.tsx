@@ -240,7 +240,7 @@ export const ProductivityDashboard: React.FC<ProductivityDashboardProps> = ({
             <button
               onClick={onOpenMacroModal}
               className="glass-pill text-xs py-2 px-3 text-amber-300 hover:text-white border-amber-500/30 cursor-pointer transition-transform hover:bg-white/[0.06] active:scale-98"
-              title="Nhập Prompt Macro bữa ăn"
+              title="Mở trang Dinh dưỡng & Bữa ăn"
             >
               <Utensils className="w-3.5 h-3.5 text-amber-400" />
               <span>Nhập Bữa Ăn</span>

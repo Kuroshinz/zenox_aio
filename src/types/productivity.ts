@@ -172,6 +172,8 @@ export interface HealthDayLog {
   waterMl?: number;
   sleepHours?: number;
   steps?: number;
+  restingHrBpm?: number;
+  stressScore?: number; // 1-5 subjective stress
   source?: HealthSource;
   updatedAt?: number;
 }
@@ -306,6 +308,14 @@ export const ACTIVITY_FACTOR: Record<ActivityLevel, number> = {
   very_active: 1.9,
 };
 
+export interface AwayBreakPeriod {
+  enabled: boolean;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  reason?: string;
+  preserveStreaks: boolean;
+}
+
 export interface CtgProfile {
   name: string;
   email?: string;
@@ -321,6 +331,8 @@ export interface CtgProfile {
   stepGoal: number;
   branchId?: string;
   trainerName?: string;
+  trainingStartDate?: string; // YYYY-MM-DD user-configurable first training day
+  awayMode?: AwayBreakPeriod;
 }
 
 export type PhotoPose = 'front' | 'side' | 'back' | 'other';
@@ -433,6 +445,9 @@ export interface CtgPeriodizedRoadmap {
   createdAt: number;
   phases: CtgRoadmapPhase[];
   activePhaseId?: string;
+  previousPhaseId?: string;
+  autoAdvanceByDate?: boolean;
+  autoHandledPhaseIds?: string[];
   heightCm?: number;
   initialWeightKg?: number;
   initialBodyFatPct?: number;
@@ -601,9 +616,33 @@ export interface MacroOverride {
   kcal?: number;
 }
 
+export interface CustomRecipe {
+  id: string;
+  name: string;
+  servings: number;
+  items: FoodItem[];
+  note?: string;
+  createdAt: number;
+}
+
+export interface DailyTargetSnapshot {
+  date: string;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  goal: Goal;
+}
+
 export interface NutritionSettings {
   overrides: Partial<Record<Goal, MacroOverride>>;
   tdeeOffset: number;
+  appliedTdeeKcal?: number;
+  appliedTdeeAt?: string;
+  appliedTdeeStartWeightKg?: number;
+  customRecipes?: CustomRecipe[];
+  targetSnapshots?: Record<string, DailyTargetSnapshot>;
+  hideCaloriesMode?: boolean;
 }
 
 
@@ -673,4 +712,22 @@ export interface ProgressiveOverloadComparison {
   status: 'improved' | 'maintained' | 'regressed' | 'first_time';
   headline: string;
   badgeText: string;
+}
+
+export interface WeeklyCheckinRecord {
+  id: string;
+  weekStart: string; // YYYY-MM-DD
+  weekEnd: string; // YYYY-MM-DD
+  createdAt: number;
+  avgWeightKg: number | null;
+  avgBodyFatPct: number | null;
+  plannedWorkoutsCount: number;
+  completedWorkoutsCount: number;
+  trainingAdherencePct: number;
+  macroAdherencePct: number;
+  proteinAdherencePct: number;
+  energyScore?: number; // 1-5
+  adherenceNote?: string;
+  coachFeedback: string;
+  photoIds?: string[];
 }

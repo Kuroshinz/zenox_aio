@@ -297,5 +297,16 @@ assert(freeSlots.length >= 2, 'found at least two open time blocks');
 assert(freeSlots[0].start === '08:00' && freeSlots[0].end === '09:00', 'first free slot is 8 to 9');
 assert(freeSlots[1].start === '10:00' && freeSlots[1].end === '12:00', 'second free slot is 10 to 12');
 
+// Regression: user-created task IDs (`task-<ts>-<rand>`) derive `task-task-...` event IDs
+// and must never collide with exact SEED_TASKS IDs (`task-1`..`task-9`).
+const userCreatedTask: TaskItem = {
+  ...baseTask,
+  id: 'task-1730000000000-ab12c',
+  title: 'User task on calendar',
+};
+const builtUserEvents = buildTaskEvents([userCreatedTask], new Map([['study', '#8E24AA']]));
+assert(builtUserEvents.length === 1, 'user task with dueDate and startTime maps to calendar event');
+assert(builtUserEvents[0].id === 'task-task-1730000000000-ab12c', 'derived event keeps task- prefix');
+
 console.log('All productivityUtils tests passed successfully!');
 

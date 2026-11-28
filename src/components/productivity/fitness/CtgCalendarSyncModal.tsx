@@ -16,10 +16,19 @@ import {
   LogIn,
 } from 'lucide-react';
 import { CalendarEvent } from '../../../types/calendar';
-import { CtgRoadmapPhase, PlannedSession, RoutineSplitTemplate } from '../../../types/productivity';
-import { generateSplitSessions } from '../../../utils/fitnessMetrics';
+import { AwayBreakPeriod, CtgRoadmapPhase, PlannedSession, RoutineSplitTemplate } from '../../../types/productivity';
+import { generateSplitSessions, isDateInAwayPeriod } from '../../../utils/fitnessMetrics';
+import {
+  formatDateString,
+  timeToMinutes,
+  minutesToHHmm,
+  findConflictingEvents,
+  resolveNonConflictingSlot,
+  isWorkoutCalendarEvent,
+  AvailableTimeSlot,
+} from '../../../utils/calendarUtils';
 import { getAccessToken, googleSignIn, AppUser } from '../../../services/auth';
-import { createGoogleCalendarEvent, deleteGoogleCalendarEvent } from '../../../services/googleCalendarSync';
+import { createGoogleCalendarEvent } from '../../../services/googleCalendarSync';
 import { notifySuccess, notifyWarning, notifyError } from '../../../utils/notify';
 
 export interface CtgCalendarSyncModalProps {
@@ -30,6 +39,7 @@ export interface CtgCalendarSyncModalProps {
   plannedSessions?: PlannedSession[];
   onBatchSchedule?: (events: CalendarEvent[]) => Promise<void> | void;
   onClearWorkoutEvents?: () => Promise<number> | number | void;
+  awayMode?: AwayBreakPeriod;
   lang?: 'vi' | 'en';
 }
 
@@ -38,10 +48,13 @@ interface ProposedSlot {
   dayLabel: string; // 'Thứ 2', 'Thứ 3'...
   sessionTitle: string;
   prescriptionsSummary: string;
+  preferredStartTime: string;
+  preferredEndTime: string;
   startTime: string; // HH:mm
   endTime: string; // HH:mm
-  isConflictAvoided: boolean;
-  conflictReason?: string;
+  status: 'preferred' | 'shifted' | 'conflict';
+  conflictingTitles: string[];
+  alternativeSlots: AvailableTimeSlot[];
   selected: boolean;
 }
 
@@ -103,18 +116,6 @@ const TIME_WINDOWS = [
   { id: 'night', label: 'Tối muộn (19:45 - 21:00)', start: '19:45', end: '21:00' },
 ];
 
-function timeToMinutes(timeStr: string): number {
-  const [h, m] = timeStr.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
-}
-
-function minutesToTime(mins: number): string {
-  const normalized = Math.max(0, Math.min(23 * 60 + 59, mins));
-  const h = Math.floor(normalized / 60);
-  const m = normalized % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
 export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
   isOpen,
   onClose,
@@ -123,6 +124,7 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
   plannedSessions = [],
   onBatchSchedule,
   onClearWorkoutEvents,
+  awayMode,
   lang = 'vi',
 }) => {
   // Safe phase fallback
@@ -145,6 +147,10 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
   const [selectedWindowId, setSelectedWindowId] = useState<string>('evening');
   const [customStart, setCustomStart] = useState<string>('17:30');
   const [customDurationMins, setCustomDurationMins] = useState<number>(75);
+  const [replaceExistingWorkouts, setReplaceExistingWorkouts] = useState<boolean>(true);
+  const [respectAwayMode, setRespectAwayMode] = useState<boolean>(true);
+  const [includePreWorkoutReminder, setIncludePreWorkoutReminder] = useState<boolean>(false);
+  const [includeSundayCheckin, setIncludeSundayCheckin] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isClearing, setIsClearing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
@@ -184,26 +190,97 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
 
   // Count existing workout events in user's calendar
   const currentWorkoutEvents = useMemo(() => {
-    return existingEvents.filter(
-      (e) =>
-        e.id.startsWith('scheduled-wo-') ||
-        e.id.startsWith('ctg-workout-') ||
-        (e.calendarId === 'health' && (e.title.includes('💪') || e.title.includes('[ZENOX]')))
-    );
+    return existingEvents.filter(isWorkoutCalendarEvent);
   }, [existingEvents]);
 
   // Preferred window
   const activeWindow = useMemo(() => {
     const found = TIME_WINDOWS.find((w) => w.id === selectedWindowId);
-    if (found) return { start: found.start, end: found.end };
+    if (found) {
+      return {
+        start: found.start,
+        end: found.end,
+        duration: timeToMinutes(found.end) - timeToMinutes(found.start),
+      };
+    }
     return {
       start: customStart,
-      end: minutesToTime(timeToMinutes(customStart) + customDurationMins),
+      end: minutesToHHmm(timeToMinutes(customStart) + customDurationMins),
+      duration: customDurationMins,
     };
   }, [selectedWindowId, customStart, customDurationMins]);
 
+  const effectiveExistingEvents = useMemo(() => {
+    return replaceExistingWorkouts
+      ? existingEvents.filter((ev) => !isWorkoutCalendarEvent(ev))
+      : existingEvents;
+  }, [existingEvents, replaceExistingWorkouts]);
+
   // Generate proposed schedule with smart collision avoidance
   const [proposedSlots, setProposedSlots] = useState<ProposedSlot[]>([]);
+
+  // Suggest best uniform daily slot across all target workout dates (zero conflicts on every day)
+  const uniformTimeSuggestion = useMemo(() => {
+    if (!isOpen) return null;
+    const sessionsToSchedule: PlannedSession[] =
+      useCurrentPlanned && plannedSessions.length > 0
+        ? plannedSessions
+        : generateSplitSessions(selectedSplit);
+    if (sessionsToSchedule.length === 0) return null;
+
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const diffToMonday = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    const monday = new Date(now);
+    monday.setDate(diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    const targetDates: string[] = [];
+    for (let w = 0; w < weeksCount; w++) {
+      sessionsToSchedule.forEach((session, idx) => {
+        const dayIdx = session.dayIndex !== undefined ? session.dayIndex : idx % 7;
+        const targetDate = new Date(monday);
+        targetDate.setDate(monday.getDate() + w * 7 + dayIdx);
+        targetDates.push(formatDateString(targetDate));
+      });
+    }
+
+    const dur = activeWindow.duration;
+    const preferredMins = timeToMinutes(activeWindow.start);
+    let bestStart: string | null = null;
+    let bestDiff = Infinity;
+
+    for (let startM = 6 * 60; startM + dur <= 22 * 60 + 30; startM += 30) {
+      const st = minutesToHHmm(startM);
+      const et = minutesToHHmm(startM + dur);
+      const hasAnyConflict = targetDates.some(
+        (d) =>
+          findConflictingEvents({ startDate: d, startTime: st, endTime: et }, effectiveExistingEvents)
+            .length > 0
+      );
+      if (!hasAnyConflict) {
+        const diff = Math.abs(startM - preferredMins);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestStart = st;
+        }
+      }
+    }
+
+    if (!bestStart || bestStart === activeWindow.start) return null;
+    return {
+      start: bestStart,
+      end: minutesToHHmm(timeToMinutes(bestStart) + dur),
+    };
+  }, [
+    isOpen,
+    selectedSplit,
+    useCurrentPlanned,
+    plannedSessions,
+    weeksCount,
+    activeWindow,
+    effectiveExistingEvents,
+  ]);
 
   // Compute proposed slots whenever parameters change
   useEffect(() => {
@@ -228,8 +305,9 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
     monday.setDate(diffToMonday);
     monday.setHours(0, 0, 0, 0);
 
-    const duration = timeToMinutes(activeWindow.end) - timeToMinutes(activeWindow.start);
+    const duration = activeWindow.duration;
     const slots: ProposedSlot[] = [];
+    const scheduledSoFar: CalendarEvent[] = [];
 
     const DAY_LABELS = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'];
 
@@ -238,57 +316,18 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
         const dayIdx = session.dayIndex !== undefined ? session.dayIndex : idx % 7;
         const targetDate = new Date(monday);
         targetDate.setDate(monday.getDate() + w * 7 + dayIdx);
-
-        // Format target date as YYYY-MM-DD
-        const y = targetDate.getFullYear();
-        const m = String(targetDate.getMonth() + 1).padStart(2, '0');
-        const d = String(targetDate.getDate()).padStart(2, '0');
-        const dateStr = `${y}-${m}-${d}`;
-
-        // Check conflicts in existingEvents (ignore existing workout events when calculating conflicts)
-        const eventsOnDay = existingEvents.filter(
-          (ev) =>
-            !ev.allDay &&
-            !ev.id.startsWith('scheduled-wo-') &&
-            !ev.id.startsWith('ctg-workout-') &&
-            (ev.startDate === dateStr || (ev.startDate <= dateStr && ev.endDate >= dateStr)) &&
-            ev.startTime &&
-            ev.endTime
-        );
-
-        let chosenStartMins = timeToMinutes(activeWindow.start);
-        let chosenEndMins = chosenStartMins + duration;
-        let avoidedConflict = false;
-        let conflictReason: string | undefined;
-
-        // Check if preferred window overlaps with any event
-        const hasOverlap = (startM: number, endM: number) => {
-          return eventsOnDay.find((ev) => {
-            const evStart = timeToMinutes(ev.startTime);
-            const evEnd = timeToMinutes(ev.endTime);
-            return Math.max(startM, evStart) < Math.min(endM, evEnd);
-          });
-        };
-
-        const conflictEv = hasOverlap(chosenStartMins, chosenEndMins);
-        if (conflictEv) {
-          avoidedConflict = true;
-          conflictReason = conflictEv.title;
-
-          // Attempt shift +15 mins after conflict
-          const afterMins = timeToMinutes(conflictEv.endTime) + 15;
-          if (afterMins + duration <= 22 * 60 && !hasOverlap(afterMins, afterMins + duration)) {
-            chosenStartMins = afterMins;
-            chosenEndMins = afterMins + duration;
-          } else {
-            // Attempt shift -15 mins before conflict
-            const beforeMins = timeToMinutes(conflictEv.startTime) - duration - 15;
-            if (beforeMins >= 6 * 60 && !hasOverlap(beforeMins, beforeMins + duration)) {
-              chosenStartMins = beforeMins;
-              chosenEndMins = beforeMins + duration;
-            }
-          }
+        const dateStr = formatDateString(targetDate);
+        if (respectAwayMode && isDateInAwayPeriod(dateStr, awayMode)) {
+          return;
         }
+
+        const resolution = resolveNonConflictingSlot(
+          dateStr,
+          activeWindow.start,
+          duration,
+          [...effectiveExistingEvents, ...scheduledSoFar],
+          { minHour: 6, maxHour: 23, bufferMinutes: 15 }
+        );
 
         const prescripSummary = session.prescriptions?.length
           ? session.prescriptions
@@ -297,22 +336,44 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
               .join(' · ') + (session.prescriptions.length > 3 ? '...' : '')
           : 'Bài tập cơ bản';
 
+        const conflictingTitles =
+          resolution.status === 'conflict'
+            ? resolution.remainingConflicts.map((c) => `${c.title} (${c.startTime}–${c.endTime})`)
+            : resolution.conflictingEvents.map((c) => `${c.title} (${c.startTime}–${c.endTime})`);
+
         slots.push({
           date: dateStr,
           dayLabel: `${DAY_LABELS[dayIdx]} (Tuần ${w + 1})`,
           sessionTitle: session.title,
           prescriptionsSummary: prescripSummary,
-          startTime: minutesToTime(chosenStartMins),
-          endTime: minutesToTime(chosenEndMins),
-          isConflictAvoided: avoidedConflict,
-          conflictReason,
+          preferredStartTime: resolution.preferredStartTime,
+          preferredEndTime: resolution.preferredEndTime,
+          startTime: resolution.startTime,
+          endTime: resolution.endTime,
+          status: resolution.status,
+          conflictingTitles,
+          alternativeSlots: resolution.alternativeSlots,
           selected: true,
+        });
+
+        scheduledSoFar.push({
+          id: `pending-wo-${w}-${idx}`,
+          title: `[ZENOX] ${session.title}`,
+          startDate: dateStr,
+          startTime: resolution.startTime,
+          endDate: dateStr,
+          endTime: resolution.endTime,
+          allDay: false,
+          calendarId: 'health',
+          color: '#E11D48',
+          type: 'event',
+          createdAt: Date.now(),
         });
       });
     }
 
     setProposedSlots(slots);
-  }, [isOpen, selectedSplit, useCurrentPlanned, plannedSessions, weeksCount, activeWindow, existingEvents]);
+  }, [isOpen, selectedSplit, useCurrentPlanned, plannedSessions, weeksCount, activeWindow, effectiveExistingEvents, respectAwayMode, awayMode]);
 
   if (!isOpen) return null;
 
@@ -320,6 +381,61 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
     setProposedSlots((prev) =>
       prev.map((s, idx) => (idx === index ? { ...s, selected: !s.selected } : s))
     );
+  };
+
+  const updateSlotStartTime = (index: number, newStart: string) => {
+    if (!newStart) return;
+    setProposedSlots((prev) => {
+      const target = prev[index];
+      if (!target) return prev;
+      const newEnd = minutesToHHmm(timeToMinutes(newStart) + activeWindow.duration);
+      const siblingEvents: CalendarEvent[] = prev
+        .filter((s, idx) => idx !== index && s.selected)
+        .map((s, idx) => ({
+          id: `pending-edit-${idx}`,
+          title: `[ZENOX] ${s.sessionTitle}`,
+          startDate: s.date,
+          startTime: s.startTime,
+          endDate: s.date,
+          endTime: s.endTime,
+          allDay: false,
+          calendarId: 'health',
+          color: '#E11D48',
+          type: 'event',
+          createdAt: Date.now(),
+        }));
+
+      const conflictsNow = findConflictingEvents(
+        { startDate: target.date, startTime: newStart, endTime: newEnd },
+        [...effectiveExistingEvents, ...siblingEvents]
+      );
+      const preferredConflicts = findConflictingEvents(
+        { startDate: target.date, startTime: target.preferredStartTime, endTime: target.preferredEndTime },
+        [...effectiveExistingEvents, ...siblingEvents]
+      );
+
+      let nextStatus: ProposedSlot['status'] = 'preferred';
+      let titles: string[] = [];
+      if (conflictsNow.length > 0) {
+        nextStatus = 'conflict';
+        titles = conflictsNow.map((c) => `${c.title} (${c.startTime}–${c.endTime})`);
+      } else if (newStart !== target.preferredStartTime) {
+        nextStatus = 'shifted';
+        titles = preferredConflicts.map((c) => `${c.title} (${c.startTime}–${c.endTime})`);
+      }
+
+      return prev.map((s, idx) =>
+        idx === index
+          ? {
+              ...s,
+              startTime: newStart,
+              endTime: newEnd,
+              status: nextStatus,
+              conflictingTitles: titles,
+            }
+          : s
+      );
+    });
   };
 
   const handleClearWorkouts = async () => {
@@ -348,6 +464,18 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
       return;
     }
 
+    const unresolvedConflicts = activeSlots.filter((s) => s.status === 'conflict');
+    if (unresolvedConflicts.length > 0) {
+      const summary = unresolvedConflicts
+        .slice(0, 3)
+        .map((s) => `${s.date} (${s.startTime}–${s.endTime}): ${s.conflictingTitles.join(', ')}`)
+        .join('\n');
+      const proceed = window.confirm(
+        `Cảnh báo: Có ${unresolvedConflicts.length} buổi tập vẫn đang TRÙNG LỊCH với sự kiện khác:\n${summary}\n\nBạn nên đổi khung giờ cho các buổi bị trùng hoặc bỏ tích chọn trước khi đồng bộ. Vẫn tiếp tục đồng bộ?`
+      );
+      if (!proceed) return;
+    }
+
     // Check token or prompt user
     let token = await getAccessToken().catch(() => null);
     if (!token) {
@@ -370,11 +498,16 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
     setSyncProgress({ current: 0, total: activeSlots.length });
 
     try {
-      // 1. Prepare CalendarEvent objects
+      // Optionally clear old ZENOX workout events so re-syncing stays clean and even
+      if (replaceExistingWorkouts && currentWorkoutEvents.length > 0 && onClearWorkoutEvents) {
+        await onClearWorkoutEvents();
+      }
+
+      // 1. Prepare CalendarEvent objects (+ optional Pre-workout & Sunday Weekly Check-in autopilot)
       const newEvents: CalendarEvent[] = activeSlots.map((slot, idx) => ({
         id: `ctg-workout-${Date.now()}-${idx}`,
         title: `[ZENOX] ${slot.sessionTitle}`,
-        description: `Lộ trình ZENOX: ${resolvedPhase.name}\nBài tập: ${slot.prescriptionsSummary}\nĐược tự động lên lịch tối ưu bởi ZENOX AI.`,
+        description: `Lộ trình ZENOX: ${resolvedPhase.name}\nBài tập: ${slot.prescriptionsSummary}\nĐược tối ưu giờ trống bởi ZENOX.`,
         startDate: slot.date,
         startTime: slot.startTime,
         endDate: slot.date,
@@ -386,6 +519,77 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
         isCompleted: false,
         createdAt: Date.now(),
       }));
+
+      if (includePreWorkoutReminder) {
+        activeSlots.forEach((slot, idx) => {
+          const preMins = Math.max(6 * 60, timeToMinutes(slot.startTime) - 75);
+          const prePreferred = minutesToHHmm(preMins);
+          const preRes = resolveNonConflictingSlot(
+            slot.date,
+            prePreferred,
+            15,
+            [...effectiveExistingEvents, ...newEvents],
+            { minHour: 6, maxHour: 23, bufferMinutes: 5 }
+          );
+          if (preRes.status !== 'conflict') {
+            newEvents.push({
+              id: `ctg-prewo-${Date.now()}-${idx}`,
+              title: `⚡ [Pre-Workout] Chuẩn bị — ${slot.sessionTitle}`,
+              description: `Nhắc chuẩn bị 75p trước buổi tập "${slot.sessionTitle}": nạp 30–40g carb nhanh, đủ nước & khởi động tinh thần.`,
+              startDate: slot.date,
+              startTime: preRes.startTime,
+              endDate: slot.date,
+              endTime: preRes.endTime,
+              allDay: false,
+              calendarId: 'health',
+              color: '#F59E0B',
+              type: 'event',
+              isCompleted: false,
+              createdAt: Date.now(),
+            });
+          }
+        });
+      }
+
+      if (includeSundayCheckin) {
+        const now = new Date();
+        const dow = now.getDay();
+        const diffToMonday = now.getDate() - dow + (dow === 0 ? -6 : 1);
+        const monday = new Date(now);
+        monday.setDate(diffToMonday);
+        monday.setHours(0, 0, 0, 0);
+
+        for (let w = 0; w < weeksCount; w++) {
+          const sundayDate = new Date(monday);
+          sundayDate.setDate(monday.getDate() + w * 7 + 6);
+          const sundayStr = formatDateString(sundayDate);
+          if (respectAwayMode && isDateInAwayPeriod(sundayStr, awayMode)) continue;
+          const ciRes = resolveNonConflictingSlot(
+            sundayStr,
+            '08:00',
+            20,
+            [...effectiveExistingEvents, ...newEvents],
+            { minHour: 6, maxHour: 23, bufferMinutes: 10 }
+          );
+          if (ciRes.status !== 'conflict') {
+            newEvents.push({
+              id: `ctg-checkin-${Date.now()}-${w}`,
+              title: '📸 [ZENOX] Weekly Check-in (Cân & Ảnh)',
+              description: 'Nhắc cân bụng rỗng sáng Chủ Nhật, chụp ảnh tiến độ và chốt Weekly Check-in Inbox trong ZENOX.',
+              startDate: sundayStr,
+              startTime: ciRes.startTime,
+              endDate: sundayStr,
+              endTime: ciRes.endTime,
+              allDay: false,
+              calendarId: 'health',
+              color: '#6366F1',
+              type: 'event',
+              isCompleted: false,
+              createdAt: Date.now(),
+            });
+          }
+        }
+      }
 
       // 2. Add to local store via onBatchSchedule
       if (onBatchSchedule) {
@@ -421,7 +625,10 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
     }
   };
 
-  const selectedCount = proposedSlots.filter((s) => s.selected).length;
+  const selectedSlots = proposedSlots.filter((s) => s.selected);
+  const selectedCount = selectedSlots.length;
+  const shiftedCount = selectedSlots.filter((s) => s.status === 'shifted').length;
+  const conflictCount = selectedSlots.filter((s) => s.status === 'conflict').length;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in">
@@ -520,32 +727,44 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
 
           {/* B. Clean Existing Scheduled Workouts (User requested control!) */}
           {currentWorkoutEvents.length > 0 && (
-            <div className="p-3.5 rounded-2xl bg-rose-950/20 border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5">
-                <Calendar className="w-4 h-4 text-rose-400 shrink-0" />
-                <div>
-                  <span className="text-white/80">
-                    Hiện có <strong className="text-rose-300 font-mono font-bold">{currentWorkoutEvents.length}</strong> buổi tập thể hình đã được lên lịch.
-                  </span>
-                  <div className="text-[11px] text-white/40">
-                    Nếu bạn chưa từng yêu cầu hoặc muốn làm mới lại lịch, bạn có thể gỡ sạch với 1 click.
+            <div className="p-3.5 rounded-2xl bg-rose-950/20 border border-rose-500/20 space-y-2.5 text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Calendar className="w-4 h-4 text-rose-400 shrink-0" />
+                  <div>
+                    <span className="text-white/80">
+                      Hiện có <strong className="text-rose-300 font-mono font-bold">{currentWorkoutEvents.length}</strong> buổi tập thể hình đã được lên lịch.
+                    </span>
+                    <div className="text-[11px] text-white/40">
+                      Bật thay thế để làm mới lịch đồng đều, không bị chồng chéo buổi cũ.
+                    </div>
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleClearWorkouts}
+                  disabled={isClearing}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/40 text-rose-200 border border-rose-500/40 text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+                >
+                  {isClearing ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  <span>Gỡ Bỏ {currentWorkoutEvents.length} Buổi Tập Này</span>
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={handleClearWorkouts}
-                disabled={isClearing}
-                className="px-3.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/40 text-rose-200 border border-rose-500/40 text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-              >
-                {isClearing ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="w-3.5 h-3.5" />
-                )}
-                <span>Gỡ Bỏ {currentWorkoutEvents.length} Buổi Tập Này</span>
-              </button>
+              <label className="flex items-center gap-2 pt-2 border-t border-white/10 text-[11px] text-white/80 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={replaceExistingWorkouts}
+                  onChange={(e) => setReplaceExistingWorkouts(e.target.checked)}
+                  className="rounded accent-rose-500 cursor-pointer"
+                />
+                <span>Tự động thay thế {currentWorkoutEvents.length} buổi tập ZENOX cũ khi đồng bộ mới</span>
+              </label>
             </div>
           )}
 
@@ -626,6 +845,41 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
                     {selectedWindowId === w.id && <Check className="w-3.5 h-3.5 text-amber-400" />}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setSelectedWindowId('custom')}
+                  className={`w-full p-2.5 rounded-xl border text-left text-xs font-mono cursor-pointer transition-colors flex items-center justify-between ${
+                    selectedWindowId === 'custom'
+                      ? 'bg-amber-500/15 border-amber-500 text-white'
+                      : 'bg-white/[0.02] border-white/5 text-white/60 hover:border-white/15'
+                  }`}
+                >
+                  <span>
+                    Tùy chỉnh ({customStart} - {minutesToHHmm(timeToMinutes(customStart) + customDurationMins)})
+                  </span>
+                  {selectedWindowId === 'custom' && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                </button>
+                {selectedWindowId === 'custom' && (
+                  <div className="p-2.5 rounded-xl bg-white/[0.04] border border-amber-500/30 flex items-center gap-2 text-xs">
+                    <label className="text-white/60 shrink-0">Bắt đầu:</label>
+                    <input
+                      type="time"
+                      value={customStart}
+                      onChange={(e) => setCustomStart(e.target.value || '17:30')}
+                      className="bg-black/40 border border-white/15 rounded-lg px-2 py-1 text-white font-mono text-xs"
+                    />
+                    <select
+                      value={customDurationMins}
+                      onChange={(e) => setCustomDurationMins(Number(e.target.value) || 75)}
+                      className="bg-black/40 border border-white/15 rounded-lg px-2 py-1 text-white font-mono text-xs"
+                    >
+                      <option value={45}>45 phút</option>
+                      <option value={60}>60 phút</option>
+                      <option value={75}>75 phút</option>
+                      <option value={90}>90 phút</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -653,54 +907,138 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
                 ))}
               </div>
 
-              <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 text-[11px] text-white/50 space-y-1">
+              <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 text-[11px] text-white/50 space-y-1.5">
                 <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
                   <Sparkles className="w-3.5 h-3.5" />
-                  Thuật toán Giờ Rảnh Thông Minh
+                  Chống Trùng & Cân Bằng Lịch Tập
                 </div>
                 <p>
-                  Hệ thống tự động rà soát lịch của bạn. Nếu có sự kiện trùng, buổi tập sẽ tự động dời sang khoảng trống gần nhất.
+                  Kiểm tra cả lịch lặp lại và lịch học/làm trong ngày. Nếu giờ ưu tiên bị trùng, buổi tập tự dời sang khoảng trống gần nhất hoặc cảnh báo để bạn tự chỉnh giờ.
                 </p>
+                {uniformTimeSuggestion && (shiftedCount > 0 || conflictCount > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomStart(uniformTimeSuggestion.start);
+                      setSelectedWindowId('custom');
+                    }}
+                    className="w-full mt-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold cursor-pointer transition-colors text-left flex items-center justify-between"
+                  >
+                    <span>
+                      ✨ Giờ đồng đều cả {weeksCount} tuần: {uniformTimeSuggestion.start}–{uniformTimeSuggestion.end}
+                    </span>
+                    <span className="underline shrink-0 ml-2">Áp dụng</span>
+                  </button>
+                )}
+
+                {/* Phase 4 Calendar Autopilot Options */}
+                <div className="pt-2 border-t border-white/10 space-y-1.5 text-white/75">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includePreWorkoutReminder}
+                      onChange={(e) => setIncludePreWorkoutReminder(e.target.checked)}
+                      className="rounded accent-amber-500 cursor-pointer"
+                    />
+                    <span>Chèn nhắc Pre-workout &amp; Carb (trước buổi tập ~75p)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeSundayCheckin}
+                      onChange={(e) => setIncludeSundayCheckin(e.target.checked)}
+                      className="rounded accent-indigo-500 cursor-pointer"
+                    />
+                    <span>Chèn nhắc Weekly Check-in Chủ Nhật (08:00 · 20p)</span>
+                  </label>
+                  {awayMode?.enabled && (
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-purple-300">
+                      <input
+                        type="checkbox"
+                        checked={respectAwayMode}
+                        onChange={(e) => setRespectAwayMode(e.target.checked)}
+                        className="rounded accent-purple-500 cursor-pointer"
+                      />
+                      <span>Né kỳ nghỉ Away Mode ({awayMode.startDate} → {awayMode.endDate})</span>
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
           {/* 3. Danh Sách Các Buổi Sắp Được Lên Lịch (Live Preview) */}
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                 Danh Sách {proposedSlots.length} Buổi Tập Dự Kiến (Đã chọn {selectedCount})
               </label>
-              <span className="text-[10px] text-white/40 font-mono">Bấm vào từng buổi để bật/tắt</span>
+              <div className="flex items-center gap-2 text-[10px] font-mono">
+                {shiftedCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {shiftedCount} buổi đã dời né trùng
+                  </span>
+                )}
+                {conflictCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
+                    {conflictCount} buổi VẪN TRÙNG LỊCH
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+            {conflictCount > 0 && (
+              <div className="p-3 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">Cảnh báo: Có {conflictCount} buổi chưa tìm được khung giờ trống hoàn toàn</div>
+                  <div className="text-[11px] text-rose-200/80 mt-0.5">
+                    Hãy đổi khung giờ ưa thích, bấm gợi ý giờ đồng đều, hoặc chỉnh tay giờ cho từng buổi màu đỏ bên dưới trước khi đồng bộ.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
               {proposedSlots.map((slot, idx) => (
                 <div
                   key={idx}
                   onClick={() => toggleSlot(idx)}
-                  className={`p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                    slot.selected
-                      ? 'bg-white/[0.04] border-white/10 hover:border-white/20'
-                      : 'bg-black/20 border-white/5 opacity-40 hover:opacity-70'
+                  className={`p-2.5 sm:p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 cursor-pointer transition-colors ${
+                    !slot.selected
+                      ? 'bg-black/20 border-white/5 opacity-40 hover:opacity-70'
+                      : slot.status === 'conflict'
+                      ? 'bg-rose-950/30 border-rose-500/50 hover:border-rose-400'
+                      : slot.status === 'shifted'
+                      ? 'bg-amber-950/20 border-amber-500/30 hover:border-amber-400/50'
+                      : 'bg-white/[0.04] border-white/10 hover:border-white/20'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-start sm:items-center gap-2.5 min-w-0">
                     <input
                       type="checkbox"
                       checked={slot.selected}
                       onChange={() => {}}
-                      className="rounded accent-rose-500 cursor-pointer"
+                      className="rounded accent-rose-500 cursor-pointer mt-1 sm:mt-0"
                     />
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-mono text-xs font-bold text-white">{slot.date}</span>
                         <span className="text-[10px] text-white/40">{slot.dayLabel}</span>
-                        {slot.isConflictAvoided && (
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                        {slot.status === 'conflict' ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/25 text-rose-200 border border-rose-500/50 flex items-center gap-1 font-bold">
                             <AlertCircle className="w-2.5 h-2.5" />
-                            Dời né trùng lịch
+                            Trùng: {slot.conflictingTitles.join(', ')}
+                          </span>
+                        ) : slot.status === 'shifted' ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                            <AlertCircle className="w-2.5 h-2.5" />
+                            Đã dời né: {slot.conflictingTitles.join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                            Khớp giờ chuẩn
                           </span>
                         )}
                       </div>
@@ -713,15 +1051,43 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0">
-                    <div className="font-mono text-xs font-bold text-emerald-400">
-                      {slot.startTime} – {slot.endTime}
-                    </div>
-                    {slot.conflictReason && (
-                      <div className="text-[9px] text-white/30 truncate max-w-[120px]">
-                        tránh "{slot.conflictReason}"
-                      </div>
+                  <div
+                    className="flex items-center gap-1.5 shrink-0 self-end sm:self-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {slot.alternativeSlots.length > 0 && (
+                      <select
+                        value={
+                          slot.alternativeSlots.some((a) => a.startTime === slot.startTime)
+                            ? slot.startTime
+                            : ''
+                        }
+                        onChange={(e) => {
+                          if (e.target.value) updateSlotStartTime(idx, e.target.value);
+                        }}
+                        title="Chọn khung giờ trống gợi ý"
+                        className="bg-black/50 border border-white/15 rounded-lg px-1.5 py-1 text-[10px] font-mono text-white/80 cursor-pointer max-w-[110px]"
+                      >
+                        <option value="">Giờ trống...</option>
+                        {slot.alternativeSlots.map((alt) => (
+                          <option key={alt.startTime} value={alt.startTime}>
+                            {alt.startTime}–{alt.endTime}
+                          </option>
+                        ))}
+                      </select>
                     )}
+                    <input
+                      type="time"
+                      value={slot.startTime}
+                      onChange={(e) => updateSlotStartTime(idx, e.target.value)}
+                      aria-label={`Giờ bắt đầu ${slot.date}`}
+                      className={`bg-black/50 border rounded-lg px-1.5 py-1 text-[11px] font-mono font-bold cursor-pointer ${
+                        slot.status === 'conflict'
+                          ? 'border-rose-500/60 text-rose-300'
+                          : 'border-white/15 text-emerald-400'
+                      }`}
+                    />
+                    <span className="font-mono text-[11px] text-white/50">– {slot.endTime}</span>
                   </div>
                 </div>
               ))}
@@ -730,9 +1096,14 @@ export const CtgCalendarSyncModal: React.FC<CtgCalendarSyncModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-5 border-t border-white/10 bg-black/40 flex items-center justify-between shrink-0">
+        <div className="p-5 border-t border-white/10 bg-black/40 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="text-xs text-white/50">
-            Tổng cộng: <strong className="text-white font-mono">{selectedCount}</strong> buổi tập sẽ được tạo.
+            Tổng cộng: <strong className="text-white font-mono">{selectedCount}</strong> buổi tập
+            {conflictCount > 0 && (
+              <span className="ml-2 text-rose-400 font-semibold">
+                ({conflictCount} buổi đang trùng lịch)
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2.5">

@@ -1,7 +1,6 @@
 import { CalendarEvent } from '../types/calendar';
-import { AppUser, setAccessToken, clearAccessToken } from './auth';
+import { AppUser, setAccessToken } from './auth';
 import { fetchGoogleCalendarEvents } from './googleCalendarSync';
-import firebaseConfig from '../../firebase-applet-config.json';
 
 declare global {
   interface Window {
@@ -153,7 +152,6 @@ export async function authenticateRealGoogleUser(
   }
 
   const user = await fetchGoogleUserInfo(token);
-  localStorage.setItem('gcal_active_user', JSON.stringify(user));
   setAccessToken(token);
 
   return { user, accessToken: token };

@@ -7,6 +7,7 @@ import {
   doesEventOccurOnDate,
   computeEventLayout,
   deduplicateEvents,
+  findConflictingEvents,
 } from '../utils/calendarUtils';
 import {
   timeStringToMinutes,
@@ -15,7 +16,7 @@ import {
   formatLiveDuration,
   HOUR_HEIGHT,
 } from '../utils/dndUtils';
-import { Video, MapPin, Check, Clock } from 'lucide-react';
+import { Video, MapPin, Check, Clock, AlertTriangle } from 'lucide-react';
 
 interface TimeGridViewProps {
   currentDate: Date;
@@ -33,6 +34,7 @@ interface TimeGridViewProps {
   onPointerMove?: (clientY: number, targetDate?: string) => void;
   onFinishDnD?: () => void;
   onCancelDnD?: () => void;
+  weekStartsOnMonday?: boolean;
 }
 
 interface DragCreationState {
@@ -59,6 +61,7 @@ export const TimeGridView: React.FC<TimeGridViewProps> = ({
   onPointerMove,
   onFinishDnD,
   onCancelDnD,
+  weekStartsOnMonday = false,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -73,7 +76,7 @@ export const TimeGridView: React.FC<TimeGridViewProps> = ({
   } else if (viewType === 'fourDay') {
     days = getFourDayDates(currentDate);
   } else {
-    days = getWeekDates(currentDate, false);
+    days = getWeekDates(currentDate, weekStartsOnMonday);
   }
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
@@ -345,7 +348,17 @@ export const TimeGridView: React.FC<TimeGridViewProps> = ({
                     })}
 
                     {/* Live Drag-to-Create Selection Box */}
-                    {isCreatingHere && dragCreation && (
+                    {isCreatingHere && dragCreation && (() => {
+                      const createConflicts = findConflictingEvents(
+                        {
+                          startDate: dateStr,
+                          startTime: dragCreation.startTime,
+                          endTime: dragCreation.currentEndTime,
+                        },
+                        activeEvents
+                      );
+                      const hasCreateConflict = createConflicts.length > 0;
+                      return (
                       <div
                         style={{
                           top: `${createTopPercent}%`,
@@ -353,19 +366,42 @@ export const TimeGridView: React.FC<TimeGridViewProps> = ({
                           left: '4px',
                           right: '4px',
                         }}
-                        className="absolute z-30 rounded-lg bg-rose-500/25 border-2 border-rose-500 shadow-md pointer-events-none flex flex-col justify-between p-1.5"
+                        className={`absolute z-30 rounded-lg border-2 shadow-md pointer-events-none flex flex-col justify-between p-1.5 ${
+                          hasCreateConflict
+                            ? 'bg-amber-500/25 border-amber-500'
+                            : 'bg-rose-500/25 border-rose-500'
+                        }`}
                       >
-                        <div className="bg-rose-600 text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded shadow-sm w-fit flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          <span>
-                            {dragCreation.startTime} – {dragCreation.currentEndTime} ({formatLiveDuration(dragCreation.durationMinutes, lang)})
-                          </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <div className={`${hasCreateConflict ? 'bg-amber-600' : 'bg-rose-600'} text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded shadow-sm w-fit flex items-center gap-1`}>
+                            <Clock className="w-3 h-3" />
+                            <span>
+                              {dragCreation.startTime} – {dragCreation.currentEndTime} ({formatLiveDuration(dragCreation.durationMinutes, lang)})
+                            </span>
+                          </div>
+                          {hasCreateConflict && (
+                            <div className="bg-amber-950/90 text-amber-200 border border-amber-400/60 text-[10px] font-bold px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span className="truncate max-w-[140px]">
+                                {lang === 'vi'
+                                  ? `Trùng: ${createConflicts.map((c) => c.title).join(', ')}`
+                                  : `Conflict: ${createConflicts.map((c) => c.title).join(', ')}`}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <span className="text-[11px] font-semibold text-rose-700 dark:text-rose-300">
-                          {lang === 'vi' ? '(Thả chuột để thêm sự kiện)' : '(Release to create event)'}
+                        <span className={`text-[11px] font-semibold ${hasCreateConflict ? 'text-amber-700 dark:text-amber-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                          {hasCreateConflict
+                            ? lang === 'vi'
+                              ? '(Đang trùng lịch — thả để mở cảnh báo)'
+                              : '(Overlap detected — release to review)'
+                            : lang === 'vi'
+                            ? '(Thả chuột để thêm sự kiện)'
+                            : '(Release to create event)'}
                         </span>
                       </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Real-time Current Time Line (Red) */}
                     {isToday && (
@@ -379,36 +415,62 @@ export const TimeGridView: React.FC<TimeGridViewProps> = ({
                     )}
 
                     {/* Ghost Preview Card when Dragging or Resizing existing event */}
-                    {showGhostHere && dndState?.initialEvent && (
+                    {showGhostHere && dndState?.initialEvent && dndState.currentPreview && (() => {
+                      const ghostConflicts = findConflictingEvents(
+                        {
+                          id: dndState.initialEvent.id,
+                          startDate: dateStr,
+                          startTime: dndState.currentPreview.startTime,
+                          endTime: dndState.currentPreview.endTime,
+                          allDay: dndState.initialEvent.allDay,
+                        },
+                        activeEvents
+                      );
+                      const hasGhostConflict = ghostConflicts.length > 0;
+                      return (
                       <div
                         style={{
                           top: `${ghostTopPercent}%`,
                           height: `${ghostHeightPercent}%`,
                           left: '4px',
                           right: '4px',
-                          backgroundColor: `${dndState.initialEvent.color}33`,
-                          borderColor: dndState.initialEvent.color,
+                          backgroundColor: hasGhostConflict ? '#f59e0b33' : `${dndState.initialEvent.color}33`,
+                          borderColor: hasGhostConflict ? '#f59e0b' : dndState.initialEvent.color,
                         }}
                         className="absolute z-30 rounded-md p-1.5 border-2 border-dashed shadow-lg pointer-events-none flex flex-col justify-between transition-all"
                       >
                         {/* Live Floating Tooltip Badge */}
-                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-gray-900/95 text-white text-[11px] px-2.5 py-0.5 rounded-md shadow-xl whitespace-nowrap z-40 font-medium flex items-center gap-1.5 border border-white/10 backdrop-blur-xs">
-                          <Clock className="w-3 h-3 text-rose-400 shrink-0" />
+                        <div className={`absolute -top-7 left-1/2 -translate-x-1/2 text-white text-[11px] px-2.5 py-0.5 rounded-md shadow-xl whitespace-nowrap z-40 font-medium flex items-center gap-1.5 border backdrop-blur-xs ${
+                          hasGhostConflict
+                            ? 'bg-amber-950/95 border-amber-400/70 text-amber-100'
+                            : 'bg-gray-900/95 border-white/10'
+                        }`}>
+                          {hasGhostConflict ? (
+                            <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+                          ) : (
+                            <Clock className="w-3 h-3 text-rose-400 shrink-0" />
+                          )}
                           <span className="font-mono">
-                            {dndState.currentPreview!.startTime} – {dndState.currentPreview!.endTime}
+                            {dndState.currentPreview.startTime} – {dndState.currentPreview.endTime}
                           </span>
                           <span className="text-gray-300 font-sans">
-                            ({formatLiveDuration(dndState.currentPreview!.durationMinutes, lang)})
+                            ({formatLiveDuration(dndState.currentPreview.durationMinutes, lang)})
                           </span>
+                          {hasGhostConflict && (
+                            <span className="text-amber-300 font-bold">
+                              · {lang === 'vi' ? `Trùng ${ghostConflicts[0].title}` : `Overlaps ${ghostConflicts[0].title}`}
+                            </span>
+                          )}
                         </div>
 
                         <div>
-                          <div className="flex items-center gap-1 font-semibold text-xs truncate" style={{ color: dndState.initialEvent.color }}>
+                          <div className="flex items-center gap-1 font-semibold text-xs truncate" style={{ color: hasGhostConflict ? '#f59e0b' : dndState.initialEvent.color }}>
                             <span>{dndState.initialEvent.title}</span>
                           </div>
                         </div>
                       </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Timed Events */}
                     {Array.from(layoutMap.entries()).map(([eventId, layout]) => {
@@ -416,6 +478,7 @@ export const TimeGridView: React.FC<TimeGridViewProps> = ({
                       if (!ev) return null;
 
                       const isCurrentlyActive = isInteracting && dndState?.eventId === ev.id;
+                      const isOverlapping = layout.widthPercent < 90;
 
                       return (
                         <div
@@ -440,17 +503,30 @@ export const TimeGridView: React.FC<TimeGridViewProps> = ({
                             opacity: isCurrentlyActive ? 0.35 : 1,
                             zIndex: isCurrentlyActive ? 50 : (layout.zIndex || 10),
                           }}
-                          className={`absolute rounded-md p-1.5 text-white shadow-sm cursor-grab active:cursor-grabbing overflow-hidden transition-all duration-150 hover:brightness-105 border border-white/20 flex flex-col justify-between group/card hover:z-40 hover:!left-[2%] hover:!w-[96%] hover:shadow-xl hover:ring-2 hover:ring-white/40 ${
-                            isCurrentlyActive ? 'ring-2 ring-rose-400' : ''
+                          className={`absolute rounded-md p-1.5 text-white shadow-sm cursor-grab active:cursor-grabbing overflow-hidden transition-all duration-150 hover:brightness-105 flex flex-col justify-between group/card hover:z-40 hover:!left-[2%] hover:!w-[96%] hover:shadow-xl hover:ring-2 hover:ring-white/40 ${
+                            isCurrentlyActive
+                              ? 'border border-white/20 ring-2 ring-rose-400'
+                              : isOverlapping
+                              ? 'border border-amber-300/90 ring-1 ring-amber-400/60'
+                              : 'border border-white/20'
                           }`}
                         >
                           <div>
                             <div className="flex items-center gap-1 font-semibold text-xs truncate">
                               {ev.meetUrl && <Video className="w-3 h-3 shrink-0" />}
                               {ev.type === 'task' && <Check className="w-3 h-3 shrink-0 stroke-[3]" />}
-                              <span className={`truncate ${ev.isCompleted ? 'line-through' : ''}`}>
+                              <span className={`truncate flex-1 ${ev.isCompleted ? 'line-through' : ''}`}>
                                 {ev.title}
                               </span>
+                              {isOverlapping && (
+                                <span
+                                  title={lang === 'vi' ? 'Trùng khung giờ với sự kiện khác' : 'Time conflict with another event'}
+                                  className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-950/60 text-amber-200 border border-amber-300/60 text-[9px] font-bold leading-none"
+                                >
+                                  <AlertTriangle className="w-2.5 h-2.5" />
+                                  <span className="hidden sm:inline">{lang === 'vi' ? 'Trùng' : 'Overlap'}</span>
+                                </span>
+                              )}
                             </div>
                             <div className="text-[10px] text-white/90 font-mono mt-0.5 truncate">
                               {ev.startTime} – {ev.endTime}

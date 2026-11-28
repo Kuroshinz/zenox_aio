@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CalendarEvent, CalendarCategory, EventType, GOOGLE_COLORS } from '../types/calendar';
-import { X, Clock, Video, Check, Plus, Minus, Calendar as CalIcon } from 'lucide-react';
+import { X, Clock, Video, Check, Plus, Minus, Calendar as CalIcon, AlertTriangle } from 'lucide-react';
+import { findConflictingEvents, resolveNonConflictingSlot, timeToMinutes } from '../utils/calendarUtils';
 
 interface MiniEventPopoverProps {
   isOpen: boolean;
@@ -8,6 +9,7 @@ interface MiniEventPopoverProps {
   dateStr: string;
   startTime: string;
   endTime: string;
+  events?: CalendarEvent[];
   categories: CalendarCategory[];
   onSave: (event: CalendarEvent) => void;
   onOpenFullModal: (
@@ -39,6 +41,7 @@ export const MiniEventPopover: React.FC<MiniEventPopoverProps> = ({
   dateStr,
   startTime,
   endTime,
+  events = [],
   categories,
   onSave,
   onOpenFullModal,
@@ -89,6 +92,35 @@ export const MiniEventPopover: React.FC<MiniEventPopoverProps> = ({
     }
   }, [isOpen, onClose]);
 
+  const conflictInfo = useMemo(() => {
+    if (!isOpen || isAllDay) {
+      return { conflicts: [] as CalendarEvent[], suggestion: null as { startTime: string; endTime: string } | null };
+    }
+    const conflicts = findConflictingEvents(
+      {
+        startDate: curDate,
+        startTime: curStartTime,
+        endTime: curEndTime,
+        allDay: isAllDay,
+      },
+      events
+    );
+    if (conflicts.length === 0) {
+      return { conflicts: [], suggestion: null };
+    }
+    const dur = Math.max(15, timeToMinutes(curEndTime) - timeToMinutes(curStartTime));
+    const resolution = resolveNonConflictingSlot(curDate, curStartTime, dur, events, {
+      minHour: 6,
+      maxHour: 22,
+      bufferMinutes: 0,
+    });
+    const suggestion =
+      resolution.status === 'shifted'
+        ? { startTime: resolution.startTime, endTime: resolution.endTime }
+        : null;
+    return { conflicts, suggestion };
+  }, [isOpen, isAllDay, curDate, curStartTime, curEndTime, events]);
+
   if (!isOpen || !position) return null;
 
   const dateObj = new Date(curDate + 'T00:00:00');
@@ -103,7 +135,7 @@ export const MiniEventPopover: React.FC<MiniEventPopoverProps> = ({
     const finalTitle = title.trim() || (lang === 'vi' ? '(Không có tiêu đề)' : '(No title)');
 
     const newEv: CalendarEvent = {
-      id: `ev-${Date.now()}`,
+      id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       title: finalTitle,
       startDate: curDate,
       endDate: curDate,
@@ -336,6 +368,34 @@ export const MiniEventPopover: React.FC<MiniEventPopoverProps> = ({
           </div>
         </div>
 
+        {/* Conflict Warning Banner */}
+        {!isAllDay && conflictInfo.conflicts.length > 0 && (
+          <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/70 text-[11px] text-amber-800 dark:text-amber-200 space-y-1.5">
+            <div className="flex items-start gap-1.5 font-semibold">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                {lang === 'vi'
+                  ? `Trùng lịch với ${conflictInfo.conflicts.map((c) => `"${c.title}" (${c.startTime}–${c.endTime})`).join(', ')}`
+                  : `Overlaps with ${conflictInfo.conflicts.map((c) => `"${c.title}" (${c.startTime}–${c.endTime})`).join(', ')}`}
+              </span>
+            </div>
+            {conflictInfo.suggestion && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCurStartTime(conflictInfo.suggestion!.startTime);
+                  setCurEndTime(conflictInfo.suggestion!.endTime);
+                }}
+                className="w-full px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold transition-colors cursor-pointer text-center"
+              >
+                {lang === 'vi'
+                  ? `Dời sang giờ trống gần nhất: ${conflictInfo.suggestion.startTime} – ${conflictInfo.suggestion.endTime}`
+                  : `Shift to open slot: ${conflictInfo.suggestion.startTime} – ${conflictInfo.suggestion.endTime}`}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800 mt-1">
           <button
@@ -359,9 +419,19 @@ export const MiniEventPopover: React.FC<MiniEventPopoverProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-xs hover:shadow-md cursor-pointer"
+              className={`px-4 py-1.5 text-xs font-bold text-white rounded-xl transition-all shadow-xs hover:shadow-md cursor-pointer ${
+                !isAllDay && conflictInfo.conflicts.length > 0
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              {lang === 'vi' ? 'Lưu' : 'Save'}
+              {!isAllDay && conflictInfo.conflicts.length > 0
+                ? lang === 'vi'
+                  ? 'Vẫn lưu (trùng)'
+                  : 'Save anyway'
+                : lang === 'vi'
+                ? 'Lưu'
+                : 'Save'}
             </button>
           </div>
         </div>

@@ -4,6 +4,9 @@
  * Cryptographic SHA-256 Salted Password Verification & Anti-Bypass Session Management
  */
 
+import { accountStorage } from './accountStorage';
+import { mergeSyncedGoogleEvents } from '../utils/calendarUtils';
+
 export interface ZenoxAccount {
   id: string;
   name: string;
@@ -267,6 +270,42 @@ export async function loginZenoxAccount(
   return { success: true, user };
 }
 
+/**
+ * Ensure a local test/clone account exists in the vault with salted SHA-256 credentials
+ * so users can sign in either via email/password or 1-click demo login.
+ */
+export async function ensureSeededVaultAccount(input: {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+}): Promise<ZenoxAccount> {
+  const cleanEmail = input.email.trim().toLowerCase();
+  const accounts = getVaultAccounts();
+  const existing = accounts.find(
+    (a) => a.id === input.id || a.email.toLowerCase() === cleanEmail
+  );
+  if (existing) {
+    return existing;
+  }
+
+  const salt = generateRandomSalt();
+  const passwordHash = await hashWithSalt(input.password, salt);
+  const acc: ZenoxAccount = {
+    id: input.id,
+    name: input.name,
+    email: cleanEmail,
+    passwordHash,
+    salt,
+    createdAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
+    syncConsent: 'declined',
+  };
+  accounts.push(acc);
+  saveVaultAccounts(accounts);
+  return acc;
+}
+
 /** Terminate current session */
 export function logoutZenoxSession() {
   if (typeof localStorage !== 'undefined') {
@@ -439,8 +478,6 @@ export async function syncGoogleCalendarData(
     const { fetchGoogleCalendarEvents } = await import('./googleCalendarSync');
     const googleEvents = await fetchGoogleCalendarEvents(accessToken);
     if (googleEvents && googleEvents.length > 0) {
-      const { accountStorage } = await import('./accountStorage');
-      const { mergeSyncedGoogleEvents } = await import('../utils/calendarUtils');
       const rawExisting = accountStorage.getItem('gcal_events', uid);
       const existingEvents: any[] = rawExisting ? JSON.parse(rawExisting) : [];
       const merged = mergeSyncedGoogleEvents(googleEvents, existingEvents);

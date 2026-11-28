@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { WeeklyGoal } from '../../types/calendar';
 import { CategoryBreakdownItem } from '../../types/multiHub';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { Target, Plus, CheckCircle2, Trash2 } from 'lucide-react';
 
 interface GoalsTrackerProps {
@@ -8,18 +9,17 @@ interface GoalsTrackerProps {
   lang: 'vi' | 'en';
 }
 
+const DEFAULT_WEEKLY_GOALS: WeeklyGoal[] = [
+  { id: 'g-1', category: 'work', targetHours: 25 },
+  { id: 'g-2', category: 'study', targetHours: 10 },
+  { id: 'g-3', category: 'personal', targetHours: 8 },
+];
+
 export const GoalsTracker: React.FC<GoalsTrackerProps> = ({ categoryBreakdown, lang }) => {
-  const [goals, setGoals] = useState<WeeklyGoal[]>(() => {
-    try {
-      const saved = localStorage.getItem('gcal_weekly_goals');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [
-      { id: 'g-1', category: 'work', targetHours: 25 },
-      { id: 'g-2', category: 'study', targetHours: 10 },
-      { id: 'g-3', category: 'personal', targetHours: 8 },
-    ];
-  });
+  const [goals, setGoals] = usePersistentState<WeeklyGoal[]>(
+    'gcal_weekly_goals',
+    DEFAULT_WEEKLY_GOALS
+  );
 
   const [newCat, setNewCat] = useState('');
   const [newHours, setNewHours] = useState('5');
@@ -27,7 +27,6 @@ export const GoalsTracker: React.FC<GoalsTrackerProps> = ({ categoryBreakdown, l
 
   const saveGoals = (next: WeeklyGoal[]) => {
     setGoals(next);
-    localStorage.setItem('gcal_weekly_goals', JSON.stringify(next));
   };
 
   const handleAddGoal = (e: React.FormEvent) => {

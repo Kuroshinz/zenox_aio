@@ -1,5 +1,5 @@
 import { CalendarEvent } from '../../types/calendar';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, lazy, Suspense } from 'react';
 import {
   HeartPulse,
   Footprints,
@@ -22,6 +22,9 @@ import {
   TrendingDown,
   TrendingUp,
   ChevronRight,
+  ChevronLeft,
+  AlertTriangle,
+  Calendar,
 } from 'lucide-react';
 import {
   BodyCheckPhoto,
@@ -62,16 +65,33 @@ import {
   weightTrend,
   workoutMinutesThisWeek,
 } from '../../utils/productivityUtils';
-import { calculateDailyHealthScore, tdee, calorieTarget, macroTargets } from '../../utils/fitnessMetrics';
+import {
+  calculateDailyHealthScore,
+  calculateDailyEnergyBalance,
+  calculateWeightWindowStats,
+  generateHealthFixNextActions,
+  tdee,
+  calorieTarget,
+  macroTargets,
+  parseVnDate,
+  resolveAutoPhaseTransition,
+  calculatePhaseJourneyHeatmap,
+  buildJourneyCalendarPeriod,
+} from '../../utils/fitnessMetrics';
 import { formatDateString } from '../../utils/calendarUtils';
-import { GeminiMacroModal } from './fitness/GeminiMacroModal';
-import { GeminiMacroItem } from '../../services/geminiSync';
-import { FoodItem, MealSlot } from '../../types/productivity';
-import { InBodyTab } from './fitness/InBodyTab';
-import { TrainingTab } from './fitness/TrainingTab';
-import { NutritionTab } from './fitness/NutritionTab';
-import { ProfileTab } from './fitness/ProfileTab';
-import { RoadmapTab, parseVnDate } from './fitness/RoadmapTab';
+import { notifyInfo } from '../../utils/notify';
+
+const InBodyTab = lazy(() => import('./fitness/InBodyTab').then((m) => ({ default: m.InBodyTab })));
+const TrainingTab = lazy(() => import('./fitness/TrainingTab').then((m) => ({ default: m.TrainingTab })));
+const NutritionTab = lazy(() => import('./fitness/NutritionTab').then((m) => ({ default: m.NutritionTab })));
+const ProfileTab = lazy(() => import('./fitness/ProfileTab').then((m) => ({ default: m.ProfileTab })));
+const RoadmapTab = lazy(() => import('./fitness/RoadmapTab').then((m) => ({ default: m.RoadmapTab })));
+
+const SubTabFallback: React.FC = () => (
+  <div className="flex items-center justify-center py-16 text-xs font-mono text-zinc-400">
+    Đang tải phân hệ Thể hình...
+  </div>
+);
 
 export interface HealthViewProps {
   healthLogs: HealthDayLog[];
@@ -95,6 +115,9 @@ export interface HealthViewProps {
   bodyPhotos?: BodyCheckPhoto[];
   onAddBodyPhoto?: (photo: Omit<BodyCheckPhoto, 'id' | 'createdAt'>) => BodyCheckPhoto;
   onDeleteBodyPhoto?: (id: string) => void;
+  weeklyCheckins?: import('../../types/productivity').WeeklyCheckinRecord[];
+  onAddWeeklyCheckin?: (checkin: Omit<import('../../types/productivity').WeeklyCheckinRecord, 'id' | 'createdAt'>) => import('../../types/productivity').WeeklyCheckinRecord;
+  onDeleteWeeklyCheckin?: (id: string) => void;
   savedRoadmaps?: SavedRoadmap[];
   onAddSavedRoadmap?: (roadmap: Omit<SavedRoadmap, 'id' | 'createdAt'>) => SavedRoadmap;
   onDeleteSavedRoadmap?: (id: string) => void;
@@ -164,6 +187,9 @@ export const HealthView: React.FC<HealthViewProps> = ({
   bodyPhotos = [],
   onAddBodyPhoto = (p) => ({ ...p, id: 'tmp', createdAt: Date.now() }),
   onDeleteBodyPhoto = () => {},
+  weeklyCheckins = [],
+  onAddWeeklyCheckin,
+  onDeleteWeeklyCheckin,
   savedRoadmaps = [],
   onAddSavedRoadmap = (r) => ({ ...r, id: 'tmp', createdAt: Date.now() }),
   onDeleteSavedRoadmap = () => {},
@@ -234,7 +260,6 @@ export const HealthView: React.FC<HealthViewProps> = ({
   );
 
   const [showWorkoutForm, setShowWorkoutForm] = useState(false);
-  const [showMacroPromptModal, setShowMacroPromptModal] = useState(false);
 
   // Compute daily totals from meals
   const dayMealTotals = useMemo(() => {
@@ -305,6 +330,64 @@ export const HealthView: React.FC<HealthViewProps> = ({
     return ctgPeriodizedRoadmap.phases.find((p) => p.isCurrent) || ctgPeriodizedRoadmap.phases[0] || null;
   }, [ctgPeriodizedRoadmap]);
 
+  // Auto-advance roadmap phase silently when scheduled startDate arrives (no confirmation prompt)
+  useEffect(() => {
+    if (!ctgPeriodizedRoadmap || !onUpdateCtgPeriodizedRoadmap) return;
+    const todayStr = formatDateString(new Date());
+    const duePhase = resolveAutoPhaseTransition(ctgPeriodizedRoadmap, todayStr);
+    if (!duePhase) return;
+
+    const prevId = ctgPeriodizedRoadmap.activePhaseId;
+    const nextHandled = Array.from(
+      new Set([...(ctgPeriodizedRoadmap.autoHandledPhaseIds || []), duePhase.id])
+    );
+    const updatedPhases = ctgPeriodizedRoadmap.phases.map((p) => ({
+      ...p,
+      isCurrent: p.id === duePhase.id,
+    }));
+
+    onUpdateCtgPeriodizedRoadmap({
+      ...ctgPeriodizedRoadmap,
+      activePhaseId: duePhase.id,
+      previousPhaseId:
+        prevId && prevId !== duePhase.id ? prevId : ctgPeriodizedRoadmap.previousPhaseId,
+      autoHandledPhaseIds: nextHandled,
+      phases: updatedPhases,
+    });
+
+    const mappedGoal =
+      duePhase.phaseType === 'bulk'
+        ? 'bulk'
+        : duePhase.phaseType === 'maintain'
+        ? 'maintain'
+        : 'cut';
+    if (onUpdateNutritionSettings) {
+      onUpdateNutritionSettings({
+        overrides: {
+          ...(nutritionSettings?.overrides || {}),
+          [mappedGoal]: {
+            kcal: duePhase.targetKcal,
+            protein: duePhase.macros.protein,
+            carbs: duePhase.macros.carbs,
+            fat: duePhase.macros.fat,
+          },
+        },
+        appliedTdeeKcal: undefined,
+        appliedTdeeAt: undefined,
+        appliedTdeeStartWeightKg: undefined,
+      });
+    }
+    if (onUpdateCtgProfile) {
+      onUpdateCtgProfile({ goal: mappedGoal });
+    }
+
+    notifyInfo(
+      'Tự động chuyển giai đoạn theo lịch',
+      `Đã đến ngày ${duePhase.startDate} — hệ thống tự chuyển sang "${duePhase.name}" (${duePhase.targetKcal.toLocaleString('vi-VN')} kcal).`,
+      { category: 'fitness', targetView: 'health' }
+    );
+  }, [ctgPeriodizedRoadmap, onUpdateCtgPeriodizedRoadmap, onUpdateNutritionSettings, onUpdateCtgProfile, nutritionSettings?.overrides]);
+
   const activePhaseDaysElapsed = useMemo(() => {
     if (!ctgActivePhase?.startDate) return 0;
     const start = parseVnDate(ctgActivePhase.startDate);
@@ -349,40 +432,122 @@ export const HealthView: React.FC<HealthViewProps> = ({
   const targetCalories = calorieTarget(estimatedTdee, ctgProfile.goal);
   const targets = macroTargets(targetCalories, effectiveWeight, ctgProfile.goal, nutritionSettings);
   const targetProteinG = targets.protein;
+
+  const dailyEnergyBalance = useMemo(
+    () =>
+      calculateDailyEnergyBalance({
+        date: selectedDate,
+        weightKg: effectiveWeight,
+        bodyFatPct: ctgProfile.targetBodyFatPct || 15,
+        meals: meals || [],
+        workoutSessions: workoutSessions || [],
+        sportSessions: sportSessions || [],
+        healthLogs: healthLogs || [],
+        targetKcal: ctgActivePhase?.targetKcal || targetCalories,
+      }),
+    [selectedDate, effectiveWeight, ctgProfile.targetBodyFatPct, meals, workoutSessions, sportSessions, healthLogs, ctgActivePhase, targetCalories]
+  );
+
+  const weightWindowStats = useMemo(
+    () => calculateWeightWindowStats(bodyPoints || [], healthLogs || [], effectiveWeight, selectedDate),
+    [bodyPoints, healthLogs, effectiveWeight, selectedDate]
+  );
+
+  const fixNextActions = useMemo(
+    () =>
+      generateHealthFixNextActions({
+        todayStr: selectedDate,
+        dayMeals: (meals || []).filter((m) => m.date === selectedDate),
+        targetProteinG: targetProteinG,
+        targetKcal: ctgActivePhase?.targetKcal || targetCalories,
+        plannedSessions: plannedSessions || [],
+        customExercises,
+        bodyPoints: bodyPoints || [],
+        calendarEvents: events || [],
+        awayMode: ctgProfile.awayMode,
+      }),
+    [selectedDate, meals, targetProteinG, ctgActivePhase, targetCalories, plannedSessions, customExercises, bodyPoints, events, ctgProfile.awayMode]
+  );
+
+  const [hoveredJourneyDay, setHoveredJourneyDay] = useState<string | null>(null);
+  const [journeyViewMode, setJourneyViewMode] = useState<'journey' | 'month' | 'week'>('journey');
+  const [journeyCursorDate, setJourneyCursorDate] = useState<string>(() => formatDateString(new Date()));
+  const journeyHeatmap = useMemo(
+    () =>
+      calculatePhaseJourneyHeatmap({
+        trainingStartDate: ctgProfile.trainingStartDate,
+        activePhase: ctgActivePhase,
+        workoutSessions,
+        sportSessions,
+        meals,
+        bodyPoints,
+        healthLogs,
+        awayMode: ctgProfile.awayMode,
+        todayDateStr: formatDateString(new Date()),
+        weeksCount: 12,
+      }),
+    [
+      ctgProfile.trainingStartDate,
+      ctgProfile.awayMode,
+      ctgActivePhase,
+      workoutSessions,
+      sportSessions,
+      meals,
+      bodyPoints,
+      healthLogs,
+    ]
+  );
+  const journeyPeriodGrid = useMemo(() => {
+    if (journeyViewMode === 'journey') return null;
+    return buildJourneyCalendarPeriod({
+      mode: journeyViewMode,
+      cursorDateStr: journeyCursorDate,
+      journeyStartDateStr: journeyHeatmap.startDate,
+      todayDateStr: journeyHeatmap.todayDate,
+      workoutSessions,
+      sportSessions,
+      meals,
+      bodyPoints,
+      healthLogs,
+      awayMode: ctgProfile.awayMode,
+    });
+  }, [
+    journeyViewMode,
+    journeyCursorDate,
+    journeyHeatmap.startDate,
+    journeyHeatmap.todayDate,
+    workoutSessions,
+    sportSessions,
+    meals,
+    bodyPoints,
+    healthLogs,
+    ctgProfile.awayMode,
+  ]);
+  const [startDateDraft, setStartDateDraft] = useState<string>(journeyHeatmap.startDate);
+  useEffect(() => {
+    setStartDateDraft(journeyHeatmap.startDate);
+  }, [journeyHeatmap.startDate]);
+  const hoveredJourneyCell = useMemo(() => {
+    const targetDate = hoveredJourneyDay || journeyHeatmap.todayDate;
+    if (journeyPeriodGrid) {
+      const fromPeriod = journeyPeriodGrid.cells.find((c) => c.date === targetDate);
+      if (fromPeriod) return fromPeriod;
+    }
+    for (const wk of journeyHeatmap.journeyWeeks) {
+      const found = wk.find((c) => c.date === targetDate);
+      if (found) return found;
+    }
+    for (const wk of journeyHeatmap.weeks) {
+      const found = wk.find((c) => c.date === targetDate);
+      if (found) return found;
+    }
+    return null;
+  }, [hoveredJourneyDay, journeyHeatmap, journeyPeriodGrid]);
   const targetFatG = targets.fat;
   const targetCarbsG = targets.carbs;
 
   const patchLog = (patch: Partial<HealthDayLog>) => {
     onUpsertHealthLog({ ...selectedLog, ...patch, date: selectedDate, source: 'manual' });
-  };
-
-  const handleApplyMacroPrompt = (items: GeminiMacroItem[]) => {
-    if (!onAddMealLog) return;
-    const grouped: Partial<Record<MealSlot, FoodItem[]>> = {};
-    for (const it of items) {
-      if (!grouped[it.slot]) grouped[it.slot] = [];
-      grouped[it.slot]!.push({
-        name: it.name,
-        amount: it.amount,
-        unit: it.unit,
-        kcal: it.kcal,
-        protein: it.protein,
-        carbs: it.carbs,
-        fat: it.fat,
-      });
-    }
-
-    for (const [slotKey, mealItems] of Object.entries(grouped)) {
-      if (!mealItems || mealItems.length === 0) continue;
-      const slot = slotKey as MealSlot;
-      const desc = mealItems.map((i) => `${i.name} (${i.amount}${i.unit})`).join(' + ');
-      onAddMealLog({
-        date: selectedDate,
-        slot,
-        description: desc,
-        items: mealItems,
-      });
-    }
   };
 
   const numericInput = (
@@ -555,6 +720,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
         </div>
       </div>
 
+      <Suspense fallback={<SubTabFallback />}>
       {activeSubTab === 'roadmap' && (
         <RoadmapTab
           profile={ctgProfile}
@@ -599,6 +765,12 @@ export const HealthView: React.FC<HealthViewProps> = ({
           onUpdateCtgPeriodizedRoadmap={onUpdateCtgPeriodizedRoadmap}
           nutritionSettings={nutritionSettings}
           onUpdateNutritionSettings={onUpdateNutritionSettings}
+          weeklyCheckins={weeklyCheckins}
+          onAddWeeklyCheckin={onAddWeeklyCheckin}
+          onDeleteWeeklyCheckin={onDeleteWeeklyCheckin}
+          plannedSessions={plannedSessions}
+          workoutSessions={workoutSessions}
+          meals={meals}
         />
       )}
 
@@ -628,6 +800,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
           events={events}
           onBatchScheduleToCalendar={onBatchScheduleToCalendar}
           onClearWorkoutEventsFromCalendar={onClearWorkoutEventsFromCalendar}
+          awayMode={ctgProfile.awayMode}
         />
       )}
 
@@ -647,6 +820,8 @@ export const HealthView: React.FC<HealthViewProps> = ({
           ctgPeriodizedRoadmap={ctgPeriodizedRoadmap}
           bodyPoints={bodyPoints}
           onUpdateProfile={onUpdateCtgProfile}
+          workoutSessions={workoutSessions}
+          sportSessions={sportSessions}
         />
       )}
 
@@ -658,6 +833,8 @@ export const HealthView: React.FC<HealthViewProps> = ({
           lang={lang}
           onUpdateProfile={onUpdateCtgProfile}
           bodyPoints={bodyPoints}
+          healthLogs={healthLogs}
+          nutritionSettings={nutritionSettings}
           ctgPeriodizedRoadmap={ctgPeriodizedRoadmap}
           savedCtgRoadmaps={savedCtgRoadmaps}
           onNavigateTab={(tab) => setActiveSubTab(tab as SubTab)}
@@ -665,6 +842,7 @@ export const HealthView: React.FC<HealthViewProps> = ({
           onDeleteCtgRoadmap={onDeleteCtgRoadmap}
         />
       )}
+      </Suspense>
 
       {activeSubTab === 'overview' && (
         <div className="w-full shrink-0 flex flex-col">
@@ -834,6 +1012,402 @@ export const HealthView: React.FC<HealthViewProps> = ({
             </div>
           )}
 
+          {/* Overview Training Journey & Phase Day Counter Heatmap */}
+          <div className="bg-white dark:bg-[#070205] backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 p-4 sm:p-5 mb-6 shadow-xs space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 dark:border-white/[0.08] pb-3.5">
+              <div className="flex items-center gap-3.5">
+                <div className="px-3.5 py-2 rounded-2xl bg-gradient-to-br from-rose-600 to-orange-500 text-white shadow-md shrink-0 text-center">
+                  <div className="text-[9px] font-bold uppercase tracking-wider opacity-90">
+                    Hành trình
+                  </div>
+                  <div className="text-lg sm:text-xl font-black font-mono leading-tight">
+                    {journeyHeatmap.dayNumber > 0 ? `Ngày ${journeyHeatmap.dayNumber}` : 'Chưa bắt đầu'}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Hành Trình Tập Luyện (Từ Ngày 1 → Nay)
+                    </h3>
+                    {ctgActivePhase && journeyHeatmap.phaseDayNumber !== null && journeyHeatmap.totalPhaseDays !== null && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/15 text-indigo-500 dark:text-indigo-300 border border-indigo-500/30">
+                        {ctgActivePhase.name}: Ngày {journeyHeatmap.phaseDayNumber}/{journeyHeatmap.totalPhaseDays}
+                      </span>
+                    )}
+                    {journeyHeatmap.currentStreak > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
+                        🔥 Chuỗi {journeyHeatmap.currentStreak} ngày
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Từ Ngày 1 (<strong className="font-mono text-slate-700 dark:text-white/80">{journeyHeatmap.startDate}</strong>) đến hôm nay (<strong className="font-mono text-slate-700 dark:text-white/80">{journeyHeatmap.todayDate}</strong>) · Tập luyện {journeyHeatmap.activeTrainingDays} buổi · Ghi nhật ký {journeyHeatmap.loggedDays} ngày
+                  </p>
+                </div>
+              </div>
+
+              {/* Editable Training Start Date */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                  <Calendar className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Ngày bắt đầu:</span>
+                </span>
+                <input
+                  type="date"
+                  aria-label="Ngày bắt đầu tập"
+                  value={startDateDraft}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setStartDateDraft(val);
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                      onUpdateCtgProfile({ trainingStartDate: val });
+                    }
+                  }}
+                  onBlur={() => {
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(startDateDraft)) {
+                      if (startDateDraft !== ctgProfile.trainingStartDate) {
+                        onUpdateCtgProfile({ trainingStartDate: startDateDraft });
+                      }
+                    } else {
+                      setStartDateDraft(journeyHeatmap.startDate);
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white dark:[color-scheme:dark] font-mono text-xs focus:outline-none focus:border-rose-500 cursor-pointer"
+                />
+                {ctgActivePhase?.startDate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = parseVnDate(ctgActivePhase.startDate);
+                      if (Number.isFinite(d.getTime())) {
+                        const iso = formatDateString(d);
+                        setStartDateDraft(iso);
+                        onUpdateCtgProfile({ trainingStartDate: iso });
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-[10px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
+                    title="Đặt lại về ngày bắt đầu giai đoạn hiện tại"
+                  >
+                    Theo giai đoạn
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* View Mode Controls: Từ Ngày 1 → Nay | Theo Tháng | Theo Tuần */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 text-xs">
+                {(
+                  [
+                    { id: 'journey', label: 'Từ Ngày 1 → Nay' },
+                    { id: 'month', label: 'Theo Tháng' },
+                    { id: 'week', label: 'Theo Tuần' },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setJourneyViewMode(tab.id)}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer ${
+                      journeyViewMode === tab.id
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {journeyViewMode !== 'journey' && journeyPeriodGrid && (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setJourneyCursorDate(journeyHeatmap.startDate)}
+                    className="px-2.5 py-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-[11px] font-semibold cursor-pointer"
+                    title="Nhảy thẳng về Ngày 1"
+                  >
+                    Về Ngày 1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = parseVnDate(journeyCursorDate);
+                      if (journeyViewMode === 'week') {
+                        d.setDate(d.getDate() - 7);
+                      } else {
+                        d.setMonth(d.getMonth() - 1);
+                      }
+                      setJourneyCursorDate(formatDateString(d));
+                    }}
+                    className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-700 dark:text-white cursor-pointer"
+                    title={journeyViewMode === 'week' ? 'Tuần trước' : 'Tháng trước'}
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="px-2.5 py-1 font-mono font-bold text-slate-800 dark:text-white min-w-[120px] text-center">
+                    {journeyPeriodGrid.label}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = parseVnDate(journeyCursorDate);
+                      if (journeyViewMode === 'week') {
+                        d.setDate(d.getDate() + 7);
+                      } else {
+                        d.setMonth(d.getMonth() + 1);
+                      }
+                      setJourneyCursorDate(formatDateString(d));
+                    }}
+                    className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-700 dark:text-white cursor-pointer"
+                    title={journeyViewMode === 'week' ? 'Tuần sau' : 'Tháng sau'}
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJourneyCursorDate(journeyHeatmap.todayDate)}
+                    className="px-2.5 py-1 rounded-lg border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-300 text-[11px] font-semibold cursor-pointer"
+                  >
+                    Hôm nay
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Responsive Heatmap Matrix (Week Cards / Full Month Calendar / 12-Week Full-Width Grid) */}
+            <div className="space-y-2.5">
+              {journeyViewMode === 'week' && journeyPeriodGrid && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+                  {journeyPeriodGrid.cells.map((cell) => {
+                    const cls = cell.isBeforeStart
+                      ? 'bg-slate-100/70 dark:bg-white/[0.02] border-slate-200/70 dark:border-white/5 opacity-55'
+                      : cell.activityLevel === 3
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-950 dark:text-emerald-100'
+                      : cell.activityLevel === 2
+                      ? 'bg-rose-500/15 border-rose-500/50 text-rose-950 dark:text-rose-100'
+                      : cell.activityLevel === 1
+                      ? 'bg-amber-400/15 border-amber-400/50 text-amber-950 dark:text-amber-100'
+                      : cell.isAway
+                      ? 'bg-purple-500/15 border-purple-400/45 text-purple-950 dark:text-purple-100'
+                      : 'bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/10';
+                    const isFuture = cell.date > journeyHeatmap.todayDate;
+                    return (
+                      <button
+                        key={cell.date}
+                        type="button"
+                        onClick={() => {
+                          setHoveredJourneyDay(cell.date);
+                          setSelectedDate(cell.date);
+                        }}
+                        className={`min-h-[92px] p-3 rounded-2xl border text-left flex flex-col justify-between transition-all hover:scale-[1.02] cursor-pointer ${cls} ${
+                          cell.isToday ? 'ring-2 ring-rose-500 dark:ring-white' : ''
+                        } ${isFuture ? 'opacity-50 border-dashed' : ''}`}
+                      >
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          <span className="text-[11px] font-bold text-slate-600 dark:text-white/70">
+                            {cell.weekdayLabel} · {cell.date.slice(8)}/{cell.date.slice(5, 7)}
+                          </span>
+                          {cell.dayNumber > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-black/10 dark:bg-white/15 font-mono text-[10px] font-extrabold text-slate-900 dark:text-white">
+                              N{cell.dayNumber}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-2 text-[10px] font-semibold">
+                          {(cell.hasWorkout || cell.hasSport) && (
+                            <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-600 dark:text-rose-300">
+                              💪 Tập
+                            </span>
+                          )}
+                          {cell.hasMeals && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                              🍽️ Ăn
+                            </span>
+                          )}
+                          {cell.hasBodyPoint && (
+                            <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-700 dark:text-sky-300">
+                              ⚖️ Cân
+                            </span>
+                          )}
+                          {!cell.hasWorkout && !cell.hasSport && !cell.hasMeals && !cell.hasBodyPoint && (
+                            <span className="text-slate-400 dark:text-white/35">
+                              {cell.isAway ? '✈️ Away' : isFuture ? 'Sắp tới' : cell.isBeforeStart ? 'Chưa tính' : 'Nghỉ'}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {journeyViewMode === 'month' && journeyPeriodGrid && (
+                <div className="space-y-1.5">
+                  <div className="grid grid-cols-7 gap-1.5 sm:gap-2 text-center text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-white/50">
+                    {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((wLabel) => (
+                      <div key={wLabel} className="py-1">
+                        {wLabel}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+                    {journeyPeriodGrid.cells.map((cell) => {
+                      const isFuture = cell.date > journeyHeatmap.todayDate;
+                      const bgCls = !cell.inCurrentPeriod
+                        ? 'bg-slate-50/40 dark:bg-white/[0.015] border-slate-200/40 dark:border-white/[0.04] opacity-40'
+                        : cell.isBeforeStart
+                        ? 'bg-slate-100/60 dark:bg-white/[0.02] border-slate-200/60 dark:border-white/5 opacity-55'
+                        : cell.activityLevel === 3
+                        ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-950 dark:text-emerald-100'
+                        : cell.activityLevel === 2
+                        ? 'bg-rose-500/20 border-rose-500/60 text-rose-950 dark:text-rose-100'
+                        : cell.activityLevel === 1
+                        ? 'bg-amber-400/20 border-amber-400/60 text-amber-950 dark:text-amber-100'
+                        : cell.isAway
+                        ? 'bg-purple-500/20 border-purple-400/50 text-purple-950 dark:text-purple-100'
+                        : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/10';
+                      return (
+                        <button
+                          key={cell.date}
+                          type="button"
+                          onMouseEnter={() => setHoveredJourneyDay(cell.date)}
+                          onClick={() => {
+                            setHoveredJourneyDay(cell.date);
+                            setSelectedDate(cell.date);
+                          }}
+                          title={`${cell.date}${cell.dayNumber > 0 ? ` · Ngày thứ ${cell.dayNumber}` : ''}`}
+                          className={`min-h-[56px] sm:min-h-[66px] p-1.5 sm:p-2 rounded-xl border text-left flex flex-col justify-between transition-all hover:border-rose-400 cursor-pointer ${bgCls} ${
+                            cell.isToday ? 'ring-2 ring-rose-500 dark:ring-white shadow-sm' : ''
+                          } ${isFuture && cell.inCurrentPeriod ? 'opacity-50 border-dashed' : ''}`}
+                        >
+                          <div className="flex items-center justify-between gap-1 w-full">
+                            <span className="text-xs sm:text-sm font-black font-mono text-slate-900 dark:text-white leading-none">
+                              {Number(cell.date.slice(8))}
+                            </span>
+                            {cell.dayNumber > 0 && (
+                              <span className="px-1 py-0.5 rounded bg-black/10 dark:bg-white/15 font-mono text-[9px] sm:text-[10px] font-bold text-slate-800 dark:text-white leading-none">
+                                N{cell.dayNumber}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px] leading-none mt-1">
+                            {(cell.hasWorkout || cell.hasSport) && <span title="Tập luyện">💪</span>}
+                            {cell.hasMeals && <span title="Dinh dưỡng">🍽️</span>}
+                            {cell.hasBodyPoint && <span title="Cân nặng">⚖️</span>}
+                            {cell.isAway && !cell.hasWorkout && !cell.hasMeals && <span title="Away Mode">✈️</span>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {journeyViewMode === 'journey' && (
+                journeyHeatmap.journeyWeeks.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-white/15 text-center text-xs text-slate-500 dark:text-white/55">
+                    Ngày bắt đầu đang nằm sau hôm nay ({journeyHeatmap.startDate}). Chọn lại ngày bắt đầu hoặc bấm nút ngày giai đoạn để đếm từ Ngày 1.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1 zenox-scrollbar">
+                    {journeyHeatmap.journeyWeeks.map((week, wIdx) => {
+                      const firstDay = week[0];
+                      const lastDay = week[week.length - 1];
+                      return (
+                        <div
+                          key={`jwk-${wIdx}`}
+                          className="p-2.5 rounded-2xl bg-slate-50/70 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/[0.06] space-y-2"
+                        >
+                          <div className="flex items-center justify-between text-[11px] font-mono">
+                            <span className="font-bold text-slate-700 dark:text-white/85">
+                              Tuần {wIdx + 1} · Ngày {firstDay.dayNumber}–{lastDay.dayNumber}
+                            </span>
+                            <span className="text-slate-400 dark:text-white/45">
+                              {firstDay.date.slice(8)}/{firstDay.date.slice(5, 7)} → {lastDay.date.slice(8)}/{lastDay.date.slice(5, 7)}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                            {week.map((cell) => {
+                              const cls =
+                                cell.activityLevel === 3
+                                  ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-950 dark:text-emerald-100'
+                                  : cell.activityLevel === 2
+                                  ? 'bg-rose-500/20 border-rose-500/60 text-rose-950 dark:text-rose-100'
+                                  : cell.activityLevel === 1
+                                  ? 'bg-amber-400/20 border-amber-400/60 text-amber-950 dark:text-amber-100'
+                                  : cell.isAway
+                                  ? 'bg-purple-500/20 border-purple-400/50 text-purple-950 dark:text-purple-100'
+                                  : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/10 text-slate-700 dark:text-white/80';
+                              return (
+                                <button
+                                  key={cell.date}
+                                  type="button"
+                                  onMouseEnter={() => setHoveredJourneyDay(cell.date)}
+                                  onClick={() => {
+                                    setHoveredJourneyDay(cell.date);
+                                    setSelectedDate(cell.date);
+                                  }}
+                                  title={`${cell.date} · Ngày thứ ${cell.dayNumber}`}
+                                  className={`min-h-[68px] p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all hover:scale-[1.02] hover:border-rose-400 cursor-pointer ${cls} ${
+                                    cell.isToday
+                                      ? 'ring-2 ring-rose-500 dark:ring-white shadow-sm'
+                                      : cell.dayNumber === 1
+                                      ? 'ring-1 ring-indigo-500/70'
+                                      : ''
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-1 w-full">
+                                    <span className="font-mono text-xs font-black">
+                                      N{cell.dayNumber}
+                                    </span>
+                                    <span className="font-mono text-[10px] opacity-70">
+                                      {cell.date.slice(8)}/{cell.date.slice(5, 7)}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1 text-[10px] font-semibold mt-1">
+                                    {(cell.hasWorkout || cell.hasSport) && <span>💪 Tập</span>}
+                                    {cell.hasMeals && <span>🍽️ Ăn</span>}
+                                    {cell.hasBodyPoint && <span>⚖️ Cân</span>}
+                                    {!cell.hasWorkout && !cell.hasSport && !cell.hasMeals && !cell.hasBodyPoint && (
+                                      <span className="opacity-55">
+                                        {cell.isAway ? '✈️ Away' : cell.isToday ? 'Hôm nay' : 'Nghỉ'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 dark:text-slate-400 pt-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-emerald-500 inline-block" /> Tập + Ăn đủ</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-rose-500 inline-block" /> Có tập luyện</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-amber-400 inline-block" /> Chỉ log ăn/cân</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-purple-500/60 inline-block" /> Away</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-slate-200 dark:bg-white/10 inline-block" /> Nghỉ / Chưa log</span>
+                </div>
+
+                {hoveredJourneyCell && (
+                  <span className="font-mono text-[11px] text-slate-700 dark:text-white/80">
+                    {hoveredJourneyCell.date}
+                    {hoveredJourneyCell.dayNumber > 0 ? ` (Ngày thứ ${hoveredJourneyCell.dayNumber})` : ' (Trước ngày bắt đầu)'}
+                    {hoveredJourneyCell.hasWorkout || hoveredJourneyCell.hasSport ? ' · Đã tập' : ''}
+                    {hoveredJourneyCell.hasMeals ? ' · Đã ghi bữa' : ''}
+                    {hoveredJourneyCell.hasBodyPoint ? ' · Đã cân' : ''}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Daily Health Score Banner */}
       <div className="bg-white dark:bg-white/[0.03] backdrop-blur-xl p-4 md:p-5 rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-xs mb-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
         <div className="flex items-center gap-4">
@@ -889,6 +1463,176 @@ export const HealthView: React.FC<HealthViewProps> = ({
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Phase 1 Command Center: Cronometer Energy Balance + Tracked 10D Weight Band + Fix Next Queue */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
+        {/* Left: Cronometer Dynamic Energy Balance + 10-Day Bodyweight Window */}
+        <div className="lg:col-span-7 bg-white dark:bg-[#070205] backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500">
+                Cronometer Energy Balance · {selectedDate}
+              </span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
+                Cân Bằng Năng Lượng Động (BMR + Tập + TEF vs Nạp)
+              </h3>
+            </div>
+            <span
+              className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border ${
+                dailyEnergyBalance.netKcal <= 0
+                  ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
+                  : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+              }`}
+            >
+              Net: {dailyEnergyBalance.netKcal > 0 ? '+' : ''}
+              {dailyEnergyBalance.netKcal.toLocaleString('vi-VN')} kcal
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5 text-xs">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08]">
+              <div className="text-[10px] uppercase text-slate-400 font-semibold">Đã nạp</div>
+              <div className="text-lg font-black font-mono text-sky-600 dark:text-sky-400 mt-0.5">
+                {dailyEnergyBalance.consumedKcal.toLocaleString('vi-VN')}
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono">
+                Mục tiêu: {dailyEnergyBalance.targetKcal.toLocaleString('vi-VN')} kcal
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08]">
+              <div className="text-[10px] uppercase text-slate-400 font-semibold">Tổng tiêu hao</div>
+              <div className="text-lg font-black font-mono text-rose-600 dark:text-rose-400 mt-0.5">
+                {dailyEnergyBalance.totalBurnedKcal.toLocaleString('vi-VN')}
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono truncate">
+                BMR {dailyEnergyBalance.bmrKcal} + Tập {dailyEnergyBalance.exerciseBurnKcal} + TEF {dailyEnergyBalance.tefKcal}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08]">
+              <div className="text-[10px] uppercase text-slate-400 font-semibold">Quỹ còn lại</div>
+              <div
+                className={`text-lg font-black font-mono mt-0.5 ${
+                  dailyEnergyBalance.remainingBudgetKcal >= 0
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-amber-500'
+                }`}
+              >
+                {dailyEnergyBalance.remainingBudgetKcal >= 0 ? '+' : ''}
+                {dailyEnergyBalance.remainingBudgetKcal.toLocaleString('vi-VN')}
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono">
+                Bước chân: +{dailyEnergyBalance.stepsBurnKcal} kcal
+              </div>
+            </div>
+          </div>
+
+          <StackedBar
+            segments={[
+              { label: 'BMR', value: dailyEnergyBalance.bmrKcal, color: '#e11d48' },
+              { label: 'Nền NEAT', value: dailyEnergyBalance.baselineActivityKcal, color: '#f59e0b' },
+              { label: 'Bước chân', value: dailyEnergyBalance.stepsBurnKcal, color: '#0ea5e9' },
+              { label: 'Tập luyện', value: dailyEnergyBalance.exerciseBurnKcal, color: '#10b981' },
+              { label: 'TEF 10%', value: dailyEnergyBalance.tefKcal, color: '#a855f7' },
+            ]}
+            height={8}
+          />
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500 dark:text-white/55 font-mono">
+            {[
+              { label: 'BMR', val: dailyEnergyBalance.bmrKcal, color: '#e11d48' },
+              { label: 'NEAT', val: dailyEnergyBalance.baselineActivityKcal, color: '#f59e0b' },
+              { label: 'Bước', val: dailyEnergyBalance.stepsBurnKcal, color: '#0ea5e9' },
+              { label: 'Tập', val: dailyEnergyBalance.exerciseBurnKcal, color: '#10b981' },
+              { label: 'TEF', val: dailyEnergyBalance.tefKcal, color: '#a855f7' },
+            ].map((seg) => (
+              <span key={seg.label} className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: seg.color }} />
+                <span>{seg.label}: {seg.val}</span>
+              </span>
+            ))}
+          </div>
+
+          <div className="pt-2.5 border-t border-slate-200 dark:border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <span className="font-semibold text-slate-600 dark:text-white/70">
+              10-Day Weight Band (Tracked.gg):
+            </span>
+            <div className="flex flex-wrap items-center gap-3 font-mono">
+              <span className="text-sky-500">Low: <strong>{weightWindowStats.tenDayLowKg}kg</strong></span>
+              <span className="text-emerald-500">EMA: <strong>{weightWindowStats.currentEmaKg}kg</strong></span>
+              <span className="text-amber-500">High: <strong>{weightWindowStats.tenDayHighKg}kg</strong></span>
+              <span className="text-slate-400">
+                ({weightWindowStats.weeklyDeltaKg > 0 ? '+' : ''}{weightWindowStats.weeklyDeltaKg} kg/tuần)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Tracked.gg "Fix Next" Action Queue */}
+        <div className="lg:col-span-5 bg-white dark:bg-[#070205] backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 p-4 sm:p-5 shadow-xs flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500">
+                Tracked.gg Fix Next Queue
+              </span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
+                Việc Cần Xử Lý Ngay ({fixNextActions.length})
+              </h3>
+            </div>
+          </div>
+
+          {fixNextActions.length === 0 ? (
+            <div className="flex-1 flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-600 dark:text-emerald-300">
+              <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+              <span>
+                Mọi chỉ số dinh dưỡng, volume cơ bắp và lịch tập trên Lịch đều đang tối ưu, không có xung đột cần xử lý.
+              </span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {fixNextActions.map((act) => (
+                <div
+                  key={act.id}
+                  className={`p-3 rounded-xl border flex items-start justify-between gap-2.5 text-xs ${
+                    act.severity === 'high'
+                      ? 'bg-rose-500/10 border-rose-500/35'
+                      : act.severity === 'medium'
+                      ? 'bg-amber-500/10 border-amber-500/30'
+                      : 'bg-sky-500/10 border-sky-500/25'
+                  }`}
+                >
+                  <div className="flex items-start gap-2 min-w-0">
+                    <AlertTriangle
+                      className={`w-4 h-4 shrink-0 mt-0.5 ${
+                        act.severity === 'high'
+                          ? 'text-rose-500'
+                          : act.severity === 'medium'
+                          ? 'text-amber-500'
+                          : 'text-sky-500'
+                      }`}
+                    />
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 dark:text-white leading-snug">
+                        {act.title}
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-white/60 mt-0.5 leading-relaxed">
+                        {act.detail}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubTab(act.targetTab)}
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-white/15 hover:bg-slate-800 dark:hover:bg-white/25 text-white text-[11px] font-bold shrink-0 cursor-pointer transition-colors"
+                  >
+                    {act.ctaLabel}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -961,6 +1705,8 @@ export const HealthView: React.FC<HealthViewProps> = ({
               {numericInput('sleepHours', lang === 'vi' ? 'Giấc ngủ' : 'Sleep', 'h', 0.1, '7.5')}
               {numericInput('steps', lang === 'vi' ? 'Số bước' : 'Steps', 'b', 100, '8000')}
               {numericInput('waterMl', lang === 'vi' ? 'Nước' : 'Water', 'ml', 50, '2500')}
+              {numericInput('restingHrBpm', lang === 'vi' ? 'Nhịp tim nghỉ' : 'Resting HR', 'bpm', 1, '60')}
+              {numericInput('stressScore', lang === 'vi' ? 'Mức căng thẳng (1-5)' : 'Stress (1-5)', '/5', 1, '2')}
             </div>
 
             <div className="flex items-center gap-2 mt-3">
@@ -999,14 +1745,6 @@ export const HealthView: React.FC<HealthViewProps> = ({
                   {macroTotal > 0 ? `${macroTotal} kcal` : `${effectiveLog.caloriesIn || 0} kcal`}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowMacroPromptModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-[11px] font-bold shadow-xs cursor-pointer transition-colors"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? '⚡ Nhập Prompt Macro' : '⚡ Prompt Macro'}</span>
-              </button>
             </div>
 
             {/* ZENOX Macro Ring Visualization */}
@@ -1441,13 +2179,6 @@ export const HealthView: React.FC<HealthViewProps> = ({
       </div>
       </div>
       )}
-      {/* Gemini Macro Modal */}
-      <GeminiMacroModal
-        isOpen={showMacroPromptModal}
-        onClose={() => setShowMacroPromptModal(false)}
-        onApplyGeminiMacros={handleApplyMacroPrompt}
-        selectedDate={selectedDate}
-      />
     </div>
   );
 };

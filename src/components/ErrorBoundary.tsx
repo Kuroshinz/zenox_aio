@@ -35,6 +35,8 @@ export class ErrorBoundary extends Component<Props, State> {
       localStorage.removeItem('gcal_active_user');
       localStorage.removeItem('gcal_real_access_token');
       localStorage.removeItem('gcal_real_token_expires_at');
+      localStorage.removeItem('zenox_auth_session');
+      sessionStorage.removeItem('zenox_workspace_entered');
     } catch {}
     window.location.reload();
   };

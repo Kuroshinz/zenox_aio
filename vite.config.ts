@@ -1,16 +1,43 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
+  const rootDir = import.meta.dirname;
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
-        '@designcodeio/threeui/style.css': path.resolve(__dirname, 'src/shaders/threeui.css'),
-        '@designcodeio/threeui': path.resolve(__dirname, 'src/shaders/index.ts'),
+        '@': path.resolve(rootDir, '.'),
+        '@designcodeio/threeui/style.css': path.resolve(rootDir, 'src/shaders/threeui.css'),
+        '@designcodeio/threeui': path.resolve(rootDir, 'src/shaders/index.ts'),
+      },
+    },
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              {
+                name: 'firebase-firestore',
+                test: /node_modules[\\/]@firebase[\\/]firestore[\\/]/,
+              },
+              {
+                name: 'firebase',
+                test: /node_modules[\\/](?:firebase|@firebase)[\\/]/,
+              },
+              {
+                name: 'react-vendor',
+                test: /node_modules[\\/](?:react|react-dom|scheduler)[\\/]/,
+              },
+              {
+                name: 'fitness-core',
+                test: /src[\\/]utils[\\/]fitnessMetrics\.ts/,
+              },
+            ],
+          },
+        },
       },
     },
     server: {

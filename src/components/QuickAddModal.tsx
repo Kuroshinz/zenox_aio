@@ -1,6 +1,11 @@
-import React, { useState, useMemo } from 'react';
-import { X, Sparkles, Clock, Calendar as CalIcon, ArrowRight } from 'lucide-react';
-import { parseNaturalLanguageInput } from '../utils/calendarUtils';
+import React, { useState, useMemo, useEffect } from 'react';
+import { X, Sparkles, Clock, Calendar as CalIcon, ArrowRight, AlertTriangle } from 'lucide-react';
+import {
+  parseNaturalLanguageInput,
+  findConflictingEvents,
+  resolveNonConflictingSlot,
+  timeToMinutes,
+} from '../utils/calendarUtils';
 import { CalendarEvent } from '../types/calendar';
 
 interface QuickAddModalProps {
@@ -8,6 +13,7 @@ interface QuickAddModalProps {
   onClose: () => void;
   onAddEvent: (event: CalendarEvent) => void;
   currentDate: Date;
+  events?: CalendarEvent[];
   lang: 'vi' | 'en';
 }
 
@@ -16,14 +22,50 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   onClose,
   onAddEvent,
   currentDate,
+  events = [],
   lang,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [overrideSlot, setOverrideSlot] = useState<{ startTime: string; endTime: string } | null>(null);
 
   const parsed = useMemo(() => {
     if (!inputText.trim()) return null;
     return parseNaturalLanguageInput(inputText, currentDate);
   }, [inputText, currentDate]);
+
+  useEffect(() => {
+    setOverrideSlot(null);
+  }, [inputText, isOpen]);
+
+  const effectiveStart = overrideSlot?.startTime ?? parsed?.startTime ?? '';
+  const effectiveEnd = overrideSlot?.endTime ?? parsed?.endTime ?? '';
+
+  const conflictInfo = useMemo(() => {
+    if (!parsed) return { conflicts: [] as CalendarEvent[], suggestion: null as { startTime: string; endTime: string } | null };
+    const conflicts = findConflictingEvents(
+      {
+        startDate: parsed.date,
+        startTime: effectiveStart,
+        endTime: effectiveEnd,
+        allDay: false,
+      },
+      events
+    );
+    if (conflicts.length === 0) {
+      return { conflicts: [], suggestion: null };
+    }
+    const dur = Math.max(15, timeToMinutes(effectiveEnd) - timeToMinutes(effectiveStart));
+    const resolution = resolveNonConflictingSlot(parsed.date, parsed.startTime, dur, events, {
+      minHour: 6,
+      maxHour: 22,
+      bufferMinutes: 0,
+    });
+    const suggestion =
+      resolution.status === 'shifted'
+        ? { startTime: resolution.startTime, endTime: resolution.endTime }
+        : null;
+    return { conflicts, suggestion };
+  }, [parsed, effectiveStart, effectiveEnd, events]);
 
   if (!isOpen) return null;
 
@@ -46,12 +88,12 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     if (!parsed || !parsed.title.trim()) return;
 
     const newEvent: CalendarEvent = {
-      id: `ev-qa-${Date.now()}`,
+      id: `usr-qa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       title: parsed.title,
       startDate: parsed.date,
-      startTime: parsed.startTime,
+      startTime: effectiveStart,
       endDate: parsed.date,
-      endTime: parsed.endTime,
+      endTime: effectiveEnd,
       allDay: false,
       calendarId: 'personal',
       color: '#039BE5',
@@ -61,6 +103,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
     onAddEvent(newEvent);
     setInputText('');
+    setOverrideSlot(null);
     onClose();
   };
 
@@ -100,23 +143,54 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
           {/* Parsed Live Preview */}
           {parsed && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700 text-xs space-y-1.5">
-              <span className="font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-[10px]">
-                {lang === 'vi' ? 'Kết quả phân tích:' : 'Parsed Result:'}
-              </span>
-              <div className="font-semibold text-gray-800 dark:text-gray-100 text-sm">
-                {parsed.title}
-              </div>
-              <div className="flex items-center gap-3 text-gray-600 dark:text-gray-300 font-mono">
-                <span className="flex items-center gap-1">
-                  <CalIcon className="w-3.5 h-3.5 text-blue-500" />
-                  {parsed.date}
+            <div className="space-y-2">
+              <div className="p-3 bg-gray-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700 text-xs space-y-1.5">
+                <span className="font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-[10px]">
+                  {lang === 'vi' ? 'Kết quả phân tích:' : 'Parsed Result:'}
                 </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-blue-500" />
-                  {parsed.startTime} – {parsed.endTime}
-                </span>
+                <div className="font-semibold text-gray-800 dark:text-gray-100 text-sm">
+                  {parsed.title}
+                </div>
+                <div className="flex items-center gap-3 text-gray-600 dark:text-gray-300 font-mono">
+                  <span className="flex items-center gap-1">
+                    <CalIcon className="w-3.5 h-3.5 text-blue-500" />
+                    {parsed.date}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-blue-500" />
+                    {effectiveStart} – {effectiveEnd}
+                  </span>
+                  {overrideSlot && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-sans font-semibold">
+                      {lang === 'vi' ? 'Đã dời né trùng' : 'Shifted'}
+                    </span>
+                  )}
+                </div>
               </div>
+
+              {conflictInfo.conflicts.length > 0 && (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-xs text-amber-800 dark:text-amber-200 space-y-2">
+                  <div className="flex items-start gap-2 font-semibold">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <span>
+                      {lang === 'vi'
+                        ? `Cảnh báo: Khung giờ này trùng với ${conflictInfo.conflicts.map((c) => `"${c.title}" (${c.startTime}–${c.endTime})`).join(', ')}`
+                        : `Warning: Overlaps with ${conflictInfo.conflicts.map((c) => `"${c.title}" (${c.startTime}–${c.endTime})`).join(', ')}`}
+                    </span>
+                  </div>
+                  {conflictInfo.suggestion && (
+                    <button
+                      type="button"
+                      onClick={() => setOverrideSlot(conflictInfo.suggestion)}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
+                    >
+                      {lang === 'vi'
+                        ? `Chuyển sang giờ trống gần nhất: ${conflictInfo.suggestion.startTime} – ${conflictInfo.suggestion.endTime}`
+                        : `Use nearest open slot: ${conflictInfo.suggestion.startTime} – ${conflictInfo.suggestion.endTime}`}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -151,9 +225,21 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             <button
               type="submit"
               disabled={!parsed || !parsed.title.trim()}
-              className="flex items-center gap-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              className={`flex items-center gap-1.5 px-5 py-2 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
+                conflictInfo.conflicts.length > 0
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              <span>{lang === 'vi' ? 'Tạo sự kiện' : 'Add event'}</span>
+              <span>
+                {conflictInfo.conflicts.length > 0
+                  ? lang === 'vi'
+                    ? 'Vẫn tạo (trùng lịch)'
+                    : 'Add anyway (overlap)'
+                  : lang === 'vi'
+                  ? 'Tạo sự kiện'
+                  : 'Add event'}
+              </span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

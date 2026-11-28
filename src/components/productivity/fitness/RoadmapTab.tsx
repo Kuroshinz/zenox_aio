@@ -41,6 +41,7 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  RotateCcw,
 } from 'lucide-react';
 import {
   BodyPoint,
@@ -65,7 +66,9 @@ import {
   MESOCYCLE_PHASES,
   generateCtgPeriodizedRoadmap,
   calculatePhaseNutrition,
+  parseVnDate,
 } from '../../../utils/fitnessMetrics';
+export { parseVnDate };
 import { notifySuccess } from '../../../utils/notify';
 import { CtgTrajectoryChart } from './CtgTrajectoryChart';
 import { CtgWeeklyAdvisor } from './CtgWeeklyAdvisor';
@@ -99,24 +102,6 @@ interface RoadmapTabProps {
   onBatchScheduleToCalendar?: (events: CalendarEvent[]) => Promise<void> | void;
   onScheduleSessionToCalendar?: (title: string, date: string, color: string) => void;
   onClearWorkoutEventsFromCalendar?: () => Promise<number> | number | void;
-}
-
-export function parseVnDate(str: string): Date {
-  if (!str || typeof str !== 'string') return new Date(NaN);
-  const trimmed = str.trim();
-  const parts = trimmed.split(/[/.-]/);
-  if (parts.length === 3) {
-    const p0 = parseInt(parts[0], 10);
-    const p1 = parseInt(parts[1], 10);
-    const p2 = parseInt(parts[2], 10);
-    if (isNaN(p0) || isNaN(p1) || isNaN(p2)) return new Date(NaN);
-    if (parts[0].length === 4) {
-      return new Date(p0, p1 - 1, p2);
-    }
-    const year = p2 < 100 ? 2000 + p2 : p2;
-    return new Date(year, p1 - 1, p0);
-  }
-  return new Date(trimmed);
 }
 
 export function getPhaseStatus(phase: CtgRoadmapPhase, activePhaseId?: string): 'completed' | 'current' | 'upcoming' {
@@ -174,6 +159,15 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
   const [carbCyclingMode, setCarbCyclingMode] = useState<'standard' | 'carb_cycling'>('standard');
   const [isCalendarSyncModalOpen, setIsCalendarSyncModalOpen] = useState<boolean>(false);
   const [isCheckinExportModalOpen, setIsCheckinExportModalOpen] = useState<boolean>(false);
+  const [confirmPhaseSwitch, setConfirmPhaseSwitch] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('gcal_ctg_confirm_phase_switch');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+  const [pendingSwitchPhase, setPendingSwitchPhase] = useState<CtgRoadmapPhase | null>(null);
 
   // Wizard state (4-Step CTG Generator)
   const [wizardStep, setWizardStep] = useState<number>(0);
@@ -214,6 +208,16 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
 
   const firstPhase = phases[0] || null;
   const lastPhase = phases[phases.length - 1] || null;
+  const activePhaseIndex = useMemo(
+    () => (activePhase ? phases.findIndex((p) => p.id === activePhase.id) : -1),
+    [phases, activePhase]
+  );
+  const previousPhase = useMemo(() => {
+    if (!activeRoadmap?.previousPhaseId || !activePhase) return null;
+    if (activeRoadmap.previousPhaseId === activePhase.id) return null;
+    return phases.find((p) => p.id === activeRoadmap.previousPhaseId) || null;
+  }, [phases, activeRoadmap?.previousPhaseId, activePhase]);
+  const adjacentPrevPhase = activePhaseIndex > 0 ? phases[activePhaseIndex - 1] : null;
 
   // Sorting InBody readings to obtain latest measurements
   const sortedBodyPoints = useMemo(() => {
@@ -371,6 +375,9 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
             fat: phase.macros.fat,
           },
         },
+        appliedTdeeKcal: undefined,
+        appliedTdeeAt: undefined,
+        appliedTdeeStartWeightKg: undefined,
       });
     }
     setAppliedBanner(
@@ -383,8 +390,19 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
     );
   };
 
-  const handleSetCurrentPhase = (phaseId: string) => {
+  const commitPhaseSwitch = (phaseId: string, opts?: { isRevert?: boolean }) => {
     if (!activeRoadmap) return;
+    const prevId =
+      activeRoadmap.activePhaseId && activeRoadmap.activePhaseId !== phaseId
+        ? activeRoadmap.activePhaseId
+        : activeRoadmap.previousPhaseId;
+
+    const currentHandled = activeRoadmap.autoHandledPhaseIds || [];
+    const nextHandled =
+      opts?.isRevert && activePhase?.id
+        ? Array.from(new Set([...currentHandled, activePhase.id]))
+        : currentHandled;
+
     const updatedPhases = phases.map((p) => ({
       ...p,
       isCurrent: p.id === phaseId,
@@ -393,13 +411,36 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
       ...activeRoadmap,
       phases: updatedPhases,
       activePhaseId: phaseId,
+      previousPhaseId: prevId,
+      autoHandledPhaseIds: nextHandled,
     };
-    onUpdateCtgPeriodizedRoadmap?.(updatedRoadmap);
-    onSetActiveRoadmapPhase?.(phaseId);
+    if (onUpdateCtgPeriodizedRoadmap) {
+      onUpdateCtgPeriodizedRoadmap(updatedRoadmap);
+    } else {
+      onSetActiveRoadmapPhase?.(phaseId);
+    }
     const selected = updatedPhases.find((p) => p.id === phaseId);
     if (selected) {
       handleApplySinglePhase(selected);
+      if (opts?.isRevert) {
+        notifySuccess(
+          'Đã quay lại giai đoạn trước!',
+          `Đã khôi phục "${selected.name}" làm giai đoạn đang theo dõi.`
+        );
+      }
     }
+    setPendingSwitchPhase(null);
+  };
+
+  const handleSetCurrentPhase = (phaseId: string) => {
+    if (!activeRoadmap || phaseId === activePhase?.id) return;
+    const target = phases.find((p) => p.id === phaseId);
+    if (!target) return;
+    if (confirmPhaseSwitch) {
+      setPendingSwitchPhase(target);
+      return;
+    }
+    commitPhaseSwitch(phaseId);
   };
 
   const handleSyncPhaseWithCurrentWeight = (phase: CtgRoadmapPhase) => {
@@ -573,7 +614,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
     const curLbm = Math.max(15, Math.round(curW * (1 - curBf / 100) * 10) / 10);
     const curFfmi = Math.round(((curLbm / hSq) + 6.1 * (1.8 - hMeter)) * 10) / 10;
 
-    const clampedTargetBf = Math.max(isFemale ? 12 : 6, Math.min(35, Number(wizTargetBfPct) || (isFemale ? 20.0 : 12.0)));
+    const clampedTargetBf = Math.max(isFemale ? 12 : 6, Math.min(42, Number(wizTargetBfPct) || (isFemale ? 20.0 : 12.0)));
     const clampedTargetFfmi = Math.max(15, Math.min(isFemale ? 21.2 : 25.0, Number(wizTargetFfmi) || (isFemale ? 19.5 : 22.0)));
     const targetLbm = Math.round(Math.max(20, (clampedTargetFfmi - 6.1 * (1.8 - hMeter)) * hSq) * 10) / 10;
     const targetW = Math.round((targetLbm / (1 - clampedTargetBf / 100)) * 10) / 10;
@@ -847,7 +888,29 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-center">
+                <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
+                  {previousPhase ? (
+                    <button
+                      type="button"
+                      onClick={() => commitPhaseSwitch(previousPhase.id, { isRevert: true })}
+                      className="px-3 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                      title={`Quay lại giai đoạn trước vừa chuyển (${previousPhase.name}) không cần xác nhận`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Quay lại: {previousPhase.name}</span>
+                    </button>
+                  ) : adjacentPrevPhase ? (
+                    <button
+                      type="button"
+                      onClick={() => handleSetCurrentPhase(adjacentPrevPhase.id)}
+                      className="px-3 py-1.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+                      title={`Chuyển về giai đoạn kề trước (#${activePhaseIndex}: ${adjacentPrevPhase.name})`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Giai đoạn trước (#{activePhaseIndex})</span>
+                    </button>
+                  ) : null}
+
                   <button
                     type="button"
                     onClick={() => handleSyncPhaseWithCurrentWeight(activePhase)}
@@ -1162,8 +1225,68 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
                   <span>Chi Tiết Chu Kỳ ({phases.length} Giai Đoạn)</span>
                 </h4>
                 <p className="text-xs text-white/50">
-                  Phân chia dinh dưỡng, mục tiêu thể trạng và thời gian từng giai đoạn
+                  Phân chia dinh dưỡng, mục tiêu thể trạng và thời gian từng giai đoạn · Tự động chuyển khi đến ngày bắt đầu
                 </p>
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !confirmPhaseSwitch;
+                      setConfirmPhaseSwitch(next);
+                      try {
+                        localStorage.setItem('gcal_ctg_confirm_phase_switch', String(next));
+                      } catch {}
+                    }}
+                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors flex items-center gap-1.5 ${
+                      confirmPhaseSwitch
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                        : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
+                    }`}
+                    title="Hỏi xác nhận trước khi chuyển giai đoạn thủ công để tránh bấm nhầm"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>Xác nhận khi đổi tay: {confirmPhaseSwitch ? 'Bật' : 'Tắt'}</span>
+                  </button>
+
+                  {activeRoadmap && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextAuto = activeRoadmap.autoAdvanceByDate === false;
+                        onUpdateCtgPeriodizedRoadmap?.({
+                          ...activeRoadmap,
+                          autoAdvanceByDate: nextAuto,
+                        });
+                        notifySuccess(
+                          nextAuto ? 'Đã bật tự động chuyển giai đoạn!' : 'Đã tạm tắt tự động chuyển giai đoạn',
+                          nextAuto
+                            ? 'Khi đến ngày bắt đầu của giai đoạn kế tiếp, hệ thống sẽ tự động chuyển không cần hỏi.'
+                            : 'Bạn sẽ tự chọn thời điểm chuyển giai đoạn.'
+                        );
+                      }}
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors flex items-center gap-1.5 ${
+                        activeRoadmap.autoAdvanceByDate !== false
+                          ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
+                          : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
+                      }`}
+                      title="Đến ngày bắt đầu giai đoạn mới tự động chuyển mà không hỏi xác nhận"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>Tự qua khi đến ngày: {activeRoadmap.autoAdvanceByDate !== false ? 'Bật' : 'Tắt'}</span>
+                    </button>
+                  )}
+
+                  {previousPhase && (
+                    <button
+                      type="button"
+                      onClick={() => commitPhaseSwitch(previousPhase.id, { isRevert: true })}
+                      className="px-2.5 py-1 rounded-lg border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Quay lại: {previousPhase.name}</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Bộ lọc giai đoạn */}
@@ -1485,11 +1608,12 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-white/60 font-semibold">% Mỡ cơ thể hiện tại</label>
+                    <label className="text-white/60 font-semibold">% Mỡ ước chừng (không bắt buộc chính xác)</label>
                     <input
                       type="number"
                       value={wizBodyFat}
                       onChange={(e) => setWizBodyFat(e.target.value)}
+                      placeholder="VD: ~18"
                       className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white font-mono font-bold focus:outline-none focus:border-rose-500"
                     />
                   </div>
@@ -1531,22 +1655,22 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
               <div className="space-y-4 animate-fadeIn text-xs">
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="text-white/80 font-bold">% Mỡ Mục Tiêu (Target Body Fat)</label>
-                    <span className="text-base font-extrabold font-mono text-orange-400">{wizTargetBfPct}%</span>
+                    <label className="text-white/80 font-bold">% Mỡ Mục Tiêu Tham Khảo (Target Body Fat)</label>
+                    <span className="text-base font-extrabold font-mono text-orange-400">~{wizTargetBfPct}%</span>
                   </div>
                   <input
                     type="range"
                     min={wizSex === 'female' ? 14 : 8}
-                    max={wizSex === 'female' ? 30 : 25}
+                    max={wizSex === 'female' ? 38 : 35}
                     step={0.5}
                     value={wizTargetBfPct}
                     onChange={(e) => setWizTargetBfPct(Number(e.target.value))}
                     className="w-full accent-rose-500 cursor-pointer"
                   />
                   <div className="flex justify-between text-[10px] text-white/40 font-mono">
-                    <span>{wizSex === 'female' ? '14% (Khô lean)' : '8% (Khô lean)'}</span>
-                    <span>{wizSex === 'female' ? '20% (Lý tưởng nữ)' : '12% (Lý tưởng nam)'}</span>
-                    <span>{wizSex === 'female' ? '30% (Đậm người)' : '25% (Đậm người)'}</span>
+                    <span>{wizSex === 'female' ? '~14% (Gọn lean)' : '~8% (Gọn lean)'}</span>
+                    <span>{wizSex === 'female' ? '~22% (Tham khảo nữ)' : '~15% (Tham khảo nam)'}</span>
+                    <span>{wizSex === 'female' ? '38%' : '35%'}</span>
                   </div>
                 </div>
 
@@ -2222,6 +2346,7 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
           plannedSessions={plannedSessions}
           onBatchSchedule={onBatchScheduleToCalendar}
           onClearWorkoutEvents={onClearWorkoutEventsFromCalendar}
+          awayMode={profile.awayMode}
           lang={lang}
         />
       )}
@@ -2236,6 +2361,70 @@ export const RoadmapTab: React.FC<RoadmapTabProps> = ({
         profile={profile}
         lang={lang}
       />
+
+      {/* MODAL 8: XÁC NHẬN CHUYỂN GIAI ĐOẠN THỦ CÔNG (TRÁNH BẤM NHẦM) */}
+      {pendingSwitchPhase && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-[#0c050d] border border-amber-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white">Xác Nhận Đổi Giai Đoạn?</h3>
+                <p className="text-xs text-white/60 mt-0.5">
+                  Mục tiêu Calo &amp; Macro ngày sẽ được đồng bộ theo giai đoạn mới.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2 text-xs">
+              {activePhase && (
+                <div className="flex items-center justify-between text-white/60">
+                  <span>Đang theo dõi:</span>
+                  <span className="font-semibold text-white">
+                    {activePhase.name} ({activePhase.targetKcal} kcal)
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-rose-300">
+                <span>Chuyển sang:</span>
+                <span className="font-bold">
+                  {pendingSwitchPhase.name} ({pendingSwitchPhase.targetKcal} kcal)
+                </span>
+              </div>
+              <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] text-white/70">
+                <span>{pendingSwitchPhase.startDate} – {pendingSwitchPhase.endDate}</span>
+                <span>
+                  P {pendingSwitchPhase.macros.protein}g · C {pendingSwitchPhase.macros.carbs}g · F {pendingSwitchPhase.macros.fat}g
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-white/45">
+              Mẹo: Sau khi chuyển, bạn vẫn có thể bấm nút <strong className="text-amber-300">Quay lại giai đoạn trước</strong> bất kỳ lúc nào nếu muốn hoàn tác.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPendingSwitchPhase(null)}
+                className="px-4 py-2 rounded-xl border border-white/15 text-xs font-semibold text-white/70 hover:text-white hover:bg-white/5 cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => commitPhaseSwitch(pendingSwitchPhase.id)}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Xác Nhận Chuyển Giai Đoạn</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -21,6 +21,7 @@ interface MonthViewProps {
   onCellClick: (dateStr: string, clientX?: number, clientY?: number) => void;
   onOpenDayPlanner?: (dateStr: string) => void;
   onMoveEvent?: (eventId: string, newDateStr: string) => void;
+  weekStartsOnMonday?: boolean;
   lang: 'vi' | 'en';
 }
 
@@ -32,6 +33,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
   onCellClick,
   onOpenDayPlanner,
   onMoveEvent,
+  weekStartsOnMonday = false,
   lang,
 }) => {
   const [overflowDate, setOverflowDate] = useState<string | null>(null);
@@ -41,10 +43,14 @@ export const MonthView: React.FC<MonthViewProps> = ({
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-  const days = getMonthDays(year, month, false);
+  const days = getMonthDays(year, month, weekStartsOnMonday);
 
-  const weekdayLabelsVi = ['CN', 'THỨ 2', 'THỨ 3', 'THỨ 4', 'THỨ 5', 'THỨ 6', 'THỨ 7'];
-  const weekdayLabelsEn = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const weekdayLabelsVi = weekStartsOnMonday
+    ? ['THỨ 2', 'THỨ 3', 'THỨ 4', 'THỨ 5', 'THỨ 6', 'THỨ 7', 'CN']
+    : ['CN', 'THỨ 2', 'THỨ 3', 'THỨ 4', 'THỨ 5', 'THỨ 6', 'THỨ 7'];
+  const weekdayLabelsEn = weekStartsOnMonday
+    ? ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+    : ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
   const weekdays = lang === 'vi' ? weekdayLabelsVi : weekdayLabelsEn;
 
   // Filter events by visible categories

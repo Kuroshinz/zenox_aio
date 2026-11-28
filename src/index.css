@@ -3,17 +3,37 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+  --font-sans: 'Be Vietnam Pro', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-gray-750: #262c36;
   --color-gray-850: #1a1e24;
   --color-gray-950: #0d1117;
 }
 
 @layer base {
+  html {
+    height: 100%;
+    overscroll-behavior-y: none;
+  }
   body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
     background-color: #060103;
+  }
+  button,
+  a {
+    touch-action: manipulation;
+  }
+}
+
+@media all and (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 }
 
@@ -904,5 +924,44 @@
   animation: cyberSheen 3.2s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* =========================================================================
+   ZENOX UNSLOP MOTION UTILITIES (Calm, GPU-composited, accessible)
+   ========================================================================= */
 
+@keyframes zenoxFadeRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.zenox-tab-enter {
+  animation: zenoxFadeRise 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.zenox-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.zenox-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zenox-tab-enter,
+  .zenox-reveal {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
 

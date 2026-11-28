@@ -28,14 +28,24 @@ import {
 import {
   ACTIVITY_LABEL,
   ActivityLevel,
+  AwayBreakPeriod,
   BodyPoint,
   CtgPeriodizedRoadmap,
   CtgProfile,
   GOAL_LABEL,
   Goal,
+  HealthDayLog,
+  NutritionSettings,
   Sex,
 } from '../../../types/productivity';
-import { ffmi, leanMassKg, fatMassKg, ffmiCategory, tdee } from '../../../utils/fitnessMetrics';
+import {
+  ffmi,
+  leanMassKg,
+  fatMassKg,
+  ffmiCategory,
+  tdee,
+  calculateWeightWindowStats,
+} from '../../../utils/fitnessMetrics';
 
 interface ProfileTabProps {
   profile: CtgProfile;
@@ -44,6 +54,8 @@ interface ProfileTabProps {
   lang: 'vi' | 'en';
   onUpdateProfile: (patch: Partial<CtgProfile>) => void;
   bodyPoints?: BodyPoint[];
+  healthLogs?: HealthDayLog[];
+  nutritionSettings?: NutritionSettings;
   ctgPeriodizedRoadmap?: CtgPeriodizedRoadmap | null;
   savedCtgRoadmaps?: CtgPeriodizedRoadmap[];
   onNavigateTab?: (tab: 'overview' | 'roadmap' | 'inbody' | 'training' | 'nutrition' | 'profile') => void;
@@ -58,6 +70,8 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
   lang,
   onUpdateProfile,
   bodyPoints = [],
+  healthLogs = [],
+  nutritionSettings,
   ctgPeriodizedRoadmap,
   savedCtgRoadmaps = [],
   onNavigateTab,
@@ -78,6 +92,19 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
   const [targetBodyFatPct, setTargetBodyFatPct] = useState(String(profile.targetBodyFatPct || 15));
   const [stepGoal, setStepGoal] = useState(String(profile.stepGoal || 8000));
 
+  // Away / Vacation Mode states
+  const todayYmd = new Date().toISOString().slice(0, 10);
+  const plus5Ymd = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 5);
+    return d.toISOString().slice(0, 10);
+  })();
+  const [awayEnabled, setAwayEnabled] = useState<boolean>(Boolean(profile.awayMode?.enabled));
+  const [awayStart, setAwayStart] = useState<string>(profile.awayMode?.startDate || todayYmd);
+  const [awayEnd, setAwayEnd] = useState<string>(profile.awayMode?.endDate || plus5Ymd);
+  const [awayReason, setAwayReason] = useState<string>(profile.awayMode?.reason || '');
+  const [awayPreserveStreaks, setAwayPreserveStreaks] = useState<boolean>(profile.awayMode?.preserveStreaks ?? true);
+
   // Biometrics from latest BodyPoint or profile
   const latestPoint = useMemo(() => {
     if (!bodyPoints.length) return null;
@@ -94,12 +121,16 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
   const curTdee = tdee(profile, curWeight);
   const idealBf = profile.sex === 'male' ? 15 : 23;
   const ffmiBand = ffmiCategory(curFfmi, profile.sex);
+  const weightWindowStats = useMemo(
+    () => calculateWeightWindowStats(bodyPoints, healthLogs, curWeight),
+    [bodyPoints, healthLogs, curWeight]
+  );
 
   const bfAssessment = useMemo(() => {
     const diff = curBf - idealBf;
-    if (diff <= 0) return { label: 'Mức mỡ lý tưởng', tone: 'text-emerald-400', desc: 'Độ nhạy insulin đỉnh cao, tối ưu hấp thụ dưỡng chất để tăng cơ.' };
-    if (diff <= 4) return { label: 'Hơi cao hơn lý tưởng', tone: 'text-amber-400', desc: 'Có thể vào sóng tăng cơ hoặc siết nhẹ 3-4 tuần trước khi bulk.' };
-    return { label: 'Cao hơn mức lý tưởng', tone: 'text-rose-400', desc: 'Khuyến nghị ưu tiên giảm mỡ trước theo ZENOX để tăng độ nhạy insulin & tối ưu P-ratio.' };
+    if (diff <= 0) return { label: 'Gọn nhẹ (ước tính)', tone: 'text-emerald-400', desc: 'Tỷ lệ mỡ ước chừng đang ở ngưỡng gọn khỏe, thuận lợi cho cả duy trì lẫn tăng cơ sạch.' };
+    if (diff <= 6) return { label: 'Cân đối bình thường (ước tính)', tone: 'text-sky-400', desc: 'Mỡ cơ thể chỉ là con số ước lượng có sai số; bạn cứ thoải mái chọn Cut hay Bulk theo cảm nhận gương.' };
+    return { label: 'Mỡ ước tính hơi cao', tone: 'text-amber-400', desc: 'Nên ưu tiên theo dõi xu hướng cân nặng trung bình tuần & vòng eo thay vì áp lực con số % mỡ đơn lẻ.' };
   }, [curBf, idealBf]);
 
   const allRoadmaps = useMemo(() => {
@@ -207,12 +238,12 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
         </div>
 
         <div className="p-4 rounded-2xl bg-[#070205] border border-white/10 shadow-xs">
-          <div className="text-[10px] text-white/40 uppercase font-semibold">Tỷ lệ mỡ Bodyfat</div>
+          <div className="text-[10px] text-white/40 uppercase font-semibold">% Mỡ (Ước chừng)</div>
           <div className="text-xl font-bold font-display text-rose-400 mt-1">
-            {curBf} <span className="text-xs font-normal text-white/50">%</span>
+            ~{curBf} <span className="text-xs font-normal text-white/50">%</span>
           </div>
           <div className="text-[11px] text-white/50 mt-1">
-            Lý tưởng: <span className="text-white/80 font-semibold">{idealBf}%</span>
+            Tham khảo: <span className="text-white/80 font-semibold">~{idealBf}%</span>
           </div>
         </div>
 
@@ -254,6 +285,63 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
           <div className="text-[11px] text-white/50 mt-1">
             {ACTIVITY_LABEL[profile.activity]}
           </div>
+        </div>
+      </div>
+
+      {/* 2b. Tracked 10-Day High/Low Band & Applied CTG Inferred TDEE Status */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="p-4 rounded-2xl bg-[#070205] border border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div>
+            <div className="text-[10px] text-white/40 uppercase font-bold">
+              Biên Độ Cân Nặng 10 Ngày (Tracked High/Low & EMA)
+            </div>
+            <div className="font-mono text-white font-bold mt-1">
+              EMA: <span className="text-emerald-400">{weightWindowStats.currentEmaKg} kg</span>
+              <span className="mx-2 text-white/30">•</span>
+              TB 7 ngày: <span className="text-sky-400">{weightWindowStats.sevenDayAvgKg} kg</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 font-mono text-[11px]">
+            <span className="px-2 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-300">
+              Low: {weightWindowStats.tenDayLowKg}kg
+            </span>
+            <span className="px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300">
+              High: {weightWindowStats.tenDayHighKg}kg
+            </span>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#070205] border border-white/10 flex items-center justify-between gap-3 text-xs">
+          <div>
+            <div className="text-[10px] text-white/40 uppercase font-bold">
+              Trạng Thái TDEE Hiệu Chỉnh (CTG)
+            </div>
+            {nutritionSettings?.appliedTdeeKcal ? (
+              <div className="mt-1 text-emerald-300 font-semibold">
+                Đang áp dụng <strong className="font-mono">{nutritionSettings.appliedTdeeKcal.toLocaleString('vi-VN')} kcal</strong>
+                {nutritionSettings.appliedTdeeAt && (
+                  <span className="text-white/50 font-normal"> từ {nutritionSettings.appliedTdeeAt}</span>
+                )}
+                {nutritionSettings.appliedTdeeStartWeightKg !== undefined && (
+                  <span className="text-white/60 font-mono ml-1.5">
+                    ({curWeight - nutritionSettings.appliedTdeeStartWeightKg >= 0 ? '+' : ''}
+                    {Math.round((curWeight - nutritionSettings.appliedTdeeStartWeightKg) * 10) / 10} kg)
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="mt-1 text-white/60">
+                Đang dùng TDEE hồ sơ mặc định ({curTdee.toLocaleString('vi-VN')} kcal). Mở tab Dinh dưỡng để áp dụng TDEE suy ngược.
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateTab?.('nutrition')}
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-[11px] font-bold shrink-0 cursor-pointer transition-colors"
+          >
+            Xem Dinh Dưỡng
+          </button>
         </div>
       </div>
 
@@ -468,8 +556,8 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
                   onChange={(e) => setSex(e.target.value as Sex)}
                   className="mt-1 w-full text-xs font-bold px-3 py-2 rounded-xl border border-white/10 bg-[#0e0f11] text-white focus:border-rose-500 focus:outline-none"
                 >
-                  <option value="male">Nam (Mức mỡ lý tưởng 15%)</option>
-                  <option value="female">Nữ (Mức mỡ lý tưởng 23%)</option>
+                  <option value="male">Nam (Tham khảo ~15%)</option>
+                  <option value="female">Nữ (Tham khảo ~23%)</option>
                 </select>
               </div>
               <div>
@@ -596,6 +684,120 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
             </div>
           </div>
         )}
+      </div>
+
+      {/* 5.5 Tracked.gg Away / Vacation Break Mode */}
+      <div className="bg-[#070205] rounded-2xl border border-purple-500/25 p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-purple-400" />
+              <h3 className="text-sm font-bold text-white">
+                Chế Độ Nghỉ Phép / Du Lịch (Away Mode)
+              </h3>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  awayEnabled
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                    : 'bg-white/5 text-white/50 border-white/10'
+                }`}
+              >
+                {awayEnabled ? 'ĐANG BẬT' : 'ĐANG TẮT'}
+              </span>
+            </div>
+            <p className="text-xs text-white/50 mt-1">
+              Tạm ngưng cảnh báo thiếu buổi &amp; nhắc check-in, bảo toàn chuỗi Macro Consistency và tự né ngày nghỉ khi đồng bộ Lịch tập.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const nextEnabled = !awayEnabled;
+              setAwayEnabled(nextEnabled);
+              const payload: AwayBreakPeriod = {
+                enabled: nextEnabled,
+                startDate: awayStart,
+                endDate: awayEnd >= awayStart ? awayEnd : awayStart,
+                reason: awayReason.trim() || undefined,
+                preserveStreaks: awayPreserveStreaks,
+              };
+              onUpdateProfile({ awayMode: payload });
+              notifySuccess(
+                nextEnabled ? 'Đã bật Away Mode!' : 'Đã tắt Away Mode!',
+                nextEnabled
+                  ? `Tạm ngưng lịch từ ${payload.startDate} đến ${payload.endDate}.`
+                  : 'Hệ thống trở lại nhắc lịch tập & check-in bình thường.'
+              );
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors shrink-0 ${
+              awayEnabled
+                ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
+            }`}
+          >
+            {awayEnabled ? 'Tắt Away Mode' : 'Bật Away Mode'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-white/50">Từ ngày</label>
+            <input
+              type="date"
+              value={awayStart}
+              onChange={(e) => setAwayStart(e.target.value)}
+              className="mt-1 w-full px-3 py-2 rounded-xl border border-white/10 bg-[#0e0f11] text-white font-mono focus:border-purple-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-white/50">Đến ngày</label>
+            <input
+              type="date"
+              value={awayEnd}
+              onChange={(e) => setAwayEnd(e.target.value)}
+              className="mt-1 w-full px-3 py-2 rounded-xl border border-white/10 bg-[#0e0f11] text-white font-mono focus:border-purple-500 focus:outline-none"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-[10px] font-semibold uppercase text-white/50">Lý do (tùy chọn)</label>
+            <div className="mt-1 flex gap-2">
+              <input
+                type="text"
+                value={awayReason}
+                onChange={(e) => setAwayReason(e.target.value)}
+                placeholder="Du lịch, công tác, tuần hồi phục chủ động..."
+                className="flex-1 px-3 py-2 rounded-xl border border-white/10 bg-[#0e0f11] text-white focus:border-purple-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const payload: AwayBreakPeriod = {
+                    enabled: awayEnabled,
+                    startDate: awayStart,
+                    endDate: awayEnd >= awayStart ? awayEnd : awayStart,
+                    reason: awayReason.trim() || undefined,
+                    preserveStreaks: awayPreserveStreaks,
+                  };
+                  onUpdateProfile({ awayMode: payload });
+                  notifySuccess('Đã lưu cấu hình Away Mode!', `Khoảng thời gian: ${payload.startDate} → ${payload.endDate}.`);
+                }}
+                className="px-3 py-2 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 text-purple-200 border border-purple-500/40 font-semibold cursor-pointer shrink-0"
+              >
+                Lưu
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-[11px] text-white/70 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={awayPreserveStreaks}
+            onChange={(e) => setAwayPreserveStreaks(e.target.checked)}
+            className="rounded accent-purple-500 cursor-pointer"
+          />
+          <span>Bảo toàn chuỗi kỷ luật Macro &amp; Check-in trong khoảng ngày nghỉ này</span>
+        </label>
       </div>
 
       {/* 6. Scientific Fitness & Nutrition Strategy (CTG Sports Medicine Principles) */}

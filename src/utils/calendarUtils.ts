@@ -211,12 +211,29 @@ function normalizeTimeStr(t?: string): string {
   return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
 }
 
+/**
+ * Identifies built-in demo/welcome events (`ev-1`..`ev-999`, `ev-welcome-*`)
+ * so real user events (`usr-*`, `ev-<timestamp>`, `ev-qa-*`, `ev-copilot-*`)
+ * are never mistakenly purged when Google Calendar events exist.
+ */
+export function isDemoEventId(id: string): boolean {
+  return /^ev-\d{1,3}$/.test(id) || id.startsWith('ev-welcome-');
+}
+
 export function deduplicateEvents(events: CalendarEvent[]): CalendarEvent[] {
   if (!events || events.length === 0) return [];
 
-  // If real Google or user events exist, discard fake mock demo events (ev-*)
-  const hasRealEvents = events.some((e) => e.id.startsWith('gcal-') || e.id.startsWith('usr-') || e.id.startsWith('evt-'));
-  const candidates = hasRealEvents ? events.filter((e) => !e.id.startsWith('ev-')) : events;
+  // If real Google or user events exist, discard fake mock demo events only
+  const hasRealEvents = events.some(
+    (e) =>
+      e.id.startsWith('gcal-') ||
+      e.id.startsWith('usr-') ||
+      e.id.startsWith('evt-') ||
+      e.id.startsWith('task-') ||
+      e.id.startsWith('scheduled-wo-') ||
+      e.id.startsWith('ctg-workout-')
+  );
+  const candidates = hasRealEvents ? events.filter((e) => !isDemoEventId(e.id)) : events;
 
   const timedByDateAndTitle = new Set<string>();
 
@@ -669,4 +686,310 @@ export function parseIcsContent(icsContent: string): Partial<CalendarEvent>[] {
   }
 
   return events;
+}
+
+export interface AvailableTimeSlot {
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  period: 'morning' | 'afternoon' | 'evening';
+}
+
+export function minutesToHHmm(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.min(24 * 60 - 1, Math.round(totalMinutes)));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Finds timed events on `candidate.startDate` that overlap with `[startTime, endTime)`.
+ */
+export function findConflictingEvents(
+  candidate: { id?: string; startDate: string; startTime: string; endTime: string; allDay?: boolean },
+  events: CalendarEvent[]
+): CalendarEvent[] {
+  if (candidate.allDay || !candidate.startDate || !candidate.startTime || !candidate.endTime) {
+    return [];
+  }
+  const candStart = timeToMinutes(candidate.startTime);
+  const candEnd = timeToMinutes(candidate.endTime);
+  if (candEnd <= candStart) return [];
+
+  return events.filter((ev) => {
+    if (candidate.id && ev.id === candidate.id) return false;
+    if (ev.allDay || !ev.startTime || !ev.endTime) return false;
+    if (!doesEventOccurOnDate(ev, candidate.startDate)) return false;
+    const evStart = timeToMinutes(ev.startTime);
+    const evEnd = timeToMinutes(ev.endTime);
+    return evStart < candEnd && candStart < evEnd;
+  });
+}
+
+/**
+ * Suggests open time slots on `dateStr` of at least `durationMinutes` between `startHour` and `endHour`.
+ */
+export function suggestAvailableSlots(
+  dateStr: string,
+  durationMinutes: number,
+  events: CalendarEvent[],
+  ignoreEventId?: string,
+  startHour: number = 6,
+  endHour: number = 22
+): AvailableTimeSlot[] {
+  const safeDuration = Math.max(15, durationMinutes || 60);
+  const dayStart = startHour * 60;
+  const dayEnd = endHour * 60;
+
+  const busy = events
+    .filter((ev) => {
+      if (ignoreEventId && ev.id === ignoreEventId) return false;
+      if (ev.allDay || !ev.startTime || !ev.endTime) return false;
+      return doesEventOccurOnDate(ev, dateStr);
+    })
+    .map((ev) => ({
+      start: Math.max(dayStart, timeToMinutes(ev.startTime!)),
+      end: Math.min(dayEnd, timeToMinutes(ev.endTime!)),
+    }))
+    .filter((b) => b.end > b.start)
+    .sort((a, b) => a.start - b.start);
+
+  const merged: { start: number; end: number }[] = [];
+  for (const b of busy) {
+    if (merged.length === 0 || b.start > merged[merged.length - 1].end) {
+      merged.push({ ...b });
+    } else {
+      merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, b.end);
+    }
+  }
+
+  const slots: AvailableTimeSlot[] = [];
+  let cursor = dayStart;
+
+  const pushGap = (gapStart: number, gapEnd: number) => {
+    if (gapEnd - gapStart < safeDuration) return;
+    const roundedStart = Math.ceil(gapStart / 15) * 15;
+    if (gapEnd - roundedStart >= safeDuration) {
+      const slotEnd = roundedStart + safeDuration;
+      const startHourVal = Math.floor(roundedStart / 60);
+      const period: AvailableTimeSlot['period'] =
+        startHourVal < 12 ? 'morning' : startHourVal < 18 ? 'afternoon' : 'evening';
+      slots.push({
+        startTime: minutesToHHmm(roundedStart),
+        endTime: minutesToHHmm(slotEnd),
+        durationMinutes: gapEnd - roundedStart,
+        period,
+      });
+    }
+  };
+
+  for (const b of merged) {
+    pushGap(cursor, b.start);
+    cursor = Math.max(cursor, b.end);
+  }
+  pushGap(cursor, dayEnd);
+
+  return slots;
+}
+
+export interface SlotResolution {
+  startTime: string;
+  endTime: string;
+  status: 'preferred' | 'shifted' | 'conflict';
+  preferredStartTime: string;
+  preferredEndTime: string;
+  /** Events on that day colliding with the preferred time window (or remaining conflicts when status === 'conflict') */
+  conflictingEvents: CalendarEvent[];
+  /** Events still colliding with the chosen startTime..endTime (non-empty only when status === 'conflict') */
+  remainingConflicts: CalendarEvent[];
+  /** Alternative open slots sorted by closeness to preferredStartTime */
+  alternativeSlots: AvailableTimeSlot[];
+}
+
+export interface ResolveSlotOptions {
+  ignoreEventIds?: string[];
+  ignoreWorkoutEvents?: boolean;
+  minHour?: number;
+  maxHour?: number;
+  bufferMinutes?: number;
+}
+
+export function isWorkoutCalendarEvent(ev: CalendarEvent): boolean {
+  return (
+    ev.id.startsWith('scheduled-wo-') ||
+    ev.id.startsWith('ctg-workout-') ||
+    (ev.calendarId === 'health' && (ev.title.includes('💪') || ev.title.includes('[ZENOX]')))
+  );
+}
+
+/**
+ * Resolves a preferred time slot on `dateStr` against existing events (including recurring events).
+ * - If the preferred window is free, returns `status: 'preferred'`.
+ * - If it collides, searches all open gaps between `minHour` and `maxHour` for the nearest
+ *   non-conflicting slot (preferring `bufferMinutes` clearance around adjacent events) and verifies
+ *   zero overlap via `findConflictingEvents`.
+ * - If the whole day is booked with no gap large enough, returns `status: 'conflict'` with the
+ *   colliding events preserved instead of silently claiming conflicts were avoided.
+ */
+export function resolveNonConflictingSlot(
+  dateStr: string,
+  preferredStartTime: string,
+  durationMinutes: number,
+  events: CalendarEvent[],
+  options: ResolveSlotOptions = {}
+): SlotResolution {
+  const {
+    ignoreEventIds = [],
+    ignoreWorkoutEvents = false,
+    minHour = 6,
+    maxHour = 23,
+    bufferMinutes = 15,
+  } = options;
+
+  const safeDuration = Math.max(15, Math.round(durationMinutes || 60));
+  const preferredStartMins = timeToMinutes(preferredStartTime);
+  const preferredEndMins = Math.min(24 * 60 - 1, preferredStartMins + safeDuration);
+  const preferredEndTime = minutesToHHmm(preferredEndMins);
+
+  const ignoreSet = new Set(ignoreEventIds);
+  const relevantEvents = events.filter((ev) => {
+    if (ignoreSet.has(ev.id)) return false;
+    if (ignoreWorkoutEvents && isWorkoutCalendarEvent(ev)) return false;
+    return true;
+  });
+
+  const dayStart = Math.max(0, Math.round(minHour * 60));
+  const dayEnd = Math.min(24 * 60 - 1, Math.round(maxHour * 60));
+
+  // Build free gaps on dateStr from merged busy intervals
+  const busy = relevantEvents
+    .filter((ev) => !ev.allDay && ev.startTime && ev.endTime && doesEventOccurOnDate(ev, dateStr))
+    .map((ev) => ({
+      start: Math.max(dayStart, timeToMinutes(ev.startTime!)),
+      end: Math.min(dayEnd, timeToMinutes(ev.endTime!)),
+    }))
+    .filter((b) => b.end > b.start)
+    .sort((a, b) => a.start - b.start);
+
+  const merged: { start: number; end: number }[] = [];
+  for (const b of busy) {
+    if (merged.length === 0 || b.start > merged[merged.length - 1].end) {
+      merged.push({ ...b });
+    } else {
+      merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, b.end);
+    }
+  }
+
+  const gaps: { start: number; end: number }[] = [];
+  let cursor = dayStart;
+  for (const b of merged) {
+    if (b.start - cursor >= safeDuration) {
+      gaps.push({ start: cursor, end: b.start });
+    }
+    cursor = Math.max(cursor, b.end);
+  }
+  if (dayEnd - cursor >= safeDuration) {
+    gaps.push({ start: cursor, end: dayEnd });
+  }
+
+  interface ScoredCandidate {
+    startMins: number;
+    endMins: number;
+    score: number;
+    slot: AvailableTimeSlot;
+  }
+
+  const candidateMap = new Map<number, ScoredCandidate>();
+  const addCandidate = (rawStart: number, gap: { start: number; end: number }) => {
+    const startMins = Math.round(rawStart / 15) * 15;
+    const endMins = startMins + safeDuration;
+    if (startMins < gap.start || endMins > gap.end || startMins < dayStart || endMins > dayEnd) {
+      return;
+    }
+    const startTime = minutesToHHmm(startMins);
+    const endTime = minutesToHHmm(endMins);
+    if (findConflictingEvents({ startDate: dateStr, startTime, endTime }, relevantEvents).length > 0) {
+      return;
+    }
+    const touchesStart = bufferMinutes > 0 && gap.start > dayStart && startMins - gap.start < bufferMinutes;
+    const touchesEnd = bufferMinutes > 0 && gap.end < dayEnd && gap.end - endMins < bufferMinutes;
+    const bufferPenalty = (touchesStart ? bufferMinutes + 5 : 0) + (touchesEnd ? bufferMinutes + 5 : 0);
+    const score = Math.abs(startMins - preferredStartMins) + bufferPenalty;
+    const hourVal = Math.floor(startMins / 60);
+    const period: AvailableTimeSlot['period'] =
+      hourVal < 12 ? 'morning' : hourVal < 18 ? 'afternoon' : 'evening';
+
+    const existing = candidateMap.get(startMins);
+    if (!existing || score < existing.score) {
+      candidateMap.set(startMins, {
+        startMins,
+        endMins,
+        score,
+        slot: {
+          startTime,
+          endTime,
+          durationMinutes: safeDuration,
+          period,
+        },
+      });
+    }
+  };
+
+  for (const gap of gaps) {
+    // 1. Clamped as close as possible to preferredStartMins inside this gap
+    const clamped = Math.min(Math.max(preferredStartMins, gap.start), gap.end - safeDuration);
+    addCandidate(clamped, gap);
+    // 2. Buffered slots right after previous event & right before next event
+    addCandidate(Math.ceil((gap.start + (gap.start > dayStart ? bufferMinutes : 0)) / 15) * 15, gap);
+    addCandidate(Math.floor((gap.end - (gap.end < dayEnd ? bufferMinutes : 0) - safeDuration) / 15) * 15, gap);
+    // 3. Exact edge slots (no buffer fallback)
+    addCandidate(Math.ceil(gap.start / 15) * 15, gap);
+    addCandidate(Math.floor((gap.end - safeDuration) / 15) * 15, gap);
+  }
+
+  const sortedCandidates = Array.from(candidateMap.values()).sort((a, b) => a.score - b.score);
+  const alternativeSlots = sortedCandidates.slice(0, 8).map((c) => c.slot);
+
+  const preferredConflicts = findConflictingEvents(
+    { startDate: dateStr, startTime: preferredStartTime, endTime: preferredEndTime },
+    relevantEvents
+  );
+
+  if (preferredConflicts.length === 0) {
+    return {
+      startTime: preferredStartTime,
+      endTime: preferredEndTime,
+      status: 'preferred',
+      preferredStartTime,
+      preferredEndTime,
+      conflictingEvents: [],
+      remainingConflicts: [],
+      alternativeSlots,
+    };
+  }
+
+  if (sortedCandidates.length > 0) {
+    const best = sortedCandidates[0];
+    return {
+      startTime: best.slot.startTime,
+      endTime: best.slot.endTime,
+      status: 'shifted',
+      preferredStartTime,
+      preferredEndTime,
+      conflictingEvents: preferredConflicts,
+      remainingConflicts: [],
+      alternativeSlots,
+    };
+  }
+
+  return {
+    startTime: preferredStartTime,
+    endTime: preferredEndTime,
+    status: 'conflict',
+    preferredStartTime,
+    preferredEndTime,
+    conflictingEvents: preferredConflicts,
+    remainingConflicts: preferredConflicts,
+    alternativeSlots: [],
+  };
 }

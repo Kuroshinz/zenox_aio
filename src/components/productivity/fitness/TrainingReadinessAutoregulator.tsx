@@ -241,10 +241,18 @@ export const TrainingReadinessAutoregulator: React.FC<TrainingReadinessAutoregul
                       <button
                         type="button"
                         onClick={() => onApplyReadinessAdjustment(readiness.volumeAdjustmentPct)}
-                        className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md cursor-pointer transition-all flex items-center gap-1.5"
+                        className={`px-3.5 py-1.5 rounded-xl text-white text-xs font-bold shadow-md cursor-pointer transition-all flex items-center gap-1.5 ${
+                          readiness.volumeAdjustmentPct <= -20
+                            ? 'bg-gradient-to-r from-rose-600 to-orange-600 hover:from-rose-500 hover:to-orange-500'
+                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500'
+                        }`}
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Áp dụng gợi ý vào buổi tập hôm nay</span>
+                        <span>
+                          {readiness.volumeAdjustmentPct <= -20
+                            ? 'Giảm tải buổi hôm nay & Đồng bộ Lịch'
+                            : 'Áp dụng gợi ý vào buổi tập hôm nay'}
+                        </span>
                       </button>
                     </div>
                   )}

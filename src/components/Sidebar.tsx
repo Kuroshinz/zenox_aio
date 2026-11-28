@@ -37,7 +37,6 @@ interface SidebarProps {
   lang: 'vi' | 'en';
   onViewChange?: (view: CalendarViewType) => void;
   currentView?: CalendarViewType;
-  onOpenGeminiMacro?: () => void;
   onOpenSettings?: () => void;
   onOpenCloudSync?: () => void;
   onGoogleSignIn?: () => Promise<void>;
@@ -82,7 +81,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   lang,
   onViewChange,
   currentView = 'dashboard',
-  onOpenGeminiMacro,
   onOpenSettings,
   onOpenCloudSync,
   onGoogleSignIn,

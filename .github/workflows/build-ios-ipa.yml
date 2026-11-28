@@ -1,0 +1,77 @@
+name: Build ZENOX iOS (.ipa)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.ts'
+      - 'ios/**'
+      - '.github/workflows/build-ios-ipa.yml'
+
+jobs:
+  build-ipa:
+    name: Build Unsigned iOS IPA (Sideloadly / AltStore)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run tests and build web bundle
+        run: |
+          npm test
+          npm run build
+
+      - name: Sync Capacitor iOS assets
+        run: npx cap sync ios
+
+      - name: Resolve Swift Package dependencies
+        run: xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
+
+      - name: Archive unsigned iOS app
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/ZENOX.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
+
+      - name: Package ZENOX-unsigned.ipa
+        run: |
+          APP_PATH="build/ZENOX.xcarchive/Products/Applications/App.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Error: App.app not found inside archive"
+            exit 1
+          fi
+          mkdir -p build/ipa/Payload
+          cp -R "$APP_PATH" build/ipa/Payload/App.app
+          cd build/ipa
+          zip -qr ../ZENOX-unsigned.ipa Payload
+          ls -lh ../ZENOX-unsigned.ipa
+
+      - name: Upload ZENOX-unsigned.ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZENOX-iOS-IPA
+          path: build/ZENOX-unsigned.ipa
+          retention-days: 30

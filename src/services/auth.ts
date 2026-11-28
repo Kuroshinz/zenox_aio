@@ -125,7 +125,6 @@ export const initAuth = (
       displayName: user.displayName,
       photoURL: user.photoURL,
     };
-    localStorage.setItem('gcal_active_user', JSON.stringify(appUser));
     if (onAuthSuccess) onAuthSuccess(appUser, token || '');
   });
 };
@@ -155,7 +154,6 @@ export const googleSignIn = async (): Promise<{ user: AppUser; accessToken: stri
     photoURL: result.user.photoURL,
   };
 
-  localStorage.setItem('gcal_active_user', JSON.stringify(appUser));
   return { user: appUser, accessToken };
 };
 

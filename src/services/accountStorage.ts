@@ -29,7 +29,6 @@ const GLOBAL_BROWSER_KEYS = new Set<string>([
   'gcal_lang',
   'gcal_custom_client_id',
   'vortexcal_sound_enabled',
-  'vortexcal_gemini_api_key',
   'vortex_health_subtab',
 ]);
 

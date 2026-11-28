@@ -3,6 +3,7 @@ import { SkeuomorphicToggleCollection } from "@designcodeio/threeui";
 import "@designcodeio/threeui/style.css";
 import { playToggleSound, playLiveSyncChime } from "./utils/sound";
 import { notifySuccess } from "./utils/notify";
+import { accountStorage } from "./services/accountStorage";
 
 export interface SceneProps {
   syncState?: 'synced' | 'syncing' | 'offline' | 'error';
@@ -21,13 +22,13 @@ export function Scene({
   const [internalSyncState, setInternalSyncState] = useState<'synced' | 'syncing' | 'offline'>(() => {
     try {
       const activeUser = localStorage.getItem('gcal_active_user');
-      const events = localStorage.getItem('gcal_events');
+      const events = accountStorage.getItem('gcal_events');
       if (activeUser || (events && JSON.parse(events).length > 0)) {
         return 'synced';
       }
-      return 'synced';
+      return 'offline';
     } catch {
-      return 'synced';
+      return 'offline';
     }
   });
 

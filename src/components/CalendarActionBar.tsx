@@ -29,6 +29,10 @@ interface CalendarActionBarProps {
   onRedo?: () => void;
   onOpenCreateModal: (type?: EventType) => void;
   onCleanData?: () => void;
+  weekStartsOnMonday?: boolean;
+  onToggleWeekStart?: () => void;
+  eventTypeFilter?: EventType | 'all';
+  onChangeEventTypeFilter?: (type: EventType | 'all') => void;
 }
 
 export const CalendarActionBar: React.FC<CalendarActionBarProps> = ({
@@ -48,6 +52,10 @@ export const CalendarActionBar: React.FC<CalendarActionBarProps> = ({
   onRedo,
   onOpenCreateModal,
   onCleanData,
+  weekStartsOnMonday = false,
+  onToggleWeekStart,
+  eventTypeFilter = 'all',
+  onChangeEventTypeFilter,
 }) => {
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [showNewCategory, setShowNewCategory] = useState(false);
@@ -116,6 +124,25 @@ export const CalendarActionBar: React.FC<CalendarActionBarProps> = ({
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Week Start Toggle (Monday vs Sunday) */}
+        {onToggleWeekStart && (view === 'month' || view === 'week') && (
+          <button
+            onClick={onToggleWeekStart}
+            title={
+              lang === 'vi'
+                ? weekStartsOnMonday
+                  ? 'Tuần bắt đầu từ Thứ 2 (bấm để đổi sang Chủ Nhật)'
+                  : 'Tuần bắt đầu từ Chủ Nhật (bấm để đổi sang Thứ 2)'
+                : weekStartsOnMonday
+                  ? 'Week starts Monday (click for Sunday)'
+                  : 'Week starts Sunday (click for Monday)'
+            }
+            className="px-2.5 py-1 text-[11px] font-mono font-bold rounded-full bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.12] text-slate-300 hover:text-white transition-colors cursor-pointer"
+          >
+            {weekStartsOnMonday ? (lang === 'vi' ? 'T2–CN' : 'Mon–Sun') : (lang === 'vi' ? 'CN–T7' : 'Sun–Sat')}
+          </button>
+        )}
 
         {/* Undo / Redo */}
         {(canUndo || canRedo) && (
@@ -247,6 +274,37 @@ export const CalendarActionBar: React.FC<CalendarActionBarProps> = ({
                     </button>
                   ))}
                 </div>
+
+                {onChangeEventTypeFilter && (
+                  <div className="pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-700/60">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                      {lang === 'vi' ? 'Loại mục' : 'Item Type'}
+                    </span>
+                    <div className="grid grid-cols-2 gap-1">
+                      {(
+                        [
+                          { id: 'all', vi: 'Tất cả', en: 'All' },
+                          { id: 'event', vi: 'Sự kiện', en: 'Events' },
+                          { id: 'task', vi: 'Công việc', en: 'Tasks' },
+                          { id: 'reminder', vi: 'Nhắc nhở', en: 'Reminders' },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => onChangeEventTypeFilter(opt.id)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+                            eventTypeFilter === opt.id
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          {lang === 'vi' ? opt.vi : opt.en}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

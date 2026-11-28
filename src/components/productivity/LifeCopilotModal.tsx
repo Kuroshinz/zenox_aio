@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Clock,
   Dumbbell,
+  AlertTriangle,
 } from 'lucide-react';
 import { CalendarEvent, CalendarViewType } from '../../types/calendar';
 import { MealSlot } from '../../types/productivity';
@@ -25,9 +26,14 @@ import {
   ProductivityStore,
   todayString,
 } from '../../hooks/useProductivityStore';
-import { parseNaturalLanguageInput } from '../../utils/calendarUtils';
-import { parseGeminiMacroResponse } from '../../services/geminiSync';
+import {
+  parseNaturalLanguageInput,
+  findConflictingEvents,
+  resolveNonConflictingSlot,
+  timeToMinutes,
+} from '../../utils/calendarUtils';
 import { formatMoney } from '../../utils/productivityUtils';
+import { parseFoodText, parseMacroTextResponse } from '../../utils/fitnessMetrics';
 
 interface LifeCopilotModalProps {
   isOpen: boolean;
@@ -69,6 +75,7 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
   currentDate = new Date(),
 }) => {
   const [input, setInput] = useState('');
+  const [calendarOverride, setCalendarOverride] = useState<{ startTime: string; endTime: string } | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [actionHistory, setActionHistory] = useState<
     Array<{ text: string; time: string; type: ParsedIntentType }>
@@ -103,41 +110,50 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
     if (!raw) return null;
     const lower = raw.toLowerCase();
 
-    // 1. Water Intake (e.g. "uống 300ml nước", "thêm 500ml", "uống nước 250ml")
-    const waterMatch = /(?:uống|thêm|nước)\s*(\d{2,4})\s*(?:ml|lít|l)?/i.exec(lower) ||
-      /(\d{2,4})\s*ml\s*(?:nước)?/i.exec(lower);
-    if (waterMatch) {
-      let ml = parseInt(waterMatch[1]);
-      if (ml < 10) ml = ml * 1000; // e.g. "1 lít" -> 1000ml
-      return {
-        type: 'water',
-        title: `Uống thêm ${ml} ml nước`,
-        badgeLabel: 'Ghi Nhận Nước',
-        badgeColor: '#0ea5e9',
-        icon: Droplets,
-        data: { ml },
-      };
+    // 1. Water Intake (e.g. "uống 300ml nước", "uống 1 lít nước", "thêm 500ml")
+    const waterMatch =
+      /(?:uống|thêm|nước)\s*(\d+(?:[.,]\d+)?)\s*(ml|lít|l)\b/i.exec(lower) ||
+      /(\d+(?:[.,]\d+)?)\s*(ml|lít)\s*(?:nước)?/i.exec(lower);
+    if (waterMatch && !/(?:k|nghìn|ngàn|tr|triệu|đ|vnd)\b/i.test(lower)) {
+      const val = parseFloat(waterMatch[1].replace(',', '.'));
+      const unit = (waterMatch[2] || '').toLowerCase();
+      let ml = unit === 'lít' || unit === 'l' || val < 10 ? Math.round(val * 1000) : Math.round(val);
+      if (ml > 0) {
+        return {
+          type: 'water',
+          title: `Uống thêm ${ml} ml nước`,
+          badgeLabel: 'Ghi Nhận Nước',
+          badgeColor: '#0ea5e9',
+          icon: Droplets,
+          data: { ml },
+        };
+      }
     }
 
     // 2. Finance: Expense or Income
-    // Matches: "tiêu 45k ăn trưa", "chi 120.000 đổ xăng", "thu 5 triệu", "mua sách 150k"
-    const moneyRegex = /(?:tiêu|chi|mua|trả|hết|mất|tốn|thu|nhận|lương|thưởng)\s*(.*?)(?:(\d+(?:[.,]\d+)?)\s*(k|nghìn|ngàn|tr|triệu|đ|vnd)?)/i;
-    const moneyMatch = moneyRegex.exec(lower);
+    // Matches: "tiêu 45k ăn trưa", "mua 2 hộp sữa 45k", "chi 120.000 đổ xăng", "thu 5 triệu"
     const hasMoneyClues =
       /(?:tiêu|chi|mua|trả|thu|lương|tiền|phí|hóa đơn)/i.test(lower) ||
-      /(?:\d+k|\d+\s*nghìn|\d+\s*triệu|\d+[.,]\d{3})/i.test(lower);
+      /(?:\d+k|\d+\s*nghìn|\d+\s*ngàn|\d+\s*triệu|\d+[.,]\d{3})/i.test(lower);
 
     if (hasMoneyClues) {
       const isIncome = /(?:thu|nhận|lương|thưởng|kiếm được)/i.test(lower);
-      // Extract amount
+      // Prefer amounts with an explicit currency/multiplier suffix before bare numbers
       let amount = 0;
-      const numMatch = /(\d+(?:[.,]\d+)?)\s*(k|nghìn|ngàn|tr|triệu)?/i.exec(lower);
+      const unitNumMatch = /(\d+(?:[.,]\d+)?)\s*(k|nghìn|ngàn|tr|triệu|đ|vnd)\b/i.exec(lower);
+      const bareNumMatch = /(\d+(?:[.,]\d+)?)/.exec(lower);
+      const numMatch = unitNumMatch || bareNumMatch;
       if (numMatch) {
-        let val = parseFloat(numMatch[1].replace(',', '.'));
-        const unit = (numMatch[2] || '').toLowerCase();
+        const rawNum = numMatch[1];
+        const isGroupedThousands = /^\d{1,3}(?:[.,]\d{3})+$/.test(rawNum);
+        let val = isGroupedThousands
+          ? parseFloat(rawNum.replace(/[.,]/g, ''))
+          : parseFloat(rawNum.replace(',', '.'));
+        const unit = (unitNumMatch?.[2] || '').toLowerCase();
         if (unit === 'k' || unit === 'nghìn' || unit === 'ngàn') val *= 1000;
         else if (unit === 'tr' || unit === 'triệu') val *= 1000000;
-        else if (val < 1000 && !unit) val *= 1000; // heuristic: 45 -> 45.000đ
+        else if (unit === 'đ' || unit === 'vnd') val *= 1;
+        else if (!isGroupedThousands && val < 1000 && !unit) val *= 1000; // heuristic: 45 -> 45.000đ
         amount = Math.round(val);
       }
 
@@ -168,14 +184,49 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
       }
     }
 
-    // 3. Nutrition & Meal Macro (e.g. "ăn trưa: cơm tấm 650 kcal, 35P, 70C, 20F" or "phở bò 450 calo")
+    // 3. Nutrition & Meal Macro (e.g. "ăn trưa: cơm tấm 650 kcal, 35P, 70C, 20F" or "ăn trưa 200g ức gà + 250g cơm trắng")
     if (/(?:ăn|bữa|calo|kcal|protein|\d+p|\d+c|\d+f)/i.test(lower)) {
-      const macroItems = parseGeminiMacroResponse(raw, 'lunch');
+      const slotHint: MealSlot = /(?:sáng|breakfast)/i.test(lower)
+        ? 'breakfast'
+        : /(?:tối|dinner)/i.test(lower)
+          ? 'dinner'
+          : /(?:phụ|snack)/i.test(lower)
+            ? 'snack'
+            : 'lunch';
+
+      let macroItems = parseMacroTextResponse(raw, slotHint);
+      if (macroItems.length === 0) {
+        const cleanedFoodText = raw
+          .replace(/^(?:ăn|bữa)\s*(?:sáng|trưa|tối|phụ)?\s*[:\-–]?\s*/i, '')
+          .trim();
+        const parsedFoods = cleanedFoodText ? parseFoodText(cleanedFoodText) : [];
+        if (parsedFoods.some((f) => f.recognised)) {
+          macroItems = parsedFoods.map((f) => ({
+            slot: slotHint,
+            name: f.item.name,
+            amount: f.item.amount,
+            unit: f.item.unit,
+            kcal: f.item.kcal,
+            protein: f.item.protein,
+            carbs: f.item.carbs,
+            fat: f.item.fat,
+          }));
+        }
+      }
+
       if (macroItems.length > 0) {
+        const totalKcal = macroItems.reduce((s, it) => s + it.kcal, 0);
+        const totalP = Math.round(macroItems.reduce((s, it) => s + it.protein, 0) * 10) / 10;
+        const totalC = Math.round(macroItems.reduce((s, it) => s + it.carbs, 0) * 10) / 10;
+        const totalF = Math.round(macroItems.reduce((s, it) => s + it.fat, 0) * 10) / 10;
         const first = macroItems[0];
+        const summaryName =
+          macroItems.length > 1
+            ? `${first.name} + ${macroItems.length - 1} món`
+            : first.name;
         return {
           type: 'nutrition',
-          title: `Bữa ${first.slot === 'breakfast' ? 'Sáng' : first.slot === 'lunch' ? 'Trưa' : first.slot === 'dinner' ? 'Tối' : 'Phụ'}: ${first.name} (${first.kcal} kcal · ${first.protein}P · ${first.carbs}C · ${first.fat}F)`,
+          title: `Bữa ${first.slot === 'breakfast' ? 'Sáng' : first.slot === 'lunch' ? 'Trưa' : first.slot === 'dinner' ? 'Tối' : 'Phụ'}: ${summaryName} (${totalKcal} kcal · ${totalP}P · ${totalC}C · ${totalF}F)`,
           badgeLabel: 'Dinh Dưỡng ZENOX',
           badgeColor: '#ff6025',
           icon: Utensils,
@@ -254,7 +305,6 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
       }
     });
 
-    const monthPrefix = today.slice(0, 7);
     const todaySpend = store.transactions
       .filter((tx) => tx.date === today && tx.type === 'expense')
       .reduce((sum, tx) => sum + tx.amount, 0);
@@ -268,6 +318,37 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
       todaySpend,
     };
   }, [store.tasks, store.healthLogs, store.meals, store.transactions, today]);
+
+  const calendarConflictInfo = useMemo(() => {
+    if (!parsedIntent || parsedIntent.type !== 'calendar') {
+      return { conflicts: [] as CalendarEvent[], suggestion: null as { startTime: string; endTime: string } | null };
+    }
+    const startT = calendarOverride?.startTime ?? parsedIntent.data.startTime;
+    const endT = calendarOverride?.endTime ?? parsedIntent.data.endTime;
+    const conflicts = findConflictingEvents(
+      {
+        startDate: parsedIntent.data.date,
+        startTime: startT,
+        endTime: endT,
+        allDay: false,
+      },
+      events
+    );
+    if (conflicts.length === 0) return { conflicts: [], suggestion: null };
+    const dur = Math.max(15, timeToMinutes(endT) - timeToMinutes(startT));
+    const resolution = resolveNonConflictingSlot(
+      parsedIntent.data.date,
+      parsedIntent.data.startTime,
+      dur,
+      events,
+      { minHour: 6, maxHour: 22, bufferMinutes: 0 }
+    );
+    const suggestion =
+      resolution.status === 'shifted'
+        ? { startTime: resolution.startTime, endTime: resolution.endTime }
+        : null;
+    return { conflicts, suggestion };
+  }, [parsedIntent, calendarOverride, events]);
 
   // -------------------------------------------------------------------------
   // Execute Intent Action
@@ -341,20 +422,22 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
       });
       setSuccessMsg(`Đã ghi nhận phiên tập trung ${data.minutes} phút ("${data.label}")!`);
     } else if (type === 'calendar') {
+      const startTime = calendarOverride?.startTime ?? data.startTime;
+      const endTime = calendarOverride?.endTime ?? data.endTime;
       onAddEvent({
-        id: `ev-copilot-${Date.now()}`,
+        id: `usr-copilot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         title: data.title,
         startDate: data.date,
-        startTime: data.startTime,
+        startTime,
         endDate: data.date,
-        endTime: data.endTime,
+        endTime,
         allDay: false,
         calendarId: 'personal',
         color: '#2563EB',
         type: 'event',
         createdAt: Date.now(),
       });
-      setSuccessMsg(`Đã thêm sự kiện "${data.title}" vào ngày ${data.date} lúc ${data.startTime}!`);
+      setSuccessMsg(`Đã thêm sự kiện "${data.title}" vào ngày ${data.date} lúc ${startTime}–${endTime}!`);
     }
 
     setActionHistory((prev) => [
@@ -363,6 +446,7 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
     ]);
 
     setInput('');
+    setCalendarOverride(null);
     setTimeout(() => {
       setSuccessMsg(null);
     }, 4500);
@@ -416,7 +500,10 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
               ref={inputRef}
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setCalendarOverride(null);
+              }}
               placeholder="Bạn muốn trợ lý ghi nhận điều gì? (vd: Tiêu 50k ăn trưa, Họp 15h chiều mai...)"
               className="w-full text-xs sm:text-sm pl-4 pr-24 py-3.5 rounded-2xl border-2 border-indigo-500/30 focus:border-indigo-500 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-hidden transition-all shadow-inner"
             />
@@ -480,13 +567,38 @@ export const LifeCopilotModal: React.FC<LifeCopilotModalProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    {parsedIntent.title}
+                    {parsedIntent.type === 'calendar' && calendarOverride
+                      ? `Sự kiện: "${parsedIntent.data.title}" vào ${parsedIntent.data.date} lúc ${calendarOverride.startTime}–${calendarOverride.endTime}`
+                      : parsedIntent.title}
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     Hệ thống sẽ tự động đồng bộ vào mô-đun tương ứng ngay lập tức.
                   </p>
                 </div>
               </div>
+
+              {parsedIntent.type === 'calendar' && calendarConflictInfo.conflicts.length > 0 && (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-xs text-amber-800 dark:text-amber-200 space-y-2">
+                  <div className="flex items-start gap-2 font-semibold">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <span>
+                      Cảnh báo trùng lịch với{' '}
+                      {calendarConflictInfo.conflicts
+                        .map((c) => `"${c.title}" (${c.startTime}–${c.endTime})`)
+                        .join(', ')}
+                    </span>
+                  </div>
+                  {calendarConflictInfo.suggestion && (
+                    <button
+                      type="button"
+                      onClick={() => setCalendarOverride(calendarConflictInfo.suggestion)}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
+                    >
+                      Dời sang giờ trống gần nhất: {calendarConflictInfo.suggestion.startTime} – {calendarConflictInfo.suggestion.endTime}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             /* Daily Life Command Center Briefing when idle or asking */

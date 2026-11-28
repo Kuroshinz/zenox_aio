@@ -30,8 +30,11 @@ import {
   Compass,
   Target,
   Upload,
+  TrendingUp,
+  RefreshCw,
 } from 'lucide-react';
 import {
+  AwayBreakPeriod,
   CtgPeriodizedRoadmap,
   CtgRoadmapPhase,
   Exercise,
@@ -62,8 +65,11 @@ import {
   sportCalories,
   todayString,
   weeklyVolume,
+  getExerciseHistoryDrilldown,
+  findSessionDetailGaps,
 } from '../../../utils/fitnessMetrics';
 import { notifySuccess, notifyInfo } from '../../../utils/notify';
+import { formatDateString, resolveNonConflictingSlot } from '../../../utils/calendarUtils';
 import { BarChart, ProgressBar } from '../../charts/SimpleCharts';
 import { TrackedScheduleMatrix } from './TrackedScheduleMatrix';
 import { CtgDeloadAdvisor } from './CtgDeloadAdvisor';
@@ -72,6 +78,7 @@ import { CtgCalendarSyncModal } from './CtgCalendarSyncModal';
 import { SmartWorkoutImportModal } from './SmartWorkoutImportModal';
 import { CalendarEvent } from '../../../types/calendar';
 import { getAccessToken, googleSignIn } from '../../../services/auth';
+import { accountStorage } from '../../../services/accountStorage';
 import { notifyError, notifyWarning } from '../../../utils/notify';
 import { TrainingReadinessAutoregulator } from './TrainingReadinessAutoregulator';
 
@@ -100,6 +107,7 @@ interface TrainingTabProps {
   events?: CalendarEvent[];
   onBatchScheduleToCalendar?: (newEvents: CalendarEvent[]) => Promise<void> | void;
   onClearWorkoutEventsFromCalendar?: () => Promise<number> | number | void;
+  awayMode?: AwayBreakPeriod;
 }
 
 const SPORT_OPTIONS: SportType[] = [
@@ -138,11 +146,26 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   events = [],
   onBatchScheduleToCalendar,
   onClearWorkoutEventsFromCalendar,
+  awayMode,
 }) => {
   const [scheduledBanner, setScheduledBanner] = useState<string | null>(null);
   const [showSportModal, setShowSportModal] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState('');
+  const [activeSessionDirty, setActiveSessionDirty] = useState(false);
+  const [pendingPlanSync, setPendingPlanSync] = useState<{
+    planned: PlannedSession;
+    updatedPrescriptions: PlannedSession['prescriptions'];
+  } | null>(null);
+  const [inspectingExerciseId, setInspectingExerciseId] = useState<string | null>(null);
+  const [exerciseCues, setExerciseCues] = useState<Record<string, string>>(() => {
+    try {
+      const raw = accountStorage.getItem('gcal_prod_exercise_cues');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
 
   // 1RM & Barbell Plate Calculator states
   const [showCalculatorModal, setShowCalculatorModal] = useState(false);
@@ -268,7 +291,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   const [isSessionMinimized, setIsSessionMinimized] = useState<boolean>(false);
   const [activeMesoWeek, setActiveMesoWeek] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem('vortexcal_active_mesocycle_week');
+      const saved = accountStorage.getItem('vortexcal_active_mesocycle_week');
       return saved ? parseInt(saved, 10) : 1;
     } catch {
       return 1;
@@ -278,7 +301,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   useEffect(() => {
     const handleMesoChange = () => {
       try {
-        const saved = localStorage.getItem('vortexcal_active_mesocycle_week');
+        const saved = accountStorage.getItem('vortexcal_active_mesocycle_week');
         if (saved) setActiveMesoWeek(parseInt(saved, 10));
       } catch {
         // ignore
@@ -302,7 +325,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   // User preference to show/hide CTG Phase Guidance Banner (respecting users with existing routines)
   const [showCtgGuidance, setShowCtgGuidance] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('vortexcal_show_ctg_training_guidance');
+      const saved = accountStorage.getItem('vortexcal_show_ctg_training_guidance');
       if (saved !== null) {
         return saved === 'true';
       }
@@ -315,7 +338,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
   const handleToggleCtgGuidance = (visible: boolean) => {
     setShowCtgGuidance(visible);
     try {
-      localStorage.setItem('vortexcal_show_ctg_training_guidance', String(visible));
+      accountStorage.setItem('vortexcal_show_ctg_training_guidance', String(visible));
     } catch {}
     if (!visible) {
       notifyInfo(
@@ -409,13 +432,60 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     }
 
     if (adjustmentPct < 0) {
+      const todayDow = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][new Date().getDay()];
+      const todayDayIdx = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+      const targetSession =
+        plannedSessions.find((p) => p.dayIndex === todayDayIdx || p.dayOfWeek === todayDow) ||
+        plannedSessions[0];
+      const scale = Math.max(0.5, 1 + adjustmentPct / 100);
+
+      if (targetSession && onUpdatePlannedSession) {
+        onUpdatePlannedSession({
+          ...targetSession,
+          prescriptions: targetSession.prescriptions.map((p) => ({
+            ...p,
+            sets: Math.max(1, Math.round(p.sets * scale)),
+            rpe: Math.max(5, Math.round((p.rpe - 1) * 10) / 10),
+          })),
+        });
+      }
+
+      // Sync deload / recovery note onto today's Zenox Calendar when fatigue triggers volume cut
+      const todayStr = todayString();
+      if (adjustmentPct <= -20 && onBatchScheduleToCalendar) {
+        const res = resolveNonConflictingSlot(todayStr, '17:30', 45, events, {
+          minHour: 6,
+          maxHour: 23,
+          bufferMinutes: 10,
+        });
+        if (res.status !== 'conflict') {
+          onBatchScheduleToCalendar([
+            {
+              id: `ctg-deload-${Date.now()}`,
+              title: `🧘 [Deload ${adjustmentPct}%] ${targetSession ? targetSession.title : 'Giảm tải phục hồi'}`,
+              description: `Autoregulation Red-Zone (${adjustmentPct}% volume, hạ 1 RPE) để bảo vệ hệ thần kinh trung ương (CNS).`,
+              startDate: todayStr,
+              startTime: res.startTime,
+              endDate: todayStr,
+              endTime: res.endTime,
+              allDay: false,
+              calendarId: 'health',
+              color: '#F43F5E',
+              type: 'event',
+              isCompleted: false,
+              createdAt: Date.now(),
+            },
+          ]);
+        }
+      }
+
       setScheduledBanner(
-        `Đã kích hoạt Autoregulation: Giảm ${Math.abs(adjustmentPct)}% thể tích hôm nay để bảo vệ hệ thần kinh trung ương (CNS Recovery)!`
+        `Đã kích hoạt Autoregulation: Giảm ${Math.abs(adjustmentPct)}% thể tích${targetSession ? ` cho buổi "${targetSession.title}"` : ''}${adjustmentPct <= -20 && onBatchScheduleToCalendar ? ' và đồng bộ ghi chú Deload sang Lịch Zenox' : ''}!`
       );
       setTimeout(() => setScheduledBanner(null), 5000);
       notifySuccess(
         'Đã kích hoạt Autoregulation!',
-        `Đã tự động giảm ${Math.abs(adjustmentPct)}% số hiệp tập để cơ thể phục hồi tối ưu.`
+        `Đã tự động giảm ${Math.abs(adjustmentPct)}% số hiệp tập${targetSession ? ` của "${targetSession.title}"` : ''} để cơ thể phục hồi tối ưu.`
       );
     } else {
       setScheduledBanner(
@@ -458,6 +528,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       startedAt: Date.now(),
       sets: initialSets,
     });
+    setActiveSessionDirty(false);
     setElapsedSeconds(0);
     setRestSecondsLeft(null);
     setIsSessionMinimized(false);
@@ -529,7 +600,60 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       ],
       sets: newSets,
     });
+    setActiveSessionDirty(true);
     setExtraExerciseId('');
+  };
+
+  const handleSwapExerciseInActiveSession = (oldExerciseId: string, newExerciseId: string) => {
+    if (!activeSession || !newExerciseId || oldExerciseId === newExerciseId) return;
+    if (activeSession.prescriptions.some((p) => p.exerciseId === newExerciseId)) {
+      notifyWarning('Bài tập đã tồn tại', 'Bài tập thay thế đã có sẵn trong buổi tập hiện tại.');
+      return;
+    }
+    const lastPr = prs[newExerciseId]?.weightKg || 40;
+    const newSets: typeof activeSession.sets = {};
+    Object.entries(activeSession.sets).forEach(([key, val]) => {
+      if (key.startsWith(`${oldExerciseId}-`)) {
+        const suffix = key.slice(oldExerciseId.length + 1);
+        newSets[`${newExerciseId}-${suffix}`] = {
+          ...val,
+          weightKg: lastPr,
+          completed: false,
+          isPr: false,
+        };
+      } else {
+        newSets[key] = val;
+      }
+    });
+    setActiveSession({
+      ...activeSession,
+      prescriptions: activeSession.prescriptions.map((p) =>
+        p.exerciseId === oldExerciseId ? { ...p, exerciseId: newExerciseId } : p
+      ),
+      sets: newSets,
+    });
+    setActiveSessionDirty(true);
+  };
+
+  const handleMoveExerciseInActiveSession = (index: number, direction: 'up' | 'down') => {
+    if (!activeSession) return;
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    if (
+      index < 0 ||
+      index >= activeSession.prescriptions.length ||
+      targetIdx < 0 ||
+      targetIdx >= activeSession.prescriptions.length
+    ) {
+      return;
+    }
+    const nextPrescriptions = [...activeSession.prescriptions];
+    const [moved] = nextPrescriptions.splice(index, 1);
+    nextPrescriptions.splice(targetIdx, 0, moved);
+    setActiveSession({
+      ...activeSession,
+      prescriptions: nextPrescriptions,
+    });
+    setActiveSessionDirty(true);
   };
 
   const handleUpdateSet = (exerciseId: string, setIndex: number, weightKg: number, reps: number) => {
@@ -622,13 +746,54 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     }
   };
 
-  const handleApplyQuickScale = (exerciseId: string, setIndex: number, factor: number) => {
+  const handleApplyQuickScale = (
+    exerciseId: string,
+    setIndex: number,
+    factor: number,
+    targetSetType?: 'normal' | 'warmup' | 'dropset' | 'failure'
+  ) => {
     if (!activeSession) return;
-    const key = `${exerciseId}-${setIndex}`;
+    const pres = activeSession.prescriptions.find((p) => p.exerciseId === exerciseId);
+    const setCount = pres?.sets || 1;
+    const safeIdx = Math.max(0, Math.min(setIndex, setCount - 1));
+    const key = `${exerciseId}-${safeIdx}`;
     const cur = activeSession.sets[key];
-    const baseWeight = cur?.weightKg || 40;
-    const newWeight = Math.max(2.5, Math.round((baseWeight * factor) * 2) / 2);
-    handleUpdateSet(exerciseId, setIndex, newWeight, cur?.reps || 10);
+
+    let refWeight = cur?.weightKg || prs[exerciseId]?.weightKg || 40;
+    if (targetSetType === 'dropset' && safeIdx > 0) {
+      const prevSet = activeSession.sets[`${exerciseId}-${safeIdx - 1}`];
+      if (prevSet && prevSet.weightKg > refWeight) {
+        refWeight = prevSet.weightKg;
+      }
+    } else if (targetSetType === 'warmup') {
+      let maxWorking = 0;
+      for (let i = 0; i < setCount; i++) {
+        const st = activeSession.sets[`${exerciseId}-${i}`];
+        if (st && st.setType !== 'warmup' && st.weightKg > maxWorking) {
+          maxWorking = st.weightKg;
+        }
+      }
+      if (maxWorking > 0) {
+        refWeight = maxWorking;
+      } else if (prs[exerciseId]?.weightKg && cur?.setType === 'warmup') {
+        refWeight = prs[exerciseId].weightKg;
+      }
+    }
+
+    const newWeight = Math.max(2.5, Math.round(refWeight * factor * 2) / 2);
+    setActiveSession({
+      ...activeSession,
+      sets: {
+        ...activeSession.sets,
+        [key]: {
+          ...(cur || { weightKg: 40, reps: 10, completed: false }),
+          weightKg: newWeight,
+          reps: cur?.reps || 10,
+          completed: false,
+          ...(targetSetType ? { setType: targetSetType } : {}),
+        },
+      },
+    });
   };
 
   const handleApplyDeloadWeek = () => {
@@ -703,9 +868,16 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
     }
 
     if (autoScheduleOnFinish && onScheduleSessionToCalendar) {
-      onScheduleSessionToCalendar(activeSession.planned.title, today, '#2563EB');
+      onScheduleSessionToCalendar(activeSession.planned.title, today, '#E11D48');
     }
 
+    if (activeSessionDirty && onUpdatePlannedSession) {
+      setPendingPlanSync({
+        planned: activeSession.planned,
+        updatedPrescriptions: activeSession.prescriptions,
+      });
+    }
+    setActiveSessionDirty(false);
     setActiveSession(null);
     setRestSecondsLeft(null);
     setScheduledBanner(`Xuất sắc! Đã hoàn thành buổi tập "${activeSession.planned.title}" (+${burnedKcal} kcal tiêu hao)!`);
@@ -732,6 +904,8 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       totalCount: Object.keys(activeSession.sets).length,
     };
   }, [activeSession, userWeightKg]);
+
+  const sessionGapIds = useMemo(() => findSessionDetailGaps(workoutSessions), [workoutSessions]);
 
   const volumeData = useMemo(() => {
     const raw = weeklyVolume(workoutSessions, 4, todayString());
@@ -884,19 +1058,31 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
 
     const targetDate = new Date(monday);
     targetDate.setDate(monday.getDate() + dayIdx);
-    const y = targetDate.getFullYear();
-    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
-    const d = String(targetDate.getDate()).padStart(2, '0');
-    const targetDateStr = `${y}-${m}-${d}`;
+    const targetDateStr = formatDateString(targetDate);
+
+    const resolution = resolveNonConflictingSlot(targetDateStr, '17:30', 75, events, {
+      maxHour: 23,
+      bufferMinutes: 15,
+    });
+
+    if (resolution.status === 'conflict') {
+      const names = resolution.remainingConflicts
+        .map((c) => `"${c.title}" (${c.startTime}–${c.endTime})`)
+        .join(', ');
+      const ok = window.confirm(
+        `Cảnh báo trùng lịch vào ngày ${targetDateStr} lúc 17:30–18:45 với ${names} và không còn khung trống 75 phút phù hợp trong ngày. Bạn vẫn muốn thêm buổi tập "${session.title}" chứ?`
+      );
+      if (!ok) return;
+    }
 
     const newEvent: CalendarEvent = {
       id: `scheduled-wo-${Date.now()}`,
       title: `[ZENOX] ${session.title}`,
       description: `Giáo án ZENOX (${session.dayOfWeek || 'Buổi tập'}):\n${session.prescriptions.map((p) => `• ${p.exerciseId} (${p.sets}x${p.reps})`).join('\n')}\nĐã lên lịch tối ưu bởi ZENOX.`,
       startDate: targetDateStr,
-      startTime: '17:30',
+      startTime: resolution.startTime,
       endDate: targetDateStr,
-      endTime: '18:45',
+      endTime: resolution.endTime,
       allDay: false,
       calendarId: 'health',
       color: '#E11D48',
@@ -911,27 +1097,100 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
       onScheduleSessionToCalendar(session.title, targetDateStr, '#E11D48');
     }
 
-    setScheduledBanner(`Đã lên lịch "${session.title}" vào ngày ${targetDateStr} (17:30 - 18:45) và đồng bộ Google Calendar!`);
-    setTimeout(() => setScheduledBanner(null), 4000);
-    notifySuccess('Đã lên lịch thành công!', `"${session.title}" vào ${session.dayOfWeek || 'Lịch'} (${targetDateStr}) 17:30 - 18:45.`);
+    if (resolution.status === 'shifted') {
+      const avoided = resolution.conflictingEvents.map((e) => e.title).join(', ');
+      setScheduledBanner(
+        `Đã tự dời "${session.title}" sang ${resolution.startTime}–${resolution.endTime} ngày ${targetDateStr} để tránh trùng "${avoided}".`
+      );
+      notifyWarning(
+        'Đã tự dời né trùng lịch',
+        `Khung 17:30 trùng "${avoided}" nên "${session.title}" được xếp sang ${resolution.startTime}–${resolution.endTime}.`
+      );
+    } else {
+      setScheduledBanner(
+        `Đã lên lịch "${session.title}" vào ngày ${targetDateStr} (${resolution.startTime} - ${resolution.endTime})!`
+      );
+      notifySuccess(
+        'Đã lên lịch thành công!',
+        `"${session.title}" vào ${session.dayOfWeek || 'Lịch'} (${targetDateStr}) ${resolution.startTime} - ${resolution.endTime}.`
+      );
+    }
+    setTimeout(() => setScheduledBanner(null), 5000);
   };
 
-  const handleScheduleFullWeek = () => {
-    if (!onScheduleSessionToCalendar || plannedSessions.length === 0) return;
+  const handleScheduleFullWeek = async () => {
+    if (plannedSessions.length === 0) return;
+    if (!onBatchScheduleToCalendar && !onScheduleSessionToCalendar) return;
+
     const now = new Date();
     const day = now.getDay();
     const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(now.setDate(diff));
+    const monday = new Date(now.getFullYear(), now.getMonth(), diff);
+
+    const newEvents: CalendarEvent[] = [];
+    const scheduledSoFar: CalendarEvent[] = [];
+    let shiftedCount = 0;
+    const conflictSummary: string[] = [];
 
     plannedSessions.forEach((session, idx) => {
       const sessionDate = new Date(monday);
       const dayOffset = session.dayIndex !== undefined ? session.dayIndex : idx;
       sessionDate.setDate(monday.getDate() + dayOffset);
-      const dateStr = sessionDate.toISOString().slice(0, 10);
-      onScheduleSessionToCalendar(session.title, dateStr, '#2563EB');
+      const dateStr = formatDateString(sessionDate);
+
+      const resolution = resolveNonConflictingSlot(
+        dateStr,
+        '17:30',
+        75,
+        [...events, ...scheduledSoFar],
+        { maxHour: 23, bufferMinutes: 15 }
+      );
+
+      if (resolution.status === 'shifted') shiftedCount++;
+      if (resolution.status === 'conflict') {
+        const names = resolution.remainingConflicts.map((c) => c.title).join(', ');
+        conflictSummary.push(`${dateStr} (${session.title} ↔ ${names})`);
+      }
+
+      const ev: CalendarEvent = {
+        id: `scheduled-wo-${Date.now()}-${idx}`,
+        title: `[ZENOX] ${session.title}`,
+        description: `Giáo án ZENOX (${session.dayOfWeek || 'Buổi tập'}):\n${session.prescriptions.map((p) => `• ${p.exerciseId} (${p.sets}x${p.reps})`).join('\n')}`,
+        startDate: dateStr,
+        startTime: resolution.startTime,
+        endDate: dateStr,
+        endTime: resolution.endTime,
+        allDay: false,
+        calendarId: 'health',
+        color: '#E11D48',
+        type: 'event',
+        isCompleted: false,
+        createdAt: Date.now(),
+      };
+      newEvents.push(ev);
+      scheduledSoFar.push(ev);
     });
 
-    setScheduledBanner(`Đã đồng bộ toàn bộ ${plannedSessions.length} buổi tập tuần này lên Lịch tuần!`);
+    if (conflictSummary.length > 0) {
+      const ok = window.confirm(
+        `Cảnh báo: Có ${conflictSummary.length} buổi không còn khung trống trong ngày và vẫn trùng lịch (${conflictSummary.join('; ')}). Bạn có muốn tiếp tục đồng bộ không, hay mở "Lên Lịch Thông Minh" để chọn giờ riêng?`
+      );
+      if (!ok) return;
+    }
+
+    if (onBatchScheduleToCalendar) {
+      await onBatchScheduleToCalendar(newEvents);
+    } else if (onScheduleSessionToCalendar) {
+      newEvents.forEach((ev) => onScheduleSessionToCalendar(ev.title.replace(/^\[ZENOX\]\s*/, ''), ev.startDate, '#E11D48'));
+    }
+
+    const extraNote = shiftedCount > 0 ? ` (${shiftedCount} buổi được tự động dời sang giờ trống để tránh trùng lịch)` : '';
+    setScheduledBanner(`Đã đồng bộ ${newEvents.length} buổi tập tuần này lên Lịch${extraNote}!`);
+    if (shiftedCount > 0) {
+      notifyWarning('Đồng bộ hoàn tất (có dời lịch)', `${shiftedCount}/${newEvents.length} buổi đã tự động chọn giờ trống tránh trùng lịch học/làm.`);
+    } else {
+      notifySuccess('Đã đồng bộ lịch tập tuần!', `Đã xếp ${newEvents.length} buổi tập đều khung giờ.`);
+    }
     setTimeout(() => setScheduledBanner(null), 5000);
   };
 
@@ -1050,9 +1309,13 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         onAddSet={handleAddSetToExercise}
         onRemoveSet={handleRemoveSetFromExercise}
         onAddExercise={handleAddExerciseToActiveSession}
+        onSwapExercise={handleSwapExerciseInActiveSession}
+        onMoveExercise={handleMoveExerciseInActiveSession}
+        onInspectExercise={(id) => setInspectingExerciseId(id)}
         onFinishSession={handleFinishActiveSession}
         onCancelSession={() => {
           setActiveSession(null);
+          setActiveSessionDirty(false);
           setRestSecondsLeft(null);
           setIsSessionMinimized(false);
         }}
@@ -1073,6 +1336,49 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {pendingPlanSync && (
+        <div className="rounded-2xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/90 dark:bg-indigo-950/35 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 shrink-0">
+              <RefreshCw className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-indigo-950 dark:text-indigo-100">
+                Lịch tập "{pendingPlanSync.planned.title}" đã thay đổi trong lúc tập ({pendingPlanSync.planned.prescriptions.length} → {pendingPlanSync.updatedPrescriptions.length} bài)
+              </div>
+              <p className="text-[11px] text-indigo-800/80 dark:text-indigo-300/80 mt-0.5">
+                Bạn có muốn cập nhật thứ tự hoặc bài tập thay thế này vào giáo án gốc cho các tuần sau không?
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (onUpdatePlannedSession) {
+                  onUpdatePlannedSession({
+                    ...pendingPlanSync.planned,
+                    prescriptions: pendingPlanSync.updatedPrescriptions,
+                  });
+                  notifySuccess('Đã đồng bộ giáo án!', `Cập nhật cấu trúc bài tập cho "${pendingPlanSync.planned.title}".`);
+                }
+                setPendingPlanSync(null);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer transition-colors"
+            >
+              Áp dụng cho giáo án
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingPlanSync(null)}
+              className="px-3 py-1.5 rounded-lg bg-white dark:bg-white/[0.06] border border-indigo-200 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-200 text-xs font-medium hover:bg-indigo-100/60 dark:hover:bg-white/[0.1] cursor-pointer transition-colors"
+            >
+              Chỉ giữ buổi này
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* CTG Active Phase Training Guidance Card (Có thể ẩn / hiện theo nhu cầu) */}
       {ctgActivePhase && showCtgGuidance && (
         <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 text-zinc-100 relative">
@@ -1418,7 +1724,14 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                             >
                               {muscleLabel}
                             </span>
-                            <span className="truncate">{ex ? ex.name : pres.exerciseId}</span>
+                            <button
+                              type="button"
+                              onClick={() => setInspectingExerciseId(pres.exerciseId)}
+                              className="truncate text-left hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline cursor-pointer transition-colors flex items-center gap-1"
+                              title="Xem lịch sử E1RM, kỷ lục và ghi chú kỹ thuật"
+                            >
+                              <span className="truncate">{ex ? ex.name : pres.exerciseId}</span>
+                            </button>
                             {pres.supersetId && (
                               <span className="text-[9px] px-1 rounded bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
                                 Superset
@@ -1762,6 +2075,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                 session.finishedAt && session.startedAt
                   ? Math.round((session.finishedAt - session.startedAt) / 60000)
                   : 45;
+              const hasDetailGap = sessionGapIds.has(session.id);
 
               // Group sets by exercise
               const setsByEx: Record<string, typeof session.sets> = {};
@@ -1777,7 +2091,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                 >
                   <div className="p-3.5 flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-orange-500" />
                         <span className="font-bold text-xs sm:text-sm text-gray-900 dark:text-gray-100">
                           {session.title}
@@ -1788,6 +2102,14 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
                         {durationMin > 0 && (
                           <span className="text-[10px] text-gray-400">
                             ⏱ {durationMin} phút
+                          </span>
+                        )}
+                        {hasDetailGap && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300/60 dark:border-amber-800/60"
+                            title="Buổi tập chưa có đủ chi tiết hiệp hoặc tải trọng (>0 kg)"
+                          >
+                            <AlertCircle className="w-3 h-3" /> Thiếu chi tiết hiệp
                           </span>
                         )}
                       </div>
@@ -2920,6 +3242,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         plannedSessions={plannedSessions}
         onBatchSchedule={onBatchScheduleToCalendar}
         onClearWorkoutEvents={onClearWorkoutEventsFromCalendar}
+        awayMode={awayMode}
         lang={lang}
       />
 
@@ -2935,6 +3258,148 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({
         onOpenSyncStudio={() => setShowCalendarSyncModal(true)}
         lang={lang}
       />
+
+      {/* Exercise Drilldown & E1RM History Modal */}
+      {inspectingExerciseId && (() => {
+        const drilldown = getExerciseHistoryDrilldown(inspectingExerciseId, workoutSessions, customExercises);
+        const exInfo = getExercise(inspectingExerciseId);
+        const currentCue = exerciseCues[inspectingExerciseId] || '';
+        const muscleLabel = exInfo ? MUSCLE_LABEL[exInfo.muscle as MuscleGroup] : 'Khác';
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+            <div className="w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-white/[0.1] shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+              <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.08] flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-gray-100 truncate">
+                      {drilldown.exerciseName}
+                    </h3>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300">
+                      {muscleLabel}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                    Phân tích tiến bộ Est. 1RM, kỷ lục cá nhân &amp; ghi chú kỹ thuật
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInspectingExerciseId(null)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/35 border border-indigo-200/70 dark:border-indigo-800/50">
+                    <div className="text-[10px] uppercase font-bold text-indigo-600 dark:text-indigo-400">Best Est. 1RM</div>
+                    <div className="text-lg font-extrabold text-gray-900 dark:text-gray-100 font-mono mt-0.5">
+                      {drilldown.bestOneRmKg > 0 ? `${drilldown.bestOneRmKg} kg` : '—'}
+                    </div>
+                    {drilldown.latestOneRmDeltaKg !== 0 && (
+                      <div className={`text-[10px] font-semibold mt-0.5 ${drilldown.latestOneRmDeltaKg > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>
+                        {drilldown.latestOneRmDeltaKg > 0 ? `+${drilldown.latestOneRmDeltaKg}` : drilldown.latestOneRmDeltaKg} kg gần nhất
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-950/35 border border-orange-200/70 dark:border-orange-800/50">
+                    <div className="text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400">Tạ nặng nhất</div>
+                    <div className="text-lg font-extrabold text-gray-900 dark:text-gray-100 font-mono mt-0.5">
+                      {drilldown.maxWeightKg > 0 ? `${drilldown.maxWeightKg} kg` : '—'}
+                    </div>
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Mức tạ đơn cao nhất</div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200/70 dark:border-emerald-800/50">
+                    <div className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">Hiệp tốt nhất</div>
+                    <div className="text-base font-extrabold text-gray-900 dark:text-gray-100 font-mono mt-0.5">
+                      {drilldown.bestRepSet ? `${drilldown.bestRepSet.weightKg}kg × ${drilldown.bestRepSet.reps}` : '—'}
+                    </div>
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      {drilldown.bestRepSet ? drilldown.bestRepSet.date : 'Chưa có dữ liệu'}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08]">
+                    <div className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Tần suất</div>
+                    <div className="text-lg font-extrabold text-gray-900 dark:text-gray-100 font-mono mt-0.5">
+                      {drilldown.totalSessionsCount} buổi
+                    </div>
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      {drilldown.totalWorkingSets} hiệp working
+                    </div>
+                  </div>
+                </div>
+
+                {/* Personal Form Cue */}
+                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.02]">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-1.5">
+                    Ghi chú kỹ thuật (Form Cue) — tự động lưu theo bài tập
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={currentCue}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setExerciseCues((prev) => {
+                        const next = { ...prev, [inspectingExerciseId]: val };
+                        try {
+                          accountStorage.setItem('gcal_prod_exercise_cues', JSON.stringify(next));
+                        } catch {
+                          // ignore quota errors
+                        }
+                        return next;
+                      });
+                    }}
+                    placeholder="Ví dụ: Ép bả vai xuống ghế, hạ chậm 3 giây chạm nhẹ ngực giữa..."
+                    className="w-full rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-gray-900 px-3 py-2 text-xs text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                  />
+                </div>
+
+                {/* Session History Timeline */}
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                    Lịch sử theo buổi ({drilldown.timeline.length} buổi gần đây)
+                  </div>
+                  {drilldown.timeline.length === 0 ? (
+                    <div className="p-6 text-center rounded-xl border border-dashed border-slate-200 dark:border-white/[0.08] text-xs text-gray-400">
+                      Chưa có hiệp tập nào được ghi nhận cho bài tập này.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {drilldown.timeline.slice(-10).reverse().map((item) => (
+                        <div
+                          key={`${item.sessionId}-${item.date}`}
+                          className="p-3 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] flex flex-wrap items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                              {item.sessionTitle}
+                            </div>
+                            <div className="text-[11px] text-gray-400 font-mono">{item.date}</div>
+                          </div>
+                          <div className="flex items-center gap-3 font-mono text-[11px]">
+                            <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-white/[0.06] text-gray-700 dark:text-gray-200">
+                              Top: {item.topWeightKg}kg × {item.topReps}
+                            </span>
+                            <span className="text-gray-500 dark:text-gray-400">
+                              {item.setsCount} hiệp · {item.totalTonnageKg.toLocaleString()} kg
+                            </span>
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                              E1RM {item.bestOneRmKg}kg
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
