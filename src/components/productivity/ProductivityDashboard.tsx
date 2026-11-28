@@ -196,23 +196,23 @@ export const ProductivityDashboard: React.FC<ProductivityDashboardProps> = ({
   const displayName = currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Thiện Nhân');
 
   return (
-    <div className="relative select-none font-sans max-w-7xl mx-auto space-y-6 pb-12">
+    <div className="relative select-none font-sans max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-8 sm:pb-12">
       {/* =========================================================================
           1. EXECUTIVE COMMAND HEADER (Live Real-Time Data)
           ========================================================================= */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-rose-950/40 via-black/60 to-rose-950/30 border border-white/[0.09] p-5 sm:p-6 backdrop-blur-2xl shadow-2xl">
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-r from-rose-950/40 via-black/60 to-rose-950/30 border border-white/[0.09] p-4 sm:p-6 backdrop-blur-2xl shadow-2xl">
         <div className="absolute top-0 right-0 w-80 h-80 bg-rose-600/15 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16" />
 
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="space-y-2 max-w-xl">
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-5">
+          <div className="space-y-1.5 sm:space-y-2 max-w-xl">
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-              <span className="text-[11px] font-extrabold tracking-wider uppercase text-rose-300">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+              <span className="text-[10px] sm:text-[11px] font-extrabold tracking-wider uppercase text-rose-300">
                 Hệ Thống Chỉ Huy & Năng Suất ZENOX
               </span>
             </div>
 
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+            <h1 className="text-lg sm:text-2xl font-black text-white tracking-tight">
               {greeting}, <span className="text-rose-400 capitalize">{displayName}</span>!
             </h1>
 
@@ -223,8 +223,8 @@ export const ProductivityDashboard: React.FC<ProductivityDashboardProps> = ({
             </p>
           </div>
 
-          {/* Quick 1-Click Interactive Action Pills */}
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Quick 1-Click Interactive Action Pills (2x2 clean mobile grid) */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
             <button
               onClick={() => {
                 onQuickAddWater?.(250);
@@ -324,11 +324,11 @@ export const ProductivityDashboard: React.FC<ProductivityDashboardProps> = ({
               --------------------------------------------------------------------- */}
           <div className="lg:col-span-7 space-y-6">
             {/* ROW 1: 3 STAT CARDS (Health Score, Sleep, Habits) */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
               {/* CARD 1: REAL DAILY HEALTH SCORE */}
               <div
                 onClick={() => onNavigate('health')}
-                className="glass-panel p-5 flex flex-col justify-between relative overflow-hidden group cursor-pointer hover:border-rose-500/40"
+                className="glass-panel p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden group cursor-pointer hover:border-rose-500/40"
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-bold text-slate-300">
@@ -382,7 +382,7 @@ export const ProductivityDashboard: React.FC<ProductivityDashboardProps> = ({
               {/* CARD 2: REAL SLEEP TRACKING */}
               <div
                 onClick={() => onNavigate('health')}
-                className="glass-panel p-5 flex flex-col justify-between relative overflow-hidden group cursor-pointer hover:border-rose-500/40"
+                className="glass-panel p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden group cursor-pointer hover:border-rose-500/40"
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-bold text-slate-300">
@@ -425,7 +425,7 @@ export const ProductivityDashboard: React.FC<ProductivityDashboardProps> = ({
               {/* CARD 3: REAL HABIT COMPLETION STREAK */}
               <div
                 onClick={() => onNavigate('tasks')}
-                className="glass-panel p-5 flex flex-col justify-between relative overflow-hidden group cursor-pointer hover:border-rose-500/40 bg-gradient-to-br from-white/[0.04] to-rose-950/20 border-rose-500/25"
+                className="col-span-2 sm:col-span-1 glass-panel p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden group cursor-pointer hover:border-rose-500/40 bg-gradient-to-br from-white/[0.04] to-rose-950/20 border-rose-500/25"
               >
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5">

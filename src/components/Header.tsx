@@ -291,21 +291,21 @@ export const Header: React.FC<HeaderProps> = ({
   const displayName = userName || (userEmail ? userEmail.split('@')[0] : 'Admin');
 
   return (
-    <header className="h-18 px-4 sm:px-6 lg:px-8 border-b border-slate-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#080204]/85 backdrop-blur-2xl flex items-center justify-between gap-3 sm:gap-6 shrink-0 select-none z-30 transition-colors">
+    <header className="h-14 sm:h-16 px-3 sm:px-6 lg:px-8 border-b border-slate-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-[#080204]/85 backdrop-blur-2xl flex items-center justify-between gap-2 sm:gap-5 shrink-0 select-none z-30 transition-colors">
       {/* Left: Hamburger & Greeting */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
         <button
           onClick={onToggleSidebar}
           title={lang === 'vi' ? 'Ẩn/hiện thanh bên' : 'Toggle sidebar'}
-          className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+          className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
         >
           <Menu className="w-5 h-5" />
         </button>
 
-        <div className="flex flex-col">
-          <h1 className="text-sm sm:text-base font-bold tracking-tight text-white flex items-center gap-1.5 leading-none">
-            <span>
-              {lang === 'vi' ? `${timeGreetingVi}, ` : `${timeGreetingEn}, `}
+        <div className="flex flex-col min-w-0">
+          <h1 className="text-xs sm:text-base font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-1 leading-none truncate">
+            <span className="truncate">
+              <span className="hidden sm:inline">{lang === 'vi' ? `${timeGreetingVi}, ` : `${timeGreetingEn}, `}</span>
               <span className="text-rose-500 font-extrabold capitalize">{displayName}</span>
             </span>
           </h1>
@@ -336,12 +336,12 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right: Quick actions, Sync, Notification, Theme, Profile */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
         {/* + Tạo mới pill button */}
         <button
           onClick={onOpenQuickAdd}
           title={lang === 'vi' ? 'Tạo nhanh bằng câu lệnh tự nhiên' : 'Quick add'}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-600/25 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+          className="flex items-center gap-1.5 p-2 sm:px-3.5 sm:py-1.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-600/25 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
         >
           <Plus className="w-3.5 h-3.5" />
           <span className="hidden md:inline">{lang === 'vi' ? 'Tạo mới' : 'Create'}</span>
@@ -354,7 +354,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div
             onClick={() => setShowSyncDetailsPopup(!showSyncDetailsPopup)}
             title={lang === 'vi' ? 'Bấm để xem chi tiết tình trạng đồng bộ & lưu trữ' : 'Click to view sync & storage status'}
-            className={`group flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border backdrop-blur-xl transition-all duration-300 cursor-pointer select-none header-threeui-sync-control ${syncStatus.badgeClass}`}
+            className={`group flex items-center gap-1.5 sm:gap-2 p-1 sm:pl-1 sm:pr-3 sm:py-1 rounded-full border backdrop-blur-xl transition-all duration-300 cursor-pointer select-none header-threeui-sync-control ${syncStatus.badgeClass}`}
           >
             {/* ThreeUI WebGL Shader Toggle Switch */}
             <div
@@ -362,7 +362,7 @@ export const Header: React.FC<HeaderProps> = ({
                 e.stopPropagation();
                 onToggleLiveSync?.(!isLiveSyncEnabled);
               }}
-              className="w-[52px] sm:w-[58px] h-[26px] sm:h-[28px] rounded-full overflow-hidden bg-transparent shrink-0 relative flex items-center justify-center transition-transform group-hover:scale-[1.02]"
+              className="w-[44px] sm:w-[58px] h-[24px] sm:h-[28px] rounded-full overflow-hidden bg-transparent shrink-0 relative flex items-center justify-center transition-transform group-hover:scale-[1.02]"
               title={lang === 'vi' ? 'Bật/tắt chế độ Live Sync' : 'Toggle Live Sync'}
             >
               <SkeuomorphicToggleCollection
@@ -381,7 +381,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Connected Dynamic Status Indicator & Label */}
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <div className="hidden sm:flex items-center gap-1.5 whitespace-nowrap">
               <span className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${syncStatus.dotClass}`} />
               <span className={`text-[11px] font-mono font-bold tracking-tight transition-colors ${syncStatus.textClass}`}>
                 {syncStatus.label}
@@ -396,7 +396,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="fixed inset-0 z-40"
                 onClick={() => setShowSyncDetailsPopup(false)}
               />
-              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-[#0c1424] border border-slate-200 dark:border-white/[0.08] rounded-3xl shadow-2xl p-4 sm:p-5 z-50 backdrop-blur-xl animate-fadeIn space-y-4">
+              <div className="fixed sm:absolute right-3 sm:right-0 top-16 sm:top-auto sm:mt-2 w-[min(22rem,calc(100vw-24px))] sm:w-96 bg-white dark:bg-[#0c1424] border border-slate-200 dark:border-white/[0.08] rounded-3xl shadow-2xl p-4 sm:p-5 z-50 backdrop-blur-xl animate-fadeIn space-y-4">
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/[0.08]">
                   <div className="flex items-center gap-2">
@@ -584,7 +584,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="fixed inset-0 z-40"
                 onClick={() => setShowNotificationPopup(false)}
               />
-              <div className="absolute right-0 mt-2 w-84 sm:w-96 bg-white dark:bg-[#0c1424] border border-slate-200 dark:border-white/[0.08] rounded-3xl shadow-2xl p-4 z-50 max-h-[82vh] flex flex-col backdrop-blur-xl animate-fadeIn">
+              <div className="fixed sm:absolute right-3 sm:right-0 top-16 sm:top-auto sm:mt-2 w-[min(22rem,calc(100vw-24px))] sm:w-96 bg-white dark:bg-[#0c1424] border border-slate-200 dark:border-white/[0.08] rounded-3xl shadow-2xl p-4 z-50 max-h-[80dvh] flex flex-col backdrop-blur-xl animate-fadeIn">
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/[0.08]/80 shrink-0">
                   <div className="flex items-center gap-2">
@@ -836,8 +836,8 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Consolidated Utility Capsule: Lang + Theme */}
-        <div className="flex items-center p-0.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
+        {/* Consolidated Utility Capsule: Lang + Theme (desktop; mobile in profile menu) */}
+        <div className="hidden sm:flex items-center p-0.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
           <button
             onClick={onToggleLang}
             title={lang === 'vi' ? 'Đổi sang English' : 'Chuyển sang Tiếng Việt'}
@@ -935,6 +935,25 @@ export const Header: React.FC<HeaderProps> = ({
                     <HelpCircle className="w-4 h-4 text-rose-500" />
                     <span>{lang === 'vi' ? 'Phím tắt bàn phím' : 'Keyboard Shortcuts'}</span>
                   </button>
+
+                  <div className="sm:hidden grid grid-cols-2 gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => onToggleLang()}
+                      className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-rose-500" />
+                      <span>{lang === 'vi' ? 'VI' : 'EN'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleDarkMode()}
+                      className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
+                    >
+                      {darkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5" />}
+                      <span>{darkMode ? 'Sáng' : 'Tối'}</span>
+                    </button>
+                  </div>
 
                   <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700/60">
                     {isLoggedInGoogle ? (

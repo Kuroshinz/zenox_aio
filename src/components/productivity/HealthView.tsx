@@ -649,31 +649,31 @@ export const HealthView: React.FC<HealthViewProps> = ({
   );
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-slate-50 dark:bg-transparent p-4 md:p-6 lg:p-8 select-none">
+    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-slate-50 dark:bg-transparent p-3 sm:p-5 lg:p-8 select-none">
       {/* ZENOX Brand Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <span className="font-extrabold text-2xl md:text-3xl tracking-tight text-slate-900 dark:text-white">
-              Vortex<span className="text-rose-600 dark:text-rose-400">Cal</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-extrabold text-xl sm:text-2xl md:text-3xl tracking-tight text-slate-900 dark:text-white">
+              ZEN<span className="text-rose-600 dark:text-rose-400">OX</span>
             </span>
-            <span className="text-[10px] font-extrabold tracking-wider uppercase bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 px-2.5 py-0.5 rounded-full">
+            <span className="inline-flex items-center whitespace-nowrap text-[10px] font-extrabold tracking-wider uppercase bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 px-2.5 py-0.5 rounded-full shrink-0">
               HEALTH & MACRO
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             {lang === 'vi'
-              ? 'Ăn món Việt, vẫn xuống mỡ — Lộ trình tập luyện & dinh dưỡng cá nhân hóa quanh cơm tấm, bún phở.'
-              : 'Vietnamese diet fitness — Personalized training & nutrition roadmap with Google Calendar integration.'}
+              ? 'Ăn món Việt, vẫn xuống mỡ — Lộ trình tập luyện & dinh dưỡng cá nhân hóa.'
+              : 'Vietnamese diet fitness — Personalized training & nutrition roadmap.'}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="text-xs px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+            className="text-xs px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 dark:[color-scheme:dark] text-slate-700 dark:text-slate-200"
           />
           <button
             type="button"
@@ -682,22 +682,22 @@ export const HealthView: React.FC<HealthViewProps> = ({
           >
             {lang === 'vi' ? 'Hôm nay' : 'Today'}
           </button>
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold  bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+          <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
             {lang === 'vi' ? 'Tự nhập liệu' : 'Manual Track'}
           </span>
         </div>
       </div>
 
-      {/* Multitasking Sub-Tabs Sticky Bar */}
-      <div className="sticky top-0 z-20 pt-2 pb-3 mb-6">
-        <div className="p-1.5 rounded-full bg-white/[0.04] dark:bg-white/[0.04] backdrop-blur-2xl border border-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.36),0_0_20px_rgba(255,255,255,0.03)] inline-flex items-center gap-1.5 overflow-x-auto max-w-full scrollbar-none">
+      {/* Multitasking Sub-Tabs Sticky Bar (3x2 grid on iPhone, capsule bar on desktop) */}
+      <div className="sticky top-0 z-20 pt-1 pb-2.5 sm:pt-2 sm:pb-3 mb-4 sm:mb-6 bg-slate-50/85 dark:bg-[#070204]/85 backdrop-blur-xl -mx-3 px-3 sm:mx-0 sm:px-0 sm:bg-transparent sm:dark:bg-transparent sm:backdrop-blur-none">
+        <div className="p-1.5 rounded-2xl sm:rounded-full bg-slate-200/70 dark:bg-white/[0.05] backdrop-blur-2xl border border-slate-200 dark:border-white/[0.12] shadow-lg grid grid-cols-3 sm:inline-flex items-center gap-1 sm:gap-1.5 w-full sm:w-auto">
           {[
-            { id: 'overview', label: lang === 'vi' ? 'Tổng quan & Chỉ số' : 'Overview & Logs', icon: HeartPulse },
-            { id: 'roadmap', label: lang === 'vi' ? 'Lộ trình chu kỳ ZENOX' : 'ZENOX Periodized Roadmap', icon: Compass },
-            { id: 'inbody', label: lang === 'vi' ? 'Tiến độ & Check Body' : 'Progress & Body Check', icon: Scale },
-            { id: 'training', label: lang === 'vi' ? 'Giáo án & Buổi tập' : 'Workouts & Mesocycle', icon: Dumbbell },
-            { id: 'nutrition', label: lang === 'vi' ? 'Dinh dưỡng & Món Việt' : 'Nutrition & Meals', icon: Utensils },
-            { id: 'profile', label: lang === 'vi' ? 'Hồ sơ của tôi' : 'My Profile', icon: User },
+            { id: 'overview', label: lang === 'vi' ? 'Tổng quan' : 'Overview', icon: HeartPulse },
+            { id: 'roadmap', label: lang === 'vi' ? 'Lộ trình' : 'Roadmap', icon: Compass },
+            { id: 'inbody', label: lang === 'vi' ? 'Body Check' : 'InBody', icon: Scale },
+            { id: 'training', label: lang === 'vi' ? 'Tập luyện' : 'Training', icon: Dumbbell },
+            { id: 'nutrition', label: lang === 'vi' ? 'Dinh dưỡng' : 'Nutrition', icon: Utensils },
+            { id: 'profile', label: lang === 'vi' ? 'Hồ sơ' : 'Profile', icon: User },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeSubTab === tab.id;
@@ -706,14 +706,14 @@ export const HealthView: React.FC<HealthViewProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveSubTab(tab.id as SubTab)}
-                className={`inline-flex items-center gap-2 h-9 px-4 rounded-full text-xs font-bold transition-all duration-300 cursor-pointer shrink-0 whitespace-nowrap ${
+                className={`inline-flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 h-9 px-2 sm:px-4 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 cursor-pointer whitespace-nowrap ${
                   isActive
-                    ? 'bg-white text-slate-950 shadow-[0_2px_14px_rgba(255,255,255,0.4)] scale-102 font-extrabold'
-                    : 'text-slate-300 hover:text-white hover:bg-white/[0.08] hover:scale-102 active:scale-98 font-semibold'
+                    ? 'bg-white text-slate-950 shadow-[0_2px_12px_rgba(255,255,255,0.35)] font-extrabold'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-white/[0.08] font-semibold'
                 }`}
               >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span>{tab.label}</span>
+                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span className="truncate">{tab.label}</span>
               </button>
             );
           })}
@@ -848,31 +848,31 @@ export const HealthView: React.FC<HealthViewProps> = ({
         <div className="w-full shrink-0 flex flex-col">
           {/* CTG Active Transformation Wave Banner */}
           {ctgActivePhase ? (
-            <div className="bg-gradient-to-r from-rose-950/40 via-indigo-950/30 to-[#0b101b] border border-rose-500/40 rounded-3xl p-5 mb-6 shadow-xl relative overflow-hidden space-y-4 shrink-0 min-h-fit">
+            <div className="bg-gradient-to-r from-rose-950/40 via-indigo-950/30 to-[#0b101b] border border-rose-500/40 rounded-2xl sm:rounded-3xl p-4 sm:p-5 mb-5 sm:mb-6 shadow-xl relative overflow-hidden space-y-4 shrink-0 min-h-fit">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/10 pb-3">
-                <div className="flex items-center gap-3">
+                <div className="flex items-start sm:items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
                     <Compass className="w-5 h-5" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-extrabold  px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <span className="inline-flex items-center whitespace-nowrap text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
                         Lộ Trình ZENOX Đang Chạy
                       </span>
-                      <span className="text-xs text-white/50 font-mono">
+                      <span className="text-[11px] sm:text-xs text-white/50 font-mono">
                         {ctgActivePhase.startDate} – {ctgActivePhase.endDate}
                       </span>
                       <span className="text-[11px] text-emerald-400 font-bold font-mono">
-                        (Đã đi: {activePhaseDaysElapsed} ngày)
+                        (Đã đi: {activePhaseDaysElapsed}d)
                       </span>
                       <span className="text-[11px] text-amber-400 font-semibold font-mono">
-                        (Còn ~{activePhaseDaysRemaining} ngày)
+                        (Còn ~{activePhaseDaysRemaining}d)
                       </span>
                     </div>
-                    <h3 className="text-lg font-black text-white mt-0.5">
+                    <h3 className="text-base sm:text-lg font-black text-white mt-1">
                       {ctgActivePhase.name}
-                      <span className="text-xs font-normal text-white/50 ml-2">
-                        • Mục tiêu: {ctgActivePhase.startWeightKg}kg ➔ {ctgActivePhase.targetWeightKg}kg ({ctgActivePhase.targetBodyFatPct}% mỡ)
+                      <span className="text-xs font-normal text-white/55 block sm:inline sm:ml-2">
+                        Mục tiêu: {ctgActivePhase.startWeightKg}kg ➔ {ctgActivePhase.targetWeightKg}kg (~{ctgActivePhase.targetBodyFatPct}% mỡ)
                       </span>
                     </h3>
                   </div>
@@ -1421,9 +1421,9 @@ export const HealthView: React.FC<HealthViewProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span
-                className="px-2.5 py-0.5 rounded-full text-[10px] font-bold  text-white"
+                className="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white shrink-0"
                 style={{ backgroundColor: healthScore.badgeColor }}
               >
                 {healthScore.statusLabel}

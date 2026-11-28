@@ -27,7 +27,6 @@ import {
 } from './utils/calendarUtils';
 
 const Scene = lazy(() => import('./Scene').then((m) => ({ default: m.Scene })));
-const LandingPage = lazy(() => import('./components/LandingPage').then((m) => ({ default: m.LandingPage })));
 const TimeAnalyticsView = lazy(() =>
   import('./components/analytics/TimeAnalyticsView').then((m) => ({ default: m.TimeAnalyticsView }))
 );
@@ -126,7 +125,7 @@ import { User } from 'firebase/auth';
 import { auth, initAuth, logout, getAccessToken, clearAccessToken, googleSignIn, AppUser } from './services/auth';
 import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './services/googleCalendarSync';
 import { fetchCalendarFromICalUrl } from './services/googleCalendarUrlSync';
-import { Bell, FileText } from 'lucide-react';
+import { Bell, FileText, LayoutDashboard, CalendarDays, Dumbbell, ListChecks, Wallet } from 'lucide-react';
 import { CalendarActionBar } from './components/CalendarActionBar';
 import { ToastContainer } from './components/ToastContainer';
 
@@ -168,63 +167,45 @@ export default function App() {
     return verifyZenoxSession();
   });
 
-  // 3. Current active date & view (Default to Landing Page)
+  // 3. Current active date & view (Direct Workspace / Login shell, skip marketing landing page)
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginModalMode, setLoginModalMode] = useState<'login' | 'register'>('login');
   const [view, setView] = useState<CalendarViewType>(() => {
-    // 1. Scene viewer debug route
     if (typeof window !== 'undefined' && window.location.hash === '#scene') {
       return 'scene';
     }
 
-    const route = getCurrentRoute();
-
-    // 2. If entering /workspace explicitly:
-    if (route === 'workspace') {
-      const verified = verifyZenoxSession();
-      if (verified) {
-        sessionStorage.setItem('zenox_workspace_entered', 'true');
-        const saved = localStorage.getItem('gcal_view') as CalendarViewType | null;
-        return saved && saved !== 'landing' ? saved : 'dashboard';
-      }
-      // Anti-Bypass: guest cannot access /workspace directly -> redirect to landing
-      if (typeof window !== 'undefined') {
-        navigateToRoute('landing', { replace: true });
-      }
-      return 'landing';
+    const verified = verifyZenoxSession();
+    if (verified) {
+      sessionStorage.setItem('zenox_workspace_entered', 'true');
+      const saved = localStorage.getItem('gcal_view') as CalendarViewType | null;
+      return saved && saved !== 'landing' ? saved : 'dashboard';
     }
 
-    // 3. Default to Landing Page when entering web at root domain (zenox.vercel.app)
-    return 'landing';
+    return 'dashboard';
   });
 
   const handleViewChange = (newView: CalendarViewType) => {
-    // ANTI-BYPASS: If entering workspace, verify user session
     if (newView !== 'landing' && !user) {
       setLoginModalMode('login');
       setIsLoginModalOpen(true);
-      navigateToRoute('landing', { replace: true });
       return;
     }
 
-    setView(newView);
-    if (newView === 'landing') {
-      sessionStorage.removeItem('zenox_workspace_entered');
-      navigateToRoute('landing');
-    } else {
-      sessionStorage.setItem('zenox_workspace_entered', 'true');
-      localStorage.setItem('gcal_view', newView);
-      navigateToRoute('workspace');
-    }
+    const resolvedView: CalendarViewType = newView === 'landing' ? 'dashboard' : newView;
+    setView(resolvedView);
+    sessionStorage.setItem('zenox_workspace_entered', 'true');
+    localStorage.setItem('gcal_view', resolvedView);
+    navigateToRoute('workspace');
   };
 
-  // Dynamic Browser Tab Space Title (Clear Tab Distinction)
+  // Dynamic Browser Tab Space Title
   useEffect(() => {
-    if (!user || view === 'landing') {
-      document.title = 'ZENOX | Landing Space · Hệ Điều Hành Thể Hình & Hiệu Suất';
+    if (!user) {
+      document.title = 'ZENOX · Đăng Nhập';
     } else {
-      document.title = `ZENOX Workspace · ${user.displayName || 'Cá Nhân'}`;
+      document.title = `ZENOX · ${user.displayName || 'Cá Nhân'}`;
     }
   }, [user, view]);
 
@@ -235,9 +216,7 @@ export default function App() {
 
       if (route === 'workspace') {
         if (!verified) {
-          // STRICT ANTI-BYPASS: Block unauthenticated access to /workspace
-          setView('landing');
-          navigateToRoute('landing', { replace: true });
+          setView('dashboard');
           setLoginModalMode('login');
           setIsLoginModalOpen(true);
         } else {
@@ -245,9 +224,6 @@ export default function App() {
           const saved = localStorage.getItem('gcal_view') as CalendarViewType | null;
           setView(saved && saved !== 'landing' ? saved : 'dashboard');
         }
-      } else {
-        setView('landing');
-        sessionStorage.removeItem('zenox_workspace_entered');
       }
     };
 
@@ -1008,8 +984,7 @@ export default function App() {
     setUser(null);
     localStorage.removeItem('gcal_active_user');
     sessionStorage.removeItem('zenox_workspace_entered');
-    setView('landing');
-    navigateToRoute('landing');
+    setView('dashboard');
   };
 
   const handleAuthUserSuccess = (authedUser: ZenoxUser, syncGoogleCalendar: boolean = true) => {
@@ -1434,9 +1409,9 @@ export default function App() {
 
   if (view === 'scene') {
     return (
-      <div className="w-screen h-screen bg-[#070205] flex flex-col items-center justify-center p-4 relative overflow-hidden select-none">
+      <div className="w-screen h-dvh bg-[#070205] flex flex-col items-center justify-center p-4 relative overflow-hidden select-none">
         <button
-          onClick={() => setView('landing')}
+          onClick={() => setView('dashboard')}
           className="absolute top-6 left-6 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-xl border border-white/20 transition-all cursor-pointer"
         >
           ← Quay lại Trang Chủ
@@ -1465,45 +1440,19 @@ export default function App() {
     );
   }
 
-  // STRICT ANTI-BYPASS RENDER GUARD:
-  // If user is unauthenticated OR view is landing, NEVER render workspace!
-  if (!user || view === 'landing') {
+  // Direct App Auth Guard: skip marketing landing page, open directly to clean mobile Auth screen
+  if (!user) {
     return (
-      <>
-        <Suspense
-          fallback={
-            <div className="min-h-screen bg-[#030002] flex items-center justify-center text-xs font-mono text-zinc-400">
-              Đang khởi tạo ZENOX...
-            </div>
-          }
-        >
-          <LandingPage
-            onEnterApp={() => {
-              if (!user) {
-                setLoginModalMode('login');
-                setIsLoginModalOpen(true);
-              } else {
-                handleViewChange('dashboard');
-              }
-            }}
-            onOpenLogin={() => {
-              setLoginModalMode('login');
-              setIsLoginModalOpen(true);
-            }}
-            isLoggedIn={Boolean(user)}
-            userName={user?.displayName || undefined}
-            darkMode={darkMode}
-            onToggleDarkMode={toggleDarkMode}
-          />
-        </Suspense>
-        <LoginModal
-          isOpen={isLoginModalOpen}
-          onClose={() => setIsLoginModalOpen(false)}
-          initialMode={loginModalMode}
-          onLoginSuccess={(authedUser, syncAgreed) => { handleAuthUserSuccess(authedUser, syncAgreed); }}
-          lang={lang}
-        />
-      </>
+      <LoginModal
+        isOpen={true}
+        standalone={true}
+        onClose={() => {}}
+        initialMode={loginModalMode}
+        onLoginSuccess={(authedUser, syncAgreed) => {
+          handleAuthUserSuccess(authedUser, syncAgreed);
+        }}
+        lang={lang}
+      />
     );
   }
 
@@ -1999,6 +1948,46 @@ export default function App() {
           )}
         </div>
         </main>
+
+        {/* iPhone / Mobile Native Bottom Navigation Bar */}
+        <nav
+          aria-label="Điều hướng nhanh"
+          className="lg:hidden shrink-0 border-t border-slate-200/80 dark:border-white/[0.08] bg-white/95 dark:bg-[#090205]/95 backdrop-blur-2xl px-2 pt-1.5 pb-[max(0.45rem,env(safe-area-inset-bottom))] z-30"
+        >
+          <div className="grid grid-cols-5 gap-1">
+            {(
+              [
+                { id: 'dashboard', label: lang === 'vi' ? 'Tổng quan' : 'Home', icon: LayoutDashboard, active: view === 'dashboard' },
+                {
+                  id: 'month',
+                  label: lang === 'vi' ? 'Lịch' : 'Calendar',
+                  icon: CalendarDays,
+                  active: view === 'month' || view === 'week' || view === 'day' || view === 'fourDay' || view === 'year' || view === 'schedule',
+                },
+                { id: 'health', label: lang === 'vi' ? 'Thể hình' : 'Fitness', icon: Dumbbell, active: view === 'health' },
+                { id: 'tasks', label: lang === 'vi' ? 'Nhiệm vụ' : 'Tasks', icon: ListChecks, active: view === 'tasks' },
+                { id: 'finance', label: lang === 'vi' ? 'Tài chính' : 'Finance', icon: Wallet, active: view === 'finance' },
+              ] as const
+            ).map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleViewChange(item.id)}
+                  className={`flex flex-col items-center justify-center gap-0.5 py-1.5 px-1 rounded-xl transition-all cursor-pointer ${
+                    item.active
+                      ? 'text-rose-500 bg-rose-500/10 font-bold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-medium'
+                  }`}
+                >
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span className="text-[10px] leading-tight truncate max-w-full">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
       </div>
 
       {/* Slide-over Right Drawer for Notes & Tasks */}

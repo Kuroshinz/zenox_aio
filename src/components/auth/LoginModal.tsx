@@ -42,6 +42,7 @@ interface LoginModalProps {
   onLoginSuccess: (user: ZenoxUser, syncGoogleCalendar?: boolean) => void;
   lang?: 'vi' | 'en';
   initialMode?: 'login' | 'register';
+  standalone?: boolean;
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({
@@ -50,6 +51,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onLoginSuccess,
   lang = 'vi',
   initialMode = 'login',
+  standalone = false,
 }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
 
@@ -302,13 +304,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-3xl animate-in fade-in duration-200">
+    <div
+      className={
+        standalone
+          ? 'min-h-dvh w-full flex items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] bg-[#060103] relative overflow-y-auto'
+          : 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-3xl animate-in fade-in duration-200'
+      }
+    >
       {/* Background subtle radial glow */}
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_700px_500px_at_center,rgba(225,29,72,0.15),transparent_80%)]" />
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_700px_500px_at_center,rgba(225,29,72,0.16),transparent_80%)]" />
 
-      <div className="relative w-full max-w-md rounded-3xl bg-[#090306] border border-white/15 p-6 sm:p-8 shadow-[0_25px_90px_rgba(0,0,0,0.98),0_0_80px_rgba(225,29,72,0.22)] flex flex-col items-center select-none text-zinc-100 max-h-[92vh] overflow-y-auto">
-        {/* Close Button (Hidden during processing) */}
-        {!isProcessing && !isAskingSyncConsent && (
+      <div className="relative w-full max-w-md rounded-3xl bg-[#090306] border border-white/15 p-5 sm:p-8 shadow-[0_25px_90px_rgba(0,0,0,0.98),0_0_80px_rgba(225,29,72,0.22)] flex flex-col items-center select-none text-zinc-100 max-h-[92dvh] overflow-y-auto">
+        {/* Close Button (Hidden in standalone app login or during processing) */}
+        {!standalone && !isProcessing && !isAskingSyncConsent && (
           <button
             type="button"
             onClick={onClose}
@@ -609,7 +617,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       placeholder={lang === 'vi' ? 'Email tài khoản của bạn' : 'Your account email'}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs placeholder:text-zinc-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/40 transition-all font-mono"
+                      className="w-full pl-10 pr-4 py-3 sm:py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-base sm:text-xs placeholder:text-zinc-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/40 transition-all font-mono"
                     />
                   </div>
 
@@ -623,7 +631,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder={lang === 'vi' ? 'Mật khẩu bảo mật' : 'Security password'}
-                      className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs placeholder:text-zinc-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/40 transition-all font-mono"
+                      className="w-full pl-10 pr-10 py-3 sm:py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-base sm:text-xs placeholder:text-zinc-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/40 transition-all font-mono"
                     />
                     <button
                       type="button"
