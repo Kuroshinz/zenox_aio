@@ -75,6 +75,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [processStep, setProcessStep] = useState(1);
   const [processPercent, setProcessPercent] = useState(25);
   const [processStatus, setProcessStatus] = useState('');
+  const [showCustomGoogleId, setShowCustomGoogleId] = useState(false);
+  const [customClientIdInput, setCustomClientIdInput] = useState(() =>
+    typeof localStorage !== 'undefined' ? localStorage.getItem('gcal_custom_client_id') || '' : ''
+  );
 
   const timersRef = useRef<number[]>([]);
   const errorBannerRef = useRef<HTMLDivElement | null>(null);
@@ -226,13 +230,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  const handleGoogleSignInClick = async () => {
+  const handleGoogleSignInClick = async (explicitClientId?: string) => {
     if (isAnySubmitting) return;
     setErrorMessage(null);
     setIsSubmittingGoogle(true);
 
     try {
-      const res = await loginWithGoogleAccount();
+      const res = await loginWithGoogleAccount(explicitClientId);
       if (res.redirecting) {
         return;
       }
@@ -467,33 +471,63 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
                   <span className="leading-relaxed flex-1">{errorMessage}</span>
                 </div>
-                {errorMessage.includes('Authorized Domains') && (
-                  <div className="pt-1 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                          navigator.clipboard.writeText(window.location.hostname);
-                          notifySuccess(
-                            lang === 'vi' ? 'Đã sao chép tên miền' : 'Domain copied',
-                            window.location.hostname
-                          );
-                        }
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-mono text-white transition-colors cursor-pointer border border-white/15"
-                    >
-                      Sao chép tên miền ({typeof window !== 'undefined' ? window.location.hostname : ''})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode('register');
-                        setErrorMessage(null);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-[11px] text-white font-medium transition-colors cursor-pointer"
-                    >
-                      Tạo tài khoản Web ngay
-                    </button>
+                {(errorMessage.includes('Authorized Domains') || errorMessage.includes('Client ID') || errorMessage.includes('.ipa')) && (
+                  <div className="pt-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                            navigator.clipboard.writeText(window.location.hostname || window.location.origin);
+                            notifySuccess(
+                              lang === 'vi' ? 'Đã sao chép tên miền' : 'Domain copied',
+                              window.location.hostname || window.location.origin
+                            );
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-mono text-white transition-colors cursor-pointer border border-white/15"
+                      >
+                        Sao chép domain ({typeof window !== 'undefined' ? (window.location.hostname || window.location.protocol) : ''})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode('register');
+                          setErrorMessage(null);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-[11px] text-white font-medium transition-colors cursor-pointer"
+                      >
+                        Tạo tài khoản Email ngay
+                      </button>
+                      {!errorMessage.includes('.ipa') && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCustomGoogleId((v) => !v)}
+                          className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-[11px] text-sky-200 font-medium transition-colors cursor-pointer border border-sky-400/30"
+                        >
+                          Dùng Client ID riêng
+                        </button>
+                      )}
+                    </div>
+                    {showCustomGoogleId && (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <input
+                          type="text"
+                          value={customClientIdInput}
+                          onChange={(e) => setCustomClientIdInput(e.target.value)}
+                          placeholder="xxxx.apps.googleusercontent.com"
+                          className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/40 border border-white/15 text-white text-base sm:text-[11px] font-mono outline-none focus:border-sky-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleGoogleSignInClick(customClientIdInput)}
+                          disabled={!customClientIdInput.trim() || isAnySubmitting}
+                          className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-[11px] font-bold cursor-pointer shrink-0"
+                        >
+                          Thử lại
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -504,7 +538,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               <div>
                 <button
                   type="button"
-                  onClick={handleGoogleSignInClick}
+                  onClick={() => handleGoogleSignInClick()}
                   disabled={isAnySubmitting}
                   className="w-full py-3 px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 hover:border-sky-500/40 text-white text-xs font-semibold flex items-center justify-center gap-2.5 transition-all duration-200 shadow-[0_4px_20px_rgba(0,0,0,0.5)] cursor-pointer group active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
                   title="Đăng nhập trực tiếp bằng tài khoản Google của bạn"
@@ -577,6 +611,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     <input
                       type="email"
                       required
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="email"
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       placeholder={lang === 'vi' ? 'Email tài khoản của bạn' : 'Your account email'}
@@ -591,6 +629,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     <input
                       type={showLoginPassword ? 'text' : 'password'}
                       required
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="current-password"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder={lang === 'vi' ? 'Mật khẩu bảo mật' : 'Security password'}
@@ -665,10 +707,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     <input
                       type="email"
                       required
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="email"
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
                       placeholder={lang === 'vi' ? 'Email tài khoản mới' : 'New account email'}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs placeholder:text-zinc-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/40 transition-all font-mono"
+                      className="w-full pl-10 pr-4 py-3 sm:py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-base sm:text-xs placeholder:text-zinc-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/40 transition-all font-mono"
                     />
                   </div>
 
@@ -679,10 +725,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     <input
                       type={showRegPassword ? 'text' : 'password'}
                       required
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="new-password"
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
                       placeholder={lang === 'vi' ? 'Mật khẩu (tối thiểu 6 ký tự)' : 'Password (min 6 characters)'}
-                      className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs placeholder:text-zinc-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/40 transition-all"
+                      className="w-full pl-10 pr-10 py-3 sm:py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-base sm:text-xs placeholder:text-zinc-500 focus:outline-none focus:border-rose-500/60 focus:ring-1 focus:ring-rose-500/40 transition-all"
                     />
                     <button
                       type="button"

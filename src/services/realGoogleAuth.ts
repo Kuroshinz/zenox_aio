@@ -64,10 +64,17 @@ export async function fetchGoogleUserInfo(accessToken: string): Promise<AppUser>
   };
 }
 
+const IDENTITY_SCOPES = 'openid email profile';
+const CALENDAR_SCOPES =
+  'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid';
+
 /**
  * Request real Google OAuth 2.0 Access Token via Google Identity Services (GIS)
  */
-export function requestRealGoogleOAuthToken(customClientId?: string): Promise<string> {
+export function requestRealGoogleOAuthToken(
+  customClientId?: string,
+  scopes: string = CALENDAR_SCOPES
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const clientId =
       customClientId || localStorage.getItem('gcal_custom_client_id') || DEFAULT_GOOGLE_CLIENT_ID;
@@ -119,7 +126,7 @@ export function requestRealGoogleOAuthToken(customClientId?: string): Promise<st
     try {
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid',
+        scope: scopes,
         callback: (response: any) => {
           if (settled) return;
           settled = true;
@@ -170,16 +177,22 @@ export function requestRealGoogleOAuthToken(customClientId?: string): Promise<st
  */
 export async function authenticateRealGoogleUser(
   customClientId?: string,
-  providedToken?: string
+  providedToken?: string,
+  withCalendarScopes: boolean = false
 ): Promise<{ user: AppUser; accessToken: string }> {
   let token = providedToken;
 
   if (!token) {
-    token = await requestRealGoogleOAuthToken(customClientId);
+    token = await requestRealGoogleOAuthToken(
+      customClientId,
+      withCalendarScopes ? CALENDAR_SCOPES : IDENTITY_SCOPES
+    );
   }
 
   const user = await fetchGoogleUserInfo(token);
-  setAccessToken(token);
+  if (withCalendarScopes) {
+    setAccessToken(token);
+  }
 
   return { user, accessToken: token };
 }
@@ -191,7 +204,7 @@ export async function executeRealGoogleSync(
   customClientId?: string,
   providedToken?: string
 ): Promise<{ user: AppUser; accessToken: string; events: CalendarEvent[] }> {
-  const { user, accessToken } = await authenticateRealGoogleUser(customClientId, providedToken);
+  const { user, accessToken } = await authenticateRealGoogleUser(customClientId, providedToken, true);
 
   // Fetch real Google Calendar Events after authentication
   const events = await fetchGoogleCalendarEvents(accessToken);

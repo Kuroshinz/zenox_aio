@@ -39,6 +39,7 @@ import {
   getVaultAccounts,
   getAccountSyncConsent,
   setAccountSyncConsent,
+  sha256HexFallback,
 } from './zenoxAuth';
 import { accountStorage } from './accountStorage';
 
@@ -209,4 +210,48 @@ test('loginCloneDemoAccount seeds full Phase 1-4 test data and supports password
   const pwLogin = await loginZenoxAccount(CLONE_ACCOUNT_EMAIL, CLONE_ACCOUNT_PASSWORD);
   assert.equal(pwLogin.success, true);
   assert.equal(pwLogin.user?.uid, CLONE_ACCOUNT_UID);
+});
+
+test('sha256HexFallback matches RFC 6234 vectors and auth works without crypto.subtle (HTTP LAN iPhone Safari)', async () => {
+  // Known NIST / RFC 6234 SHA-256 test vectors
+  const enc = new TextEncoder();
+  assert.equal(
+    sha256HexFallback(enc.encode('abc')),
+    'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+  );
+  assert.equal(
+    sha256HexFallback(enc.encode('')),
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+  );
+
+  // Simulate non-secure HTTP LAN context where crypto.subtle is undefined
+  const originalCryptoDesc = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value: {
+      getRandomValues: (arr: Uint8Array) => {
+        for (let i = 0; i < arr.length; i++) arr[i] = (i * 37 + 13) & 0xff;
+        return arr;
+      },
+      // subtle intentionally omitted (HTTP LAN / older WebView)
+    },
+  });
+
+  try {
+    const reg = await registerZenoxAccount('iPhone User', 'iphone@zenox.local', 'Pass1234!');
+    assert.equal(reg.success, true);
+    assert.ok(reg.user?.uid);
+
+    logoutZenoxSession();
+    assert.equal(verifyZenoxSession(), null);
+
+    const login = await loginZenoxAccount('iphone@zenox.local', 'Pass1234!', true);
+    assert.equal(login.success, true);
+    assert.equal(login.user?.email, 'iphone@zenox.local');
+    assert.equal(verifyZenoxSession()?.uid, reg.user?.uid);
+  } finally {
+    if (originalCryptoDesc) {
+      Object.defineProperty(globalThis, 'crypto', originalCryptoDesc);
+    }
+  }
 });

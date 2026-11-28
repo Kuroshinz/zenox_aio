@@ -45,39 +45,91 @@ const WORKSPACE_ENTERED_KEY = 'zenox_workspace_entered';
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-function getWebCrypto(): Crypto {
-  const c = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
-  if (!c?.subtle || !c?.getRandomValues) {
-    throw new Error('Trình duyệt không hỗ trợ Web Crypto API.');
+const SHA256_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+/** Pure-JS RFC 6234 SHA-256 fallback for HTTP LAN origins on iPhone Safari where crypto.subtle is undefined. */
+export function sha256HexFallback(bytes: Uint8Array): string {
+  const h = new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ]);
+  const bitLen = bytes.length * 8;
+  const paddedLen = Math.ceil((bytes.length + 9) / 64) * 64;
+  const padded = new Uint8Array(paddedLen);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const view = new DataView(padded.buffer);
+  view.setUint32(paddedLen - 8, Math.floor(bitLen / 0x100000000), false);
+  view.setUint32(paddedLen - 4, bitLen >>> 0, false);
+
+  const w = new Uint32Array(64);
+  for (let i = 0; i < paddedLen; i += 64) {
+    for (let t = 0; t < 16; t++) w[t] = view.getUint32(i + t * 4, false);
+    for (let t = 16; t < 64; t++) {
+      const s0 = ((w[t - 15] >>> 7) | (w[t - 15] << 25)) ^ ((w[t - 15] >>> 18) | (w[t - 15] << 14)) ^ (w[t - 15] >>> 3);
+      const s1 = ((w[t - 2] >>> 17) | (w[t - 2] << 15)) ^ ((w[t - 2] >>> 19) | (w[t - 2] << 13)) ^ (w[t - 2] >>> 10);
+      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let t = 0; t < 64; t++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ (~e & g);
+      const temp1 = (hh + S1 + ch + SHA256_K[t] + w[t]) >>> 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (S0 + maj) >>> 0;
+      hh = g; g = f; f = e; e = (d + temp1) >>> 0; d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
+    }
+    h[0] = (h[0] + a) >>> 0; h[1] = (h[1] + b) >>> 0; h[2] = (h[2] + c) >>> 0; h[3] = (h[3] + d) >>> 0;
+    h[4] = (h[4] + e) >>> 0; h[5] = (h[5] + f) >>> 0; h[6] = (h[6] + g) >>> 0; h[7] = (h[7] + hh) >>> 0;
   }
-  return c;
+  return Array.from(h)
+    .map((word) => word.toString(16).padStart(8, '0'))
+    .join('');
 }
 
-/** SHA-256 Cryptographic Hash Helper */
-async function hashWithSalt(password: string, salt: string): Promise<string> {
-  const enc = new TextEncoder().encode(`${salt}:#zenox_secure:${password}`);
-  const hashBuf = await getWebCrypto().subtle.digest('SHA-256', enc);
-  const hashArr = Array.from(new Uint8Array(hashBuf));
-  return hashArr.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function generateRandomSalt(): string {
-  const arr = new Uint8Array(16);
-  getWebCrypto().getRandomValues(arr);
+function getRandomHex(byteLength: number): string {
+  const arr = new Uint8Array(byteLength);
+  const c = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (c?.getRandomValues) {
+    c.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < byteLength; i++) {
+      arr[i] = Math.floor(Math.random() * 256);
+    }
+  }
   return Array.from(arr)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
-function generateSessionToken(): string {
-  const arr = new Uint8Array(32);
-  getWebCrypto().getRandomValues(arr);
-  return (
-    'zenox_st_' +
-    Array.from(arr)
+/** SHA-256 Cryptographic Hash Helper (uses WebCrypto when available, pure-JS fallback on HTTP LAN) */
+async function hashWithSalt(password: string, salt: string): Promise<string> {
+  const enc = new TextEncoder().encode(`${salt}:#zenox_secure:${password}`);
+  const c = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (c?.subtle) {
+    const hashBuf = await c.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(hashBuf))
       .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  );
+      .join('');
+  }
+  return sha256HexFallback(enc);
+}
+
+function generateRandomSalt(): string {
+  return getRandomHex(16);
+}
+
+function generateSessionToken(): string {
+  return 'zenox_st_' + getRandomHex(32);
 }
 
 /** Persist a verified ZENOX session + active user consistently across all auth entry points. */
@@ -493,7 +545,7 @@ function finalizeGoogleVaultUser(
  * Sign in or authenticate with a Google Account
  * Dev By Zenox Development
  */
-export async function loginWithGoogleAccount(): Promise<{
+export async function loginWithGoogleAccount(customClientId?: string): Promise<{
   success: boolean;
   redirecting?: boolean;
   error?: string;
@@ -511,7 +563,7 @@ export async function loginWithGoogleAccount(): Promise<{
         return {
           success: false,
           error:
-            'Trong bản app iOS cài qua file .ipa, Google Web OAuth bị giới hạn trên WebView cục bộ. Vui lòng đăng ký / đăng nhập bằng Email & Mật khẩu bên dưới (hoạt động đầy đủ offline & trên iPhone).',
+            'Trong bản app iOS cài qua file .ipa, Google Web OAuth bị giới hạn trên WebView cục bộ. Vui lòng đăng ký / đăng nhập bằng Email & Mật khẩu bên dưới (hoạt động đầy đủ offline & đồng bộ Cloud với bản Web).',
         };
       }
 
@@ -526,6 +578,20 @@ export async function loginWithGoogleAccount(): Promise<{
     let appUser: { uid: string; email: string | null; displayName: string | null; photoURL: string | null } | null = null;
     let accessToken: string | null = null;
     let firebaseUid: string | undefined;
+
+    const trimmedCustomId = customClientId?.trim() || (typeof localStorage !== 'undefined' ? localStorage.getItem('gcal_custom_client_id')?.trim() : '') || '';
+    if (trimmedCustomId && typeof localStorage !== 'undefined') {
+      localStorage.setItem('gcal_custom_client_id', trimmedCustomId);
+    }
+
+    // If caller explicitly supplied their own OAuth Web Client ID, use clean GIS identity login directly
+    if (trimmedCustomId) {
+      const { authenticateRealGoogleUser } = await import('./realGoogleAuth');
+      const gisRes = await authenticateRealGoogleUser(trimmedCustomId, undefined, false);
+      if (gisRes?.user?.email) {
+        return finalizeGoogleVaultUser(gisRes.user, null);
+      }
+    }
 
     // 1. Launch real official Google OAuth popup via Firebase Auth
     try {
@@ -549,7 +615,7 @@ export async function loginWithGoogleAccount(): Promise<{
         const domain = typeof window !== 'undefined' ? window.location.hostname : 'domain';
         return {
           success: false,
-          error: `Domain web (${domain}) chưa được cấp phép trong Firebase Authentication. Bạn cần thêm "${domain}" vào Firebase Console > Authentication > Settings > Authorized Domains, hoặc dùng tab Đăng Ký bên dưới để tạo tài khoản ngay.`,
+          error: `Domain web (${domain}) chưa được cấp phép trong Firebase Console (Authorized Domains). Hãy dùng Email/Mật khẩu bên dưới hoặc nhập Google Client ID riêng để đăng nhập.`,
         };
       }
 
@@ -569,10 +635,10 @@ export async function loginWithGoogleAccount(): Promise<{
         }
       }
 
-      // 2. Secondary fallback via Google Identity Services (identity only; sync happens after consent)
+      // 2. Secondary fallback via Google Identity Services (identity only)
       try {
         const { authenticateRealGoogleUser } = await import('./realGoogleAuth');
-        const gisRes = await authenticateRealGoogleUser();
+        const gisRes = await authenticateRealGoogleUser(undefined, undefined, false);
         if (gisRes?.user?.email) {
           appUser = gisRes.user;
           accessToken = gisRes.accessToken;

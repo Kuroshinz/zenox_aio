@@ -12,15 +12,23 @@ import {
   User,
   signOut,
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigJson from '../../firebase-applet-config.json';
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const envConfig = {
+  apiKey: (import.meta.env?.VITE_FIREBASE_API_KEY as string | undefined) || firebaseConfigJson.apiKey,
+  authDomain: (import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN as string | undefined) || firebaseConfigJson.authDomain,
+  projectId: (import.meta.env?.VITE_FIREBASE_PROJECT_ID as string | undefined) || firebaseConfigJson.projectId,
+  storageBucket: firebaseConfigJson.storageBucket,
+  messagingSenderId: firebaseConfigJson.messagingSenderId,
+  appId: (import.meta.env?.VITE_FIREBASE_APP_ID as string | undefined) || firebaseConfigJson.appId,
+};
+
+const app = getApps().length > 0 ? getApp() : initializeApp(envConfig);
 export const auth = getAuth(app);
 
+// Keep initial sign-in strictly to standard identity scopes (openid/email/profile) so Google
+// does not block login with unverified-app warnings. Calendar scopes are requested on Calendar Sync.
 const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/calendar.events');
-provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-// Calendar & Profile scopes only
 
 const REAL_TOKEN_KEY = 'gcal_real_access_token';
 const TOKEN_EXPIRY_KEY = 'gcal_real_token_expires_at';
@@ -166,26 +174,22 @@ export const googleSignInRedirect = async (): Promise<void> => {
 };
 
 export const resolveGoogleRedirectResult = async (): Promise<{ user: AppUser; accessToken: string } | null> => {
-  try {
-    const result = await getRedirectResult(auth);
-    if (!result?.user) return null;
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    const accessToken = credential?.accessToken || '';
-    if (accessToken) {
-      setAccessToken(accessToken, 3600);
-    }
-    return {
-      user: {
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: result.user.displayName,
-        photoURL: result.user.photoURL,
-      },
-      accessToken,
-    };
-  } catch {
-    return null;
+  const result = await getRedirectResult(auth);
+  if (!result?.user) return null;
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  const accessToken = credential?.accessToken || '';
+  if (accessToken) {
+    setAccessToken(accessToken, 3600);
   }
+  return {
+    user: {
+      uid: result.user.uid,
+      email: result.user.email,
+      displayName: result.user.displayName,
+      photoURL: result.user.photoURL,
+    },
+    accessToken,
+  };
 };
 
 export const registerWithFirebaseEmail = async (
